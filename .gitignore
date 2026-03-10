@@ -1,0 +1,39 @@
+# Credentials and Secrets
+.env
+.env.local
+.env.*.local
+*.json
+!package.json
+!tsconfig.json
+!next.config.json
+
+# Specialized Creditential Files
+Backend/casavitacure-crm-1b7950d2fa11.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+Backend/__pycache__/
+venv/
+.venv/
+env/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+
+# Logs
+*.log
+whatsapp_crm.log
+Backend/whatsapp_crm.log
+
+# Local files
+check_realtime.py
+debug_gpt5_tools.py
+check_realtime.py
+temp_*.py
+out.txt

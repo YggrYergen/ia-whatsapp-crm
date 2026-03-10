@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f0f2f5;
+  --whatsapp-green: #00a884;
+  --whatsapp-panel: #ffffff;
+  --whatsapp-bubble-user: #dcf8c6;
+  --whatsapp-bubble-ai: #ffffff;
+}
+
+body {
+  background-color: var(--background);
+  color: #111b21;
+}
+
+.chat-height {
+  height: calc(100vh - 60px);
+}
