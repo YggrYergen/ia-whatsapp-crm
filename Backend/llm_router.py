@@ -11,9 +11,48 @@ import google.generativeai as genai
 from logger import logger
 from calendar_service import CALENDAR_TOOLS_OPENAI, AVAILABLE_FUNCTIONS
 
+async def send_and_log_staff_notification(tenant_id: str, notif_body: str):
+    import os
+    from supabase import create_client
+    from whatsapp_service import send_whatsapp_message
+    
+    sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    STAFF_NUMBER = os.getenv("STAFF_NOTIFICATION_NUMBER", "56999999999")
+    W_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    W_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    
+    try:
+        # 1. Send actual meta message
+        await send_whatsapp_message(STAFF_NUMBER, notif_body, W_ID, W_TOKEN)
+        
+        # 2. Log in Supabase so CRM sees it
+        staff_contact_res = sb.table("contacts").select("id").eq("tenant_id", tenant_id).eq("phone_number", STAFF_NUMBER).execute()
+        contact_id_to_use = None
+        
+        if staff_contact_res.data:
+            contact_id_to_use = staff_contact_res.data[0]["id"]
+        else:
+            # Create if missing
+            new_c = sb.table("contacts").insert({
+                "tenant_id": tenant_id,
+                "phone_number": STAFF_NUMBER,
+                "name": "Staff Interno",
+                "role": "staff"
+            }).execute()
+            contact_id_to_use = new_c.data[0]["id"]
+            
+        sb.table("messages").insert({
+            "contact_id": contact_id_to_use,
+            "tenant_id": tenant_id,
+            "sender_role": "assistant",
+            "content": notif_body
+        }).execute()
+    except Exception as e:
+        logger.error(f"Error in send_and_log_staff_notification: {str(e)}")
+
 class LLMStrategy(ABC):
     @abstractmethod
-    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown") -> str:
+    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown", contact_id: str = None, tenant_id: str = None, user_role: str = "cliente") -> str:
         pass
 
 class OpenAIStrategy(LLMStrategy):
@@ -21,7 +60,7 @@ class OpenAIStrategy(LLMStrategy):
         self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = model
 
-    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown") -> str:
+    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown", contact_id: str = None, tenant_id: str = None, user_role: str = "cliente") -> str:
         # Evitar duplicidad si el historial ya contiene el mensaje actual
         filtered_history = history
         if history and history[-1]["content"] == user_message and history[-1]["sender_role"] == "user":
@@ -39,20 +78,40 @@ class OpenAIStrategy(LLMStrategy):
         # Le pasamos la fecha actual en el system prompt para que siempre sepa qué día es
         import datetime
         today_date = datetime.datetime.now().strftime("%A, %Y-%m-%d")
-        messages[0]["content"] += f"\n\n[SISTEMA METADATA - NO SE LO DIGAS AL USUARIO A MENOS QUE SEA NECESARIO]:\n- Hoy es {today_date}.\n- El número de teléfono con el que estás hablando es {phone_number}."
+        
+        role_instructions = ""
+        if user_role == "cliente":
+            role_instructions = "\n- ESTÁS HABLANDO CON UN PACIENTE. SOLO puedes ofrecer evaluaciones de 30 minutos. NO agendes 60 minutos."
+        else:
+            role_instructions = f"\n- ESTÁS HABLANDO CON UN {user_role.upper()}. Puedes agendar sesiones de 60 minutos si te lo piden."
+
+        # REGLAS DE TONO Y ESTILO (Feedback v2)
+        style_rules = (
+            "\n- REGLA DE SALUDO: Si ya te presentaste en el historial (history), NO vuelvas a decir 'Soy Javiera'. Saluda directo."
+            "\n- REGLA DE PUNTUACIÓN: NO uses guiones largos (—) ni dobles guiones (--) para separar ideas. Usa comas, puntos o saltos de línea."
+            "\n- Sé breve y humano, estilo WhatsApp."
+        )
+
+        messages[0]["content"] += f"\n\n[SISTEMA METADATA]:\n- Hoy es {today_date}.\n- Teléfono: {phone_number}.{role_instructions}{style_rules}"
 
         logger.debug(f"[OpenAI] Calling {self.model} with tools flow...")
         
         # Loop for tool execution
         max_tool_calls = 5
         for _ in range(max_tool_calls):
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=CALENDAR_TOOLS_OPENAI,
-                tool_choice="auto",
-                temperature=0.7
-            )
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "tools": CALENDAR_TOOLS_OPENAI,
+                "tool_choice": "auto"
+            }
+
+            if not self.model.startswith("o"):
+                kwargs["temperature"] = 0.7
+            else:
+                kwargs["temperature"] = 1 # Según el error "Only the default (1) value is supported" para modelos o
+
+            response = await self.client.chat.completions.create(**kwargs)
             response_message = response.choices[0].message
             tool_calls = response_message.tool_calls
             
@@ -70,9 +129,49 @@ class OpenAIStrategy(LLMStrategy):
                 
                 logger.debug(f"[OpenAI] Executing tool: {function_name} with {function_args}")
                 
-                if function_name in AVAILABLE_FUNCTIONS:
-                    function_to_call = AVAILABLE_FUNCTIONS[function_name]
-                    function_response = function_to_call(**function_args)
+                if function_name == "derivar_evaluacion_medica":
+                    from triage_service import handle_derivation
+                    function_response = handle_derivation(contact_id, tenant_id, **function_args)
+                elif function_name in AVAILABLE_FUNCTIONS:
+                    # INTERCEPCIÓN DE SEGURIDAD PARA DURACIÓN Y ESCALACIÓN
+                    if function_name == "escalate_to_human":
+                        # Apagar bot
+                        from supabase import create_client
+                        sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+                        sb.table("contacts").update({"bot_active": False}).eq("id", contact_id).execute()
+                        
+                        reason = function_args.get("reason", "Solicitud del usuario")
+                        notif = f"🚨 *ESCALACIÓN A HUMANO*\n\nPaciente: {phone_number}\nMotivo: {reason}\n\n🤖 *El bot ha sido pausado automáticamente.*"
+                        import asyncio
+                        asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                        function_response = json.dumps({"status": "success", "message": "Derivación exitosa, dile al paciente que espere."})
+                        
+                    else:
+                        if function_name in ["get_merged_availability", "book_round_robin"]:
+                            if user_role == "cliente":
+                                logger.info(f"[OpenAI Interceptor] Forcing 30min for contact {phone_number} (Role: {user_role})")
+                                function_args["duration_minutes"] = 30
+
+                        # Execute tool
+                        function_to_call = AVAILABLE_FUNCTIONS[function_name]
+                        function_response = function_to_call(**function_args)
+                        
+                        # POST-INTERCEPCIÓN NOTIFICACIONES (Solo si fue exitoso)
+                        if '"status": "success"' in function_response:
+                            import asyncio
+                            if function_name == "book_round_robin":
+                                dt, tm, un = function_args.get('date_str'), function_args.get('time_str'), function_args.get('user_name')
+                                notif = f"📅 *NUEVA CITA AGENDADA*\n\n👤 Paciente: {un}\n📞 Tel: {phone_number}\n⏰ {dt} a las {tm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                            elif function_name == "delete_appointment":
+                                dt, tm = function_args.get('date_str'), function_args.get('time_str')
+                                notif = f"🗑️ *CITA CANCELADA*\n\n📞 Tel: {phone_number}\n⏰ El {dt} a las {tm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                            elif function_name == "update_appointment":
+                                old_dt, old_tm = function_args.get('date_str'), function_args.get('time_str')
+                                ndt, ntm = function_args.get('new_date', old_dt), function_args.get('new_time', old_tm)
+                                notif = f"🔄 *CITA MODIFICADA*\n\n📞 Tel: {phone_number}\nAntigua: {old_dt} {old_tm}\nNueva: {ndt} {ntm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
                     
                     messages.append({
                         "tool_call_id": tool_call.id,
@@ -96,7 +195,7 @@ class GPT5MiniStrategy(LLMStrategy):
         self.client = openai.AsyncOpenAI(api_key=api_key)
         self.model = model
 
-    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown") -> str:
+    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown", contact_id: str = None, tenant_id: str = None, user_role: str = "cliente") -> str:
         import datetime
         today_date = datetime.datetime.now().strftime("%A, %Y-%m-%d")
         
@@ -106,12 +205,27 @@ class GPT5MiniStrategy(LLMStrategy):
         if history and history[-1]["content"] == user_message and history[-1]["sender_role"] == "user":
             filtered_history = history[:-1]
 
+        role_instructions = ""
+        if user_role == "cliente":
+            role_instructions = "\n- ESTÁS HABLANDO CON UN PACIENTE. SOLO puedes ofrecer evaluaciones de 30 minutos. NO agendes 60 minutos."
+        else:
+            role_instructions = f"\n- ESTÁS HABLANDO CON UN {user_role.upper()}. Puedes agendar sesiones de 60 minutos si te lo piden."
+
+        # REGLAS DE TONO Y ESTILO (Feedback v2)
+        style_rules = (
+            "\n- REGLA DE SALUDO: Si ya te presentaste en el historial (history), NO vuelvas a decir 'Soy Javiera'. Saluda directo."
+            "\n- REGLA DE PUNTUACIÓN: NO uses guiones largos (—) ni dobles guiones (--) para separar ideas. Usa comas, puntos o saltos de línea."
+            "\n- Sé breve y humano, estilo WhatsApp."
+        )
+
         system_content = [{
             "type": "input_text", 
             "text": system_prompt + (
-                f"\n\n[SISTEMA METADATA - NO REPETIR ESTO]:"
+                f"\n\n[SISTEMA METADATA]:"
                 f"\n- Hoy es {today_date}."
-                f"\n- Teléfono del paciente: {phone_number}."
+                f"\n- Teléfono: {phone_number}."
+                f"{role_instructions}"
+                f"{style_rules}"
                 f"\n- TIENES ACCESO REAL A GOOGLE CALENDAR. "
                 f"Si te piden disponibilidad o agendar, USA TUS HERRAMIENTAS INMEDIATAMENTE. "
                 f"No simules acceso ni digas que vas a simularlo. Actúa como un agente real."
@@ -198,8 +312,42 @@ class GPT5MiniStrategy(LLMStrategy):
                                 try:
                                     f_args = json.loads(f_args_str)
                                     from calendar_service import AVAILABLE_FUNCTIONS
-                                    if f_name in AVAILABLE_FUNCTIONS:
-                                        tool_result = AVAILABLE_FUNCTIONS[f_name](**f_args)
+                                    if f_name == "derivar_evaluacion_medica":
+                                        from triage_service import handle_derivation
+                                        tool_result = handle_derivation(contact_id, tenant_id, **f_args)
+                                    elif f_name in AVAILABLE_FUNCTIONS:
+                                        # INTERCEPCIÓN DE SEGURIDAD PARA DURACIÓN Y ESCALACIÓN
+                                        if f_name == "escalate_to_human":
+                                            from supabase import create_client
+                                            sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+                                            sb.table("contacts").update({"bot_active": False}).eq("id", contact_id).execute()
+                                            
+                                            reason = f_args.get("reason", "No especificado")
+                                            notif = f"🚨 *ESCALACIÓN A HUMANO*\n\nPaciente: {phone_number}\nMotivo: {reason}\n\n🤖 *Bot pausado.*"
+                                            asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                                            tool_result = json.dumps({"status": "success", "message": "Dile al paciente que aguarde humano."})
+                                        else:
+                                            if f_name in ["get_merged_availability", "book_round_robin"]:
+                                                if user_role == "cliente":
+                                                    logger.info(f"[GPT5 Interceptor] Forcing 30min for {phone_number}")
+                                                    f_args["duration_minutes"] = 30
+                                            tool_result = AVAILABLE_FUNCTIONS[f_name](**f_args)
+                                            
+                                            # POST-INTERCEPCIÓN NOTIFICACIONES
+                                            if '"status": "success"' in tool_result:
+                                                if f_name == "book_round_robin":
+                                                    dt, tm, un = f_args.get('date_str'), f_args.get('time_str'), f_args.get('user_name')
+                                                    notif = f"📅 *NUEVA CITA AGENDADA*\n\n👤 Paciente: {un}\n📞 Tel: {phone_number}\n⏰ {dt} a las {tm}"
+                                                    asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                                                elif f_name == "delete_appointment":
+                                                    dt, tm = f_args.get('date_str'), f_args.get('time_str')
+                                                    notif = f"🗑️ *CITA CANCELADA*\n\n📞 Tel: {phone_number}\n⏰ El {dt} a las {tm}"
+                                                    asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                                                elif f_name == "update_appointment":
+                                                    old_dt, old_tm = f_args.get('date_str'), f_args.get('time_str')
+                                                    ndt, ntm = f_args.get('new_date', old_dt), f_args.get('new_time', old_tm)
+                                                    notif = f"🔄 *CITA MODIFICADA*\n\n📞 Tel: {phone_number}\nAntigua: {old_dt} {old_tm}\nNueva: {ndt} {ntm}"
+                                                    asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
                                     else:
                                         tool_result = json.dumps({"error": "Unknown function"})
                                 except Exception as e:
@@ -266,7 +414,7 @@ class GeminiStrategy(LLMStrategy):
         genai.configure(api_key=api_key)
         self.model_name = model
 
-    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown") -> str:
+    async def generate_response(self, system_prompt: str, history: List[Dict[str, str]], user_message: str, phone_number: str = "Unknown", contact_id: str = None, tenant_id: str = None, user_role: str = "cliente") -> str:
         # Extraer info base de herramientas y configurarlas estilo Gemini
         tools_list = []
         for t in CALENDAR_TOOLS_OPENAI:
@@ -292,9 +440,22 @@ class GeminiStrategy(LLMStrategy):
         today_date = datetime.datetime.now().strftime("%A, %Y-%m-%d")
         system_mod = system_prompt + f"\n\n[SISTEMA METADATA - NO SE LO DIGAS AL USUARIO A MENOS QUE SEA NECESARIO]:\n- Hoy es {today_date}.\n- El número de teléfono con el que estás hablando es {phone_number}."
 
+        role_instructions = ""
+        if user_role == "cliente":
+            role_instructions = "\n- ESTÁS HABLANDO CON UN PACIENTE. SOLO puedes ofrecer evaluaciones de 30 minutos. NO agendes 60 minutos."
+        else:
+            role_instructions = f"\n- ESTÁS HABLANDO CON UN {user_role.upper()}. Puedes agendar sesiones de 60 minutos si te lo piden."
+
+        # REGLAS DE TONO Y ESTILO (Feedback v2)
+        style_rules = (
+            "\n- REGLA DE SALUDO: Si ya te presentaste en el historial (history), NO vuelvas a decir 'Soy Javiera'. Saluda directo."
+            "\n- REGLA DE PUNTUACIÓN: NO uses guiones largos (—) ni dobles guiones (--) para separar ideas. Usa comas, puntos o saltos de línea."
+            "\n- Sé breve y humano, estilo WhatsApp."
+        )
+
         model = genai.GenerativeModel(
             model_name=self.model_name,
-            system_instruction=system_mod,
+            system_instruction=system_mod + role_instructions + style_rules,
             tools=[calendar_tool]
         )
         
@@ -337,11 +498,53 @@ class GeminiStrategy(LLMStrategy):
                 function_args = {k: v for k, v in f_call.args.items()}
                 logger.debug(f"[Gemini] Executing tool: {function_name} with {function_args}")
                 
-                if function_name in AVAILABLE_FUNCTIONS:
-                    function_to_call = AVAILABLE_FUNCTIONS[function_name]
-                    # La funcion devuelve un string JSON
-                    f_resp_str = function_to_call(**function_args)
+                if function_name == "derivar_evaluacion_medica":
+                    from triage_service import handle_derivation
+                    f_resp_str = handle_derivation(contact_id, tenant_id, **function_args)
                     f_resp_dict = json.loads(f_resp_str)
+                elif function_name in AVAILABLE_FUNCTIONS:
+                    if function_name == "escalate_to_human":
+                        from supabase import create_client
+                        sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+                        sb.table("contacts").update({"bot_active": False}).eq("id", contact_id).execute()
+                        
+                        reason = function_args.get("reason", "No especificado")
+                        notif = f"🚨 *ESCALACIÓN A HUMANO*\n\nPaciente: {phone_number}\nMotivo: {reason}\n\n🤖 *Bot pausado.*"
+                        import asyncio
+                        asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                        
+                        f_resp_dict = {"status": "success", "message": "Humano notificado y bot pausado."}
+                    else:
+                        # INTERCEPCIÓN DE SEGURIDAD PARA DURACIÓN
+                        if function_name in ["get_merged_availability", "book_round_robin"]:
+                            if user_role == "cliente":
+                                logger.info(f"[Gemini Interceptor] Forcing 30min for {phone_number}")
+                                function_args["duration_minutes"] = 30
+
+                        function_to_call = AVAILABLE_FUNCTIONS[function_name]
+                        # La funcion devuelve un string JSON
+                        f_resp_str = function_to_call(**function_args)
+                        
+                        # POST-INTERCEPCIÓN NOTIFICACIONES
+                        if '"status": "success"' in f_resp_str:
+                            import asyncio
+                            if function_name == "book_round_robin":
+                                dt, tm, un = function_args.get('date_str'), function_args.get('time_str'), function_args.get('user_name')
+                                notif = f"📅 *NUEVA CITA AGENDADA*\n\n👤 Paciente: {un}\n📞 Tel: {phone_number}\n⏰ {dt} a las {tm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                            elif function_name == "delete_appointment":
+                                dt, tm = function_args.get('date_str'), function_args.get('time_str')
+                                notif = f"🗑️ *CITA CANCELADA*\n\n📞 Tel: {phone_number}\n⏰ El {dt} a las {tm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                            elif function_name == "update_appointment":
+                                old_dt, old_tm = function_args.get('date_str'), function_args.get('time_str')
+                                ndt, ntm = function_args.get('new_date', old_dt), function_args.get('new_time', old_tm)
+                                notif = f"🔄 *CITA MODIFICADA*\n\n📞 Tel: {phone_number}\nAntigua: {old_dt} {old_tm}\nNueva: {ndt} {ntm}"
+                                asyncio.create_task(send_and_log_staff_notification(tenant_id, notif))
+                        try:
+                            f_resp_dict = json.loads(f_resp_str)
+                        except json.JSONDecodeError:
+                            f_resp_dict = {"text": f_resp_str}
                     
                     # Gemini espera formato Part para herramientas
                     tool_responses.append(

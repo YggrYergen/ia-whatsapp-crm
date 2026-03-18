@@ -129,8 +129,9 @@ async def process_whatsapp_message(ws_phone_id: str, phone_number: str, content:
             logger.info(f"Bot inactive for {phone_number}. Skipping LLM.")
             return
 
-        # 5. Call LLM Strategy
-        # Fetch history (last 10 messages)
+        # --- MOTOR DE MEMORIA (CONTEXTO) ---
+        # Como el LLM es stateless, inyectamos los últimos 10 mensajes del historial de Supabase.
+        # Esto permite que la IA recuerde nombres, fechas y el hilo de la conversación.
         history_res = supabase.table("messages").select("*").eq("contact_id", contact["id"]).order("timestamp", desc=True).limit(10).execute()
         history = sorted(history_res.data, key=lambda x: x["timestamp"])
 
@@ -144,7 +145,15 @@ async def process_whatsapp_message(ws_phone_id: str, phone_number: str, content:
             api_key = OPENAI_API_KEY if tenant["llm_provider"] == "openai" else GEMINI_API_KEY
             
             strategy = LLMFactory.get_strategy(tenant["llm_provider"], tenant["llm_model"], api_key)
-            ai_response = await strategy.generate_response(tenant["system_prompt"], history, content, phone_number)
+            ai_response = await strategy.generate_response(
+                tenant["system_prompt"], 
+                history, 
+                content, 
+                phone_number, 
+                contact_id=contact["id"], 
+                tenant_id=tenant["id"],
+                user_role=contact.get("role", "cliente")
+            )
 
         # 6. Save Assistant Response
         supabase.table("messages").insert({
@@ -168,6 +177,36 @@ async def process_whatsapp_message(ws_phone_id: str, phone_number: str, content:
 
     except Exception as e:
         logger.exception(f"Error processing message: {str(e)}")
+
+# --- PUBLIC ENDPOINTS (For CasaVitaCure Website) ---
+
+@app.get("/api/public/availability")
+async def public_availability(date: str):
+    """
+    Endpoint público para el sitio web. Fuerza bloques de 30 mins.
+    """
+    from calendar_service import get_merged_availability
+    # Forzamos 30 minutos ya que el público solo agenda evaluaciones
+    res = get_merged_availability(date, duration_minutes=30)
+    return json.loads(res)
+
+@app.post("/api/public/book")
+async def public_book(payload: dict):
+    """
+    Endpoint público para agendar desde el sitio web.
+    """
+    from calendar_service import book_round_robin
+    date_str = payload.get("date")
+    time_str = payload.get("time")
+    user_name = payload.get("name")
+    phone = payload.get("phone")
+    
+    if not all([date_str, time_str, user_name, phone]):
+        raise HTTPException(status_code=400, detail="Missing fields")
+        
+    # Forzamos 30 minutos
+    res = book_round_robin(date_str, time_str, 30, user_name, phone)
+    return json.loads(res)
 
 @app.get("/health")
 def health():
