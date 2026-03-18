@@ -61,6 +61,7 @@ export default function ConfigPanel() {
                         >
                             {tenant.llm_provider === 'openai' ? (
                                 <>
+                                    <option value="o4-mini">o4-mini (Reasoning/CoT)</option>
                                     <option value="gpt-5-mini">GPT-5 Mini (Current/Reasoning)</option>
                                     <option value="gpt-4o-mini">GPT-4o Mini (Legacy)</option>
                                 </>
