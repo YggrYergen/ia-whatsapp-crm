@@ -99,7 +99,7 @@ export default function CRMDashboard() {
             await supabase.from('contacts').insert({
                 tenant_id: tenant.id,
                 phone_number: testPhone,
-                name: "Lead de Prueba (Tú)",
+                name: "Chat de Prueba (Tú)",
                 bot_active: true,
                 status: "lead"
             })
@@ -109,7 +109,7 @@ export default function CRMDashboard() {
 
     const fetchContacts = async () => {
         const { data } = await supabase.from('contacts').select('*').order('last_message_at', { ascending: false })
-        if (data) setContacts(data)
+        if (data) setContacts([...data].sort((a, b) => a.phone_number === '56912345678' ? -1 : b.phone_number === '56912345678' ? 1 : 0))
     }
 
     const fetchMessages = async (contactId: string) => {
@@ -345,33 +345,53 @@ export default function CRMDashboard() {
                                 )}
 
                                 {messages.map((m, idx) => {
-                                    const isUserMessage = m.sender_role === 'user'
+                                    const isUserMessage = m.sender_role === 'user' || m.sender_role === 'cliente'
                                     const isAI = m.sender_role === 'assistant'
-                                    const isHumanAgent = m.sender_role === 'human_agent'
+                                    const isHumanAgent = m.sender_role === 'human_agent' || m.sender_role === 'staff' || m.sender_role === 'admin'
+                                    const isSystemAlert = m.sender_role === 'system_alert'
+
+                                    // Check if this is an internal/testing chat that uses inverted POVs
+                                    const isTestingChat = selectedContact?.phone_number === '56912345678'
+                                    const isAlertChat = selectedContact?.name === 'Alertas Sistema 🚨' || selectedContact?.phone_number === '+56999999999'
 
                                     // Bubble logic
                                     let bubbleClasses = "max-w-[75%] px-4 py-2.5 rounded-2xl shadow-sm text-[15px] relative "
                                     let alignments = ""
 
-                                    // La pestaña de testeo (56912345678) invierte los roles visualmente para simular el celular del paciente
-                                    const isSimulator = selectedContact?.phone_number === '56912345678'
-
-                                    if (isUserMessage) {
-                                        // Simulator: Right. Normal CRM: Left.
-                                        alignments = isSimulator ? "justify-end" : "justify-start"
-                                        bubbleClasses += (isSimulator)
-                                            ? "bg-[#d9fdd3] text-[#111b21] rounded-tr-[4px] border border-green-100/50"
-                                            : "bg-white text-slate-800 rounded-tl-[4px] border border-slate-100"
-                                    } else if (isAI) {
-                                        // Simulator: Left. Normal CRM: Right.
-                                        alignments = isSimulator ? "justify-start" : "justify-end"
-                                        bubbleClasses += (isSimulator)
-                                            ? "bg-white text-slate-800 rounded-tl-[4px] border border-slate-100"
-                                            : "bg-[#d9fdd3] text-[#111b21] rounded-tr-[4px] border border-green-100/50"
-                                    } else if (isHumanAgent) {
-                                        // Humanos siempre a la derecha en el CRM
-                                        alignments = "justify-end"
-                                        bubbleClasses += "bg-[#cce4ff] text-[#002f6c] rounded-tr-[4px] border border-blue-100/50"
+                                    if (isTestingChat || isAlertChat) {
+                                        // INTERNAL POV: We are the "User/Receivers", so external/bot voices are on the left.
+                                        if (isUserMessage || isHumanAgent) {
+                                            alignments = "justify-end"
+                                            bubbleClasses += "bg-[#d9fdd3] text-[#111b21] rounded-tr-[4px] border border-green-100/50"
+                                        } else if (isAI || isSystemAlert) {
+                                            alignments = "justify-start"
+                                            bubbleClasses += "bg-white text-slate-800 rounded-tl-[4px] border border-slate-100"
+                                            if (isSystemAlert) {
+                                                // Stronger visual for system alerts
+                                                bubbleClasses += " border-l-4 border-l-red-500 bg-red-50 text-red-900"
+                                            }
+                                        } else {
+                                            alignments = "justify-start"
+                                            bubbleClasses += "bg-white text-slate-800 rounded-tl-[4px] border border-slate-100"
+                                        }
+                                    } else {
+                                        // NORMAL CRM POV
+                                        // What the external WhatsApp user says -> Left
+                                        // What our Assistant or Human Agent says -> Right
+                                        if (isUserMessage) {
+                                            alignments = "justify-start"
+                                            bubbleClasses += "bg-white text-slate-800 rounded-tl-[4px] border border-slate-100"
+                                        } else if (isAI || isSystemAlert || isHumanAgent) {
+                                            alignments = "justify-end"
+                                            if (isHumanAgent) {
+                                                bubbleClasses += "bg-[#cce4ff] text-[#002f6c] rounded-tr-[4px] border border-blue-100/50"
+                                            } else {
+                                                bubbleClasses += "bg-[#d9fdd3] text-[#111b21] rounded-tr-[4px] border border-green-100/50"
+                                            }
+                                        } else {
+                                            alignments = "justify-start"
+                                            bubbleClasses += "bg-slate-100 text-slate-800"
+                                        }
                                     }
 
                                     return (
@@ -379,7 +399,8 @@ export default function CRMDashboard() {
                                             <div className={`flex flex-col gap-1 max-w-[85%] md:max-w-[75%] ${alignments === 'justify-end' ? 'items-end' : 'items-start'}`}>
                                                 <div className={bubbleClasses.replace("max-w-[75%]", "") + " break-words break-all"}>
                                                     {isAI && <div className="flex items-center gap-1 mb-1 text-[11px] font-bold text-emerald-600"><Sparkles size={12} /> AI AGENT</div>}
-                                                    {isHumanAgent && <div className="flex items-center gap-1 mb-1 text-[11px] font-bold text-blue-600"><User size={12} /> TÚ</div>}
+                                                    {isSystemAlert && <div className="flex items-center gap-1 mb-1 text-[11px] font-bold text-red-600"><AlertTriangle size={12} /> ALERTA DE SISTEMA</div>}
+                                                    {isHumanAgent && <div className="flex items-center gap-1 mb-1 text-[11px] font-bold text-blue-600"><User size={12} /> TÚ (STAFF)</div>}
                                                     <div
                                                         className="leading-relaxed whitespace-pre-wrap"
                                                         dangerouslySetInnerHTML={{ __html: formatWhatsAppText(m.content) }}
@@ -388,7 +409,7 @@ export default function CRMDashboard() {
                                                         <span className="text-[10px] font-medium uppercase">
                                                             {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                         </span>
-                                                        {(isUserMessage || isHumanAgent) && <Check size={14} className="text-blue-500" />}
+                                                        {(isUserMessage || isHumanAgent || isAI || isSystemAlert) && <Check size={14} className={alignments === 'justify-end' ? 'text-blue-500' : 'text-slate-400'} />}
                                                     </div>
                                                 </div>
                                             </div>
