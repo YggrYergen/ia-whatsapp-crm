@@ -1,142 +1,283 @@
-# WhatsApp AI CRM - Multi-tenant SaaS (2026 Edition)
+# WhatsApp AI CRM - Documentación de Arquitectura y Referencia Técnica
 
-Este proyecto es un CRM B2B multi-tenant que integra WhatsApp con los modelos más potentes de IA (GPT-5.4 y Gemini 3.1).
+*Última revisión: 2026-03*
 
-## Arquitectura
-- **Backend:** FastAPI (Python 3.11+) con BackgroundTasks para respuesta < 3s.
-- **Frontend:** Next.js (App Router) con Supabase Realtime para chat en vivo.
-- **BD:** Supabase (PostgreSQL) con RLS (Row Level Security).
-
-## Configuración Local
-
-### 1. Base de Datos (Supabase)
-1. Crea un proyecto en [Supabase](https://supabase.com).
-2. Ejecuta el archivo `schema.sql` en el SQL Editor de Supabase.
-3. Habilita **Point in Time Recovery** en el panel para backups de 24h.
-
-### 2. Backend (FastAPI)
-1. `cd backend`
-2. Crea un `.env`:
-   ```env
-   SUPABASE_URL=tu_url
-   SUPABASE_SERVICE_ROLE_KEY=tu_service_key
-   OPENAI_API_KEY=tu_key
-   GEMINI_API_KEY=tu_key
-   WHATSAPP_VERIFY_TOKEN=tu_token_verificacion
-   ENVIRONMENT=development
-   ```
-3. `pip install -r requirements.txt`
-4. `uvicorn main:app --reload`
-
-### 3. Frontend (Next.js)
-1. `cd frontend`
-2. Crea un `.env.local`:
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=tu_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
-   ```
-3. `npm install`
-4. `npm run dev`
-
-## Despliegue Producción
-
-### Google Cloud Run (Backend)
-1. `gcloud builds submit --tag gcr.io/PROJECT_ID/backend .`
-2. `gcloud run deploy backend --image gcr.io/PROJECT_ID/backend --set-env-vars ENVIRONMENT=production`
-
-### Vercel (Frontend)
-1. Importa la carpeta `frontend/` en Vercel.
-2. Configura las variables de entorno de Supabase.
-
-## HITL e IA
-- El CRM permite pausar la IA por contacto (`bot_active` en la tabla `contacts`).
-- Si se pausa la IA, el agente humano puede responder manualmente desde la interfaz.
+Este documento describe exhaustivamente la arquitectura, configuración, despliegue y detalles de implementación a nivel de archivo del sistema WhatsApp AI CRM. Este proyecto es una solución B2B multi-tenant que integra la conectividad con Meta (WhatsApp Cloud API) junto a motores de inteligencia artificial de última generación (GPT-5.4, o4-mini, Gemini 3.1) bajo un enfoque Human-In-The-Loop (HITL), orquestado sobre un backend hiper ruteado en Python (FastAPI) y un frontend reactivo en Next.js.
 
 ---
 
+## 1. Visión General del Sistema
 
-# Documentación de Estado Actual v1: Asistente IA
+El ecosistema unifica comunicaciones de pacientes/clientes y la asistencia médica/comercial delegando la atención de primera línea a Modelos Fundamentales (LLMs). Está diseñado para evadir los límites de latencia estricta de Meta mediante un esquema asíncrono, persistiendo el estado en una base de datos distribuida en la nube (Supabase) que propaga instantáneamente los cambios a un panel administrativo donde agentes humanos pueden monitorear e intervenir.
 
-## 1. Visión General de la Arquitectura
+### Componentes Clave
+- **Integración Transaccional**: Recepción y despacho de mensajes de Meta en tiempo real usando APIs Graph v19.0.
+- **Orquestador Multi-LLM**: Patrón de estrategias intercambiables que evalúan prompts y herramientas complejas según el proveedor seleccionado por la cuenta (tenant).
+- **Herramientas Activas (Function Calling)**: El bot puede leer agendas bi-direccionales de Google Calendar (Round-Robin), modificar citas y ejecutar evaluaciones médicas preventivas (Triaje) para escalamiento a humanos.
+- **Ecosistema Multi-tenant**: Aislamiento arquitectónico de base de datos usando RLS (Row Level Security) logrando que diferentes clínicas/negocios compartan el despliegue de software sin violar la privacidad de datos cruzados.
 
-El ecosistema opera bajo un esquema B2B multi-tenant que unifica las comunicaciones de WhatsApp. Utiliza un backend rápido (FastAPI) encargado de recibir los webhooks de Meta, responder con un 200 OK inmediatamente (para sortear los límites de WhatsApp) y derivar el procesamiento pesado a tareas asíncronas (`BackgroundTasks`). 
+---
 
-Las integraciones asíncronas se conectan a un enrutador inteligente de Modelos Fundacionales (OpenAI GPT-5 o Gemini), que a su vez orquesta llamadas a funciones (Function Calling) en tiempo real a servicios como Google Calendar. Todos los cambios de estado y mensajes se inyectan a una base de datos PostgreSQL en Supabase, la cual propaga de inmediato las actualizaciones vía `Realtime channels` al CRM reactivo del Frontend (Next.js), permitiendo una experiencia robusta y Human-In-The-Loop.
+## 2. Diagrama de Arquitectura de Alto Nivel
 
 ```mermaid
-graph TD
-    WA[WhatsApp Meta Webhook] <-->|JSON payload| Fast[FastAPI / main.py]
-    Fast -->|Background Tasks| Router[LLM Factory Router]
-    Router <-->|Responses API| OpenAI[OpenAI gpt-5/o4-mini]
-    Router <-->|Tool Execution| Gemini[Gemini 3.1 Pro/Flash]
-    Router -->|Function Calling| Tools[Google Calendar & Triage]
-    Fast <-->|PostgreSQL (RLS)| DB[(Supabase)]
-    DB <-->|Pub/Sub Realtime| UI[Next.js CRM Frontend]
+flowchart TD
+    subgraph Meta ecosystem
+        WA[WhatsApp Webhook]
+    end
+
+    subgraph Backend FastAPI
+        Fast[main.py - API Gateway]
+        Queue[Background Tasks]
+        Router[llm_router.py - LLM Factory]
+        ServWA[whatsapp_service.py]
+        ServCal[calendar_service.py]
+        ServTri[triage_service.py]
+    end
+
+    subgraph Fundation Models
+        OpenAI[OpenAI: GPT-5 / o4-mini]
+        Gemini[Google: Gemini 3.1 Pro/Flash]
+    end
+
+    subgraph Bases de Datos & Realtime
+        DB[(Supabase PostgreSQL)]
+        RLS[Row Level Security]
+        PubSub[Realtime Channels]
+    end
+
+    subgraph Frontend Next.js
+        CRM[Panel Administrativo HITL]
+        Config[Panel de Tenant]
+    end
+
+    WA -->|"JSON payload (Sync/200 OK)"| Fast
+    Fast -->|"200 OK"| WA
+    Fast -->|"Encola mensaje"| Queue
+    Queue --> Router
+    Queue -->|"CRUD Directo"| DB
+    DB --> Queue
+    Router -->|"Responses API (Temp 1)"| OpenAI
+    OpenAI --> Router
+    Router -->|"REST"| Gemini
+    Gemini --> Router
+    Router -->|"Invocación Funciones"| ServCal
+    Router -->|"Invocación Funciones"| ServTri
+    Router -->|"Despacha SMS"| ServWA
+    ServWA -->|"Graph API V19"| WA
+    
+    DB --- RLS
+    DB -->|"Pub/Sub en vivo"| PubSub
+    PubSub --> DB
+    PubSub --- CRM
 ```
 
-## 2. Matriz de Estado de Implementación
+---
 
-| Módulo / Característica | Estado Actual | Descripción Breve | Archivos Clave |
-|---|---|---|---|
-| **Estructura Multi-Tenant** | Completado | Soporte nativo y aislamiento de BD implementado con RLS. | `schema.sql` |
-| **Gateway WhatsApp & Background** | Completado | Recepción de webhooks, verificación Meta y encolado rápido. | `Backend/main.py` |
-| **Frontend CRM en Tiempo Real** | Completado | Chat visual sincronizado por Supabase Realtime, con Human-in-the-Loop. | `Frontend/app/page.tsx` |
-| **Routing de LLMs (GPT/Gemini)** | Completado | Fábrica de estrategias que parsea tools para Gemini o uses Responses API de GPT-5. | `Backend/llm_router.py` |
-| **Herramientas de Agenda** | Completado | Lógica de negocio (CRUD) que interactúa orgánicamente con Google Calendar API. | `Backend/calendar_service.py` |
-| **Servicio de Triaje** | Completado | Motor de pausa automática y notificación a número interno en casos de emergencia. | `Backend/triage_service.py` |
-| **Panel de Configuración IA** | WIP | Interfaz para seleccionar el provider, modelo y alterar el system prompt del tenant. | `Frontend/app/config/page.tsx` |
-| **Simulador de Chats Local** | WIP | Flujo aislado para emular pacientes contra el webhook usando un tenant semilla. | `Frontend/app/api/simulate/` |
-| **Pagos Automatizados/Funnels** | No Iniciado | Gestión automática para links de reservas, remarketing y envíos de PDF automatizados. | (Backlog) |
-| **Analítica y Retención** | No Iniciado | Paneles BI de conversiones y rastreo activo a pacientes ausentes. | (Backlog) |
+## 3. Requisitos y Configuración de Entorno
 
+### Requisitos del Sistema
+- **Backend:** Python 3.11+
+- **Frontend:** Node.js 18+ (App Router compatible).
+- **Base de Datos:** Instancia activa de Supabase (PostgreSQL).
+- **Otros:** Credenciales de Service Account de Google Desktop/Server para la API Calendar.
 
-## 3. Funcionalidades Completadas y Estables
+### Variables de Entorno (Backend `.env`)
+El archivo `.env` en la raíz del Backend debe contener las siguientes variables operativas. **PRECAUCIÓN**: Las variables globales nunca deben inyectarse en los buckets de frontend público.
 
-- **Motor Central y Manejo de Conexiones (Webhook de Meta):**
-  La integración con WhatsApp fluye eficientemente, capturando metadatos correctos de teléfono y token (verificado en modo `subscribe`). La persistencia inicial está probada y asegurada sin latencia hacia Meta.
+```env
+# Conexión Base de Datos Administrativa (Bypassea RLS para escritura de fondo)
+SUPABASE_URL=https://<tu_proyecto>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<tu_service_key_reservada>
 
-- **Inteligencia Robusta y Orquestación Multi-Modelo:**
-  El `LLMFactory` provee una transición perfecta entre las infraestructuras de OpenAI y Google. Maneja historiales complejos, injectando los retornos de las herramientas al historial. Específicamente, domina la estricta y reciente _Responses API_ para los modelos de OpenAI (limitados a temperatura `1` en O4-mini y GPT-5).
+# Proveedores de IA
+OPENAI_API_KEY=sk-proj-...
+GEMINI_API_KEY=AIza...
 
-- **Ejecución Total y Real en Google Calendar:**
-  A diferencia de un asistente simulado, el bot interroga el calendario real de la cuenta de servicio y parsea solapamientos entre slots locales (`america/santiago`) e inserta de forma oficial las citas (`book_appointment`, `update_appointment`, `delete_appointment`).
+# Meta API
+WHATSAPP_VERIFY_TOKEN=<tu_cadena_secreta_de_verificacion>
 
-- **Dashboard "Human-in-the-Loop" (Intervención de Agente) y Dual-Role Visual:**
-  A través de las políticas RLS y `Realtime`, el frontend permite pausas directas `bot_active=False` con un clic. La mensajería visualiza inteligentemente la orientación de las burbujas distinguiendo si el agente está en modo de prueba "Simulador Celular" o interactuando de cara a pacientes reales como un CRM estándar.
+# Infraestructura local
+ENVIRONMENT=development # o 'production'
+MOCK_LLM=false # Útil para pruebas sin gastar cuota en API Keys
+```
 
-- **Filtro de Seguridad, Triaje y Escalación (Escalate to Human):**
-  La aplicación identifica métricas de peligro y deriva automáticamente a clínica o invoca `escalate_to_human` cuando el usuario exige hablar con una persona. Esto detiene el responder automatizado para ese contacto y lanza una traza crítica (Push) al staff interno (loggeada simultáneamente vía Supabase a la vista de "Alertas Sistema").
+---
 
-- **Seguridad en Mutaciones (Google Calendar):**
-  Se desarrollaron interceptores dentro del motor de IA para validar rigurosamente la identidad (número de teléfono) incrustada en las descripciones de Google Calendar antes de permitir una alteración de cita o cancelación originada por la IA, bloqueando vectores de ataque al calendario comercial.
+## 4. Guía de Inicio Rápido (Desarrollo local)
 
-## 4. Funcionalidades en Desarrollo (WIP)
+### Backend (Directorio `Backend/`)
+El sistema está construido sobre `uvicorn` y `fastapi`.
+1. Asegura poseer el entorno virtual instalado y haz `pip install -r requirements.txt`.
+2. Para levantar el servidor con recarga automática:
+   ```bash
+   uvicorn main:app --reload --port 8000
+   ```
+   *Nota: Por diseño, el entorno local de backend no puede recibir peticiones web directas de Meta a menos que se exponga mediante túneles (ej. Ngrok/Cloudflare Tunnels).*
 
-- **Ajustes de Interfaz de Configuración:**
-  La página de ajustes (`app/config/page.tsx`) ya levanta la jerarquía y expone al cliente opciones vitales de GPT y Gemini e instrucciones iniciales del `system_prompt`. Sin embargo, es un esqueleto prematuro (carece de manejo robusto de sesiones e inicialización multi-tenant gráfica más allá de recuperar el `.single()` quemado del schema).
-  
-- **Test de Simulación Interna:**
-  Se ha introducido la ruta para simular peticiones con el prefijo "56912345678" y permitir bypass al Meta Webhook enviando peticiones fetch a `/api/simulate`. Funciones en UI instaladas pero etiquetado experimentalmente como desarrollo.
+### Frontend (Directorio `Frontend/`)
+1. Agrega el `.env.local` con `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Ejecuta la instalación y levantamiento del server React.
+   ```bash
+   npm install && npm run dev
+   ```
 
-## 5. Backlog y Tareas Pendientes
+---
 
-- **Links de Reserva Dinámicos:** Falta inyectar conectores directos de pagos para que la Agenda requiera fondos mínimos en cuentas específicas.
-- **Automatización Documental Post y Pre-Venta:** Embudos y webhooks salientes que disparen guías y FAQs en PDF (Ej. "Requisitos para cirugía") automatizados mediante cron jobs o triggers de Supabase.
-- **Optimización Preventiva y Data Analysis:** Desarrollar vistas o procesos asíncronos en el backend que escaneen inactividad (Ej. Contactos sin mensaje desde > 90 días) para disparar promps en frío. Tracking del ROI basado en interacciones en el módulo Dashboard (Next.js).
+## 5. Arquitectura del Frontend (Referencia Breve)
 
-## 6. Deuda Técnica y Observaciones
+El Frontend, construido en **Next.js**, actúa unicamente como una ventana en vivo al estado de la base de datos de Supabase. A diferencia de las arquitecturas clásicas SPA (Single Page Applications) que sondean el backend cada x segundos (polling), este CRM no realiza tráfico contínuo de lectura hacia FastAPI.
 
-- **Información "Hardcodeada" / Variables Quemadas:**
-  - El seed principal del `schema.sql` está inicializando registros vitales de Meta con `'123456789012345'` y `'PLACEHOLDER_TOKEN'`.
-  - El simulador del frontend Next.js acopla el trigger mock a `56912345678` intencionalmente para la cuenta demo.
-  - Las derivaciones del bot en el módulo de triaje encolan las alarmas un número telefónico estrictamente amarrado a `alert_phone = "+56999999999"`.
-  - Las credenciales de Service Account en calendar son mapeos absolutos rudimentarios (`SERVICE_ACCOUNT_FILE = r'D:\WebDev\IA\backend\casavitacure-crm-1b7950d2fa11.json'`).
+- **Manejo de Estados Vivos**: Transmite inmediatamente los cambios y nuevos mensajes a traves del websocket provisto por Supabase Realtime Channels.
+- **Gestión Human-In-The-Loop**: Cuando un agente clíquea el botón "Intervenir / Pausar Bot", el Front actualiza la columna `bot_active=False` del contacto en Supabase. El Backend (FastAPI), que revisa rutinariamente esta bandera por cada nuevo webhook ingresado, cortará el ruteo hacia la IA. El humano luego redacta manualmente las respuestas enviando transacciones a FastAPI vía rutas internas a través de supabase que luego gatillan triggers/edges, o interactuando asombrosamente de forma directa como otro componente emisor que escribe al endpoint de Graph API.
 
-- **Reglas de Seguridad Web:**
-  - FastApi `main.py` incluye CORS explícitamente vulnerable para testing: `allow_origins=["*"]`. Debe cerrarse según el deployment oficial y documentarse.
+---
 
-- **Refactorización Core de LLM:**
-  - Dentro de `llm_router.py`, los for-loops y condicionales para inyectar los arrays del Responses API de OpenAI están altamente acoplados al comportamiento local actual de `o4` y `gpt-5`. Extender la firma para manejar decenas de herramientas externas podría romper fácilmente las estructuras restrictivas actuales requeridas.
+## 6. Arquitectura del Backend (FastAPI) [Núcleo Crítico]
 
-- **Inexistencia de Testing Automatizado:** 
-  Se confía fuertemente en unos cuantos scripts manuales (`check_db.py`, `debug_gpt5_tools.py`, `test_gpt5_tools.py`), pero carece total y absolutamente de test funcionales `pytest` o test de estrés integrados en una pipeline normal de validación de backend.
+El directorio `D:\WebDev\IA\Backend\` aloja el verdadero cerebro del proyecto CRM. No es tan solo un puente pasivo, sino un actor de negocio autónomo. 
+
+### Ciclo de Vida de un Mensaje (Paso a Paso)
+
+1. **Recepción Webhook (`main.py: @app.post("/webhook")`)**:
+   - Ingresa carga JSON masiva desde servidores de Meta (Facebook).
+   - Valida superficialmente la estructura (ignora eventos sin SMS o comprobantes de lectura).
+   - Deriva el `phone_number` y el `phone_id` a un hilo de procesamiento en el fondo vía `BackgroundTasks`. 
+   - **Crítico**: Retorna `HTTP 200 OK` en el acto al Webhook. Meta impone un agresivo tiempo de inamovilidad y descarta/bloquea servidores lentos.
+
+2. **Procesamiento de Fondo (`process_whatsapp_message`)**:
+   - Lee la BD para ligar el `ws_phone_id` al ecosistema (Tenant). Sin Tenant, muere.
+   - Resuelve la existencia del contacto basándose en su `phone_number`.
+   - Si `contact.bot_active` es Falso (HitL), termina. Si está Activo, sigue.
+   - Extrae el historial (últimos 10 chats) de Supabase, ordenándolos cronológicamente.
+
+3. **Invocación LLM (`llm_router.py`)**:
+   - El `LLMFactory` lee los metadatos del tenant y deriva al modelo específico.
+   - Inyecta `system_prompt` modificado con estado actual y el array de herramientas.
+   - Si la IA invoca llamar funciones (Function Calling), como revisar vacantes, se ejecuta código del Backend que retorna el resultado JSON a los historiales y relanza la invocación hacia el LLM.
+
+4. **Tránsito Final (`whatsapp_service.py`)**:
+   - IA decide emitir respuesta final (texto).
+   - FastAPI guarda la respuesta del "assistant" en tabla `messages`.
+   - Lanza petición HTTP contra `graph.facebook.com/v19.0` para entregar el WhatsApp.
+
+---
+
+## 7. Inventario Exhaustivo de Archivos del Backend
+
+Esta es la cartografía precisa de lo que hay alojado en la raíz del Backend, separando lógicamente los archivos de núcleo contra la basura o artefactos de tests empíricos.
+
+### A. Archivos del Core y Servicios (Código en Producción)
+
+1. **`main.py`**: El portón delantero y servidor central. Expone utilitarios CORS globalizados, alberga el interceptor GET de habilitación de Webhooks, el procesador principal, lógica de base de datos directa (`supabase-py`) y expone 3 endpoints públicos de APIs extra (consultas calendario abiertas).
+
+2. **`llm_router.py`**: Fábrica y Estrategias (Design Pattern).
+   - **`LLMStrategy`** (Abstract): Firma `generate_response`.
+   - **`OpenAIStrategy`** / **`GPT5MiniStrategy`**: Usan el nuevo SDK Async de OpenAI, procesan el bucle lógico para function calls. Estrictamente controlan flujos que fallan cuando temperature != 1 según designio de OpenAI o4-mini/gpt-5.
+   - **`GeminiStrategy`**: Maneja el SDK `google.generativeai` y sus configuraciones de tools.
+   - Contiene la valiosa función `send_and_log_staff_notification` usada para inyectar fallas y alertas artificiales a las interfaces.
+
+3. **`calendar_service.py`**: Intercomunicador central de negocio de reservas.
+   - **Cuentas**: Exige archivo JSON físico de cuenta de servicio GCP (`casavitacure-crm-1b7950d2fa11.json`). 
+   - **Lógica de Doble Agenda**: Soporta agendamiento "Round-Robin", combinando lecturas asíncronas de un Box 1 y Box 2 para agendar el que esté libre, bloqueando choques de citas ("Overlaps").
+   - **Herramientas**: Expone variables enormes y fuertemente tipificadas (`CALENDAR_TOOLS_OPENAI`) representando el DSL (Domain Script Language) que los parsers LLM consumen para entender qué significa y cómo solicitar cosas del calendario.
+   - *Precaución*: Borrar un turno (`delete_appointment`) y otras lógicas, auditan estrictamente si el `phone_number` del contacto de la base de datos calza con el inyectado al final de la descripción del evento crudo de Google. Si fallan las comparaciones, se desestima, logrando inmunidad ante citas erróneas.
+
+4. **`triage_service.py`**: Inteligencia clínica separada. 
+   - Invoca una interrupción suave de flujo. Si la IA percibe peligro médico, llama a `derivar_evaluacion_medica`. Este archivo desactiva `bot_active` en backend preventivamente y clona mensajes especiales hacia un contacto virtual en base de datos llamado `Alertas Sistema 🚨` (o al teléfono general de guardia `+56999999999`).
+
+5. **`whatsapp_service.py`**: Capa delgada que monta payloads nativos de Meta WhatsApp y lanza el fetch final de manera puramente asíncrona (`httpx.AsyncClient`) con tiempo de retención de 10s.
+
+6. **`logger.py`**: Reemplazo general de `print`. Setea el comportamiento de stdout colorizado/formatado.
+
+7. **`casavitacure-crm-1b7950d2fa11.json`**: Clave cruda perimetrada provista por Google Cloud para `calendar_service`. De extrema sensibilidad. Jamás ser controlada por Git (Asegurar estar en `.gitignore`).
+
+---
+
+### B. Scripts de Configuración, Mantenimiento y Setup de Base de Datos
+
+Existen rutinas diseñadas como 'Operaciones Manuales' que no forman parte de ningún subproceso activo del servidor FastAPI pero son esenciales para el desarrollador que orqueste la infraestructura en Supabase. Se deben ejecutar usando sintaxis normal `python script.py`.
+
+8. **`db_setup.py`**: Genera la inyección inicial semilla del Tenant maestro. Útil para levantar entornos de 0 local tras correr archivos `schema.sql`.
+
+9. **`enable_rt.py`**: Ejecutable crucial. Dado que Supabase limita la redifusión de tablas completas por real-time vía pub/sub al vacío o a RLS, este parche de consola activa y empuja la alteración (`alter publication supabase_realtime add table "messages"`) necesaria para conectar Frontend.
+
+10. **`fix_pub_pooler.py` / `fix_rls.py`**: Herramientas complementarias para afinar variables de concurrencia y mutar políticas PostgreSQL directas de Row Level Security evadidas o ausentes en revisiones iniciales.
+
+11. **`migrate_contacts.py` / `delete_contacts.py`**: Comandos cronometrados destructivos de limpieza en cascada ("Hard Delete"). `delete_contacts` borra tablas de historiales y mensajes vacíos. Útiles antes de despliegues.
+
+---
+
+### C. Scripts de Laboratorio (Testing Empírico, Debug y Mocking)
+
+El directorio raíz abusa actualmente de mantener archivos transitorios usados por desarrolladores para forzar eventos sin depender del webhook de Meta (o debido a falta de test automatizados como Jest/Pytest).
+
+12. **`check_db.py` / `check_contacts.py` / `check_contacts2.py` / `debug_db.py`**: Visores tontos que extraen rows rápidos mediante queries crudos a Supabase y los imprimen en formato tabular por terminal. Usado para constatar visualmente si FastAPI persistió datos.
+
+13. **`test_bot.py` / `test_gpt5.py`**: Emuladores crudos de CLI que obvian la base de datos (y la web) e inician una conversación temporal aislada contra el proveedor de OpenAI o Google usando la API key cruda.
+
+14. **`test_gpt5_tools.py`**: Validadores complejos que prueban si la función interna parsea y retorna de ida/vuelta exitosamente resultados falsos del calendario contra el modelo.
+
+15. **`debug_gpt5_tools.py` / `test_history.py`**: Trazas de análisis sobre límites de tokens y parseo de historiales masivos que revisan colisiones al montar arrays al LLM.
+
+16. **`out.txt`**: Fichero de salida chatarra para volcados densos de consola (probablemente producto de testing previo).
+
+---
+
+## 8. Consideraciones de Seguridad y Precauciones
+
+- **Evitar bucles infinitos en AI**: Actualmente, un error en `llm_router.py` en parsing iterativo puede trabarse en calls infinitas. Modificaciones en el parser de roles deben hacerse con precisión absoluta (por ej., las API de GPT requieren que cada llamado de Assistant contenga siempre respuesta `tool_calls` apareada orgánicamente de la respuesta `tool` enviada de retorno).
+- **CORS General Abierto**: En `main.py`, actualmente tenemos `allow_origins=["*"]`. Debe auditarse y cambiarse asincronamente si se lanza en Cloudflare/Vercel producciones rigurosas.
+- **Rutas públicas en Main `api/public/`**: Los endpoints de calendario web estático no tienen RLS ni firewall salvo un rate límiter natural.
+- **Acoplamiento Fuerte**: El código está atado al prefijo internacional chileno `+56` y ciertos enrutamientos manuales como el número de alerta en Triage. Deben reemplazarse a futuro por variables dinámicas asociadas al contexto del `Tenant`.
+
+---
+
+## 9. Propuesta de Refactorización Física (Deuda Técnica)
+
+> **Nota Adjudicada al Desarrollo Futuro del Proyecto**
+> La documentación arriba descrita refleja en total exactitud la disposición física local de archivos del entorno. Sin embargo, dicha horizontalidad en la cual lógica de negocio y configuraciones de una vez conviven en el mismo plano genera fricción y rompe estándares modernos (e.g., *Screaming Architecture*).
+
+Se propone al equipo de desarrollo adoptar e implementar la siguiente estructura escalable antes de continuar construyendo ramas funcionales nuevas:
+
+```text
+Backend/
+├── app/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── main.py                    # Gateway, Webhooks y Endpoints Web Reales
+│   │   ├── config.py                  # Pydantic Settings para cargar variables de entorno
+│   │   ├── logger.py                  # Formatter del ecosistema
+│   │   └── llm_router.py              # Fábricas y routers.
+│   │
+│   └── services/
+│       ├── __init__.py
+│       ├── calendar_service.py        # Dominio externo Calendar
+│       ├── triage_service.py          # Lógica interna salud y pausas
+│       └── whatsapp_service.py        # Capa REST a Meta
+│
+├── scripts/
+│   ├── setup/
+│   │   ├── db_setup.py
+│   │   ├── enable_rt.py
+│   │   ├── fix_rls.py
+│   │   └── fix_pub_pooler.py
+│   │
+│   └── maintenance/
+│       ├── check_db.py
+│       ├── (otros check_*, migrate_*, delete_*.py)
+│
+├── tests/                             # Sustituye empíricos (test_*) por pytest
+│   ├── manual/                        # Antiguos emuladores de consola
+│   └── unit/
+│
+├── credentials/
+│   └── casavitacure-crm-1b7950d2fa11.json  (O env secrets base64)
+│
+├── .env
+├── .gitignore
+├── requirements.txt
+└── README.md
+```
+
+Hacer esta migración requerirá únicamente reordenar e importar los prefijos relativos correctos de lado a lado en los archivos `main.py` y resolver las rutas relativas en la carga del `logger`. Aumentará instantáneamente la profesionalidad y aislamiento de errores operacionales manuales ("fat finger execution errors").
