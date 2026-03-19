@@ -30,6 +30,7 @@ build/
 *.log
 whatsapp_crm.log
 Backend/whatsapp_crm.log
+Backend/report.md
 
 # Local files
 check_realtime.py
