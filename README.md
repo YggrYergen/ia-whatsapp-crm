@@ -130,6 +130,9 @@ El Frontend, construido en **Next.js**, actúa unicamente como una ventana en vi
 
 - **Manejo de Estados Vivos**: Transmite inmediatamente los cambios y nuevos mensajes a traves del websocket provisto por Supabase Realtime Channels.
 - **Gestión Human-In-The-Loop**: Cuando un agente clíquea el botón "Intervenir / Pausar Bot", el Front actualiza la columna `bot_active=False` del contacto en Supabase. El Backend (FastAPI), que revisa rutinariamente esta bandera por cada nuevo webhook ingresado, cortará el ruteo hacia la IA. El humano luego redacta manualmente las respuestas enviando transacciones a FastAPI vía rutas internas a través de supabase que luego gatillan triggers/edges, o interactuando asombrosamente de forma directa como otro componente emisor que escribe al endpoint de Graph API.
+- **Renderizado Dinámico de Roles (POV)**: La UI interpreta el rol (`sender_role`) y el contacto seleccionado para orientar el chat (izquierda vs derecha):
+  - *Contactos de Clientes (Normal)*: Mensajes del usuario/paciente alineados a la izquierda. Respuestas de IA o staff humano alineadas a la derecha (estándar CRM).
+  - *Buzón de Alertas y Chat de Prueba*: En los paneles internos ("Chat de Prueba (Tú)" o "Alertas Sistema 🚨"), la cámara se *invierte* forzando a percibir al sistema/IA como externo (izquierda) y a nosotros mismos como interactuantes orgánicos (derecha).
 
 ---
 
