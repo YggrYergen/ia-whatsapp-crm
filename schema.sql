@@ -44,7 +44,7 @@ CREATE TABLE public.messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     contact_id UUID NOT NULL REFERENCES public.contacts(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE, -- Denormalized for easier RLS and querying
-    sender_role TEXT NOT NULL CHECK (sender_role IN ('user', 'assistant', 'human_agent')),
+    sender_role TEXT NOT NULL CHECK (sender_role IN ('user', 'assistant', 'human_agent', 'system_alert')),
     content TEXT NOT NULL,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

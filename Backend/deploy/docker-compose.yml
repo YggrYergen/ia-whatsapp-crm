@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+    container_name: whatsapp-crm-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../app:/app/app
+      - ../.env:/app/.env
+      - ../credentials:/app/credentials
+    environment:
+      - ENVIRONMENT=development
+    env_file:
+      - ../.env
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
