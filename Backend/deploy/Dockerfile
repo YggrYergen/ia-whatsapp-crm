@@ -2,7 +2,7 @@
 FROM python:3.11-slim as builder
 
 WORKDIR /app
-COPY pyproject.toml .
+COPY Backend/pyproject.toml ./pyproject.toml
 
 RUN pip install --no-cache-dir build poetry uv
 
@@ -10,6 +10,8 @@ RUN pip install --no-cache-dir build poetry uv
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Instalar dependencias desde el directorio Backend
+COPY Backend/ ./
 RUN pip install --no-cache-dir .
 
 # Stage 2: Production Minimal Container
@@ -24,7 +26,7 @@ USER crmuser
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY app/ ./app/
+COPY Backend/app/ ./app/
 
 ENV ENVIRONMENT="production"
 ENV PYTHONUNBUFFERED=1
