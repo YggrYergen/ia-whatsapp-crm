@@ -43,6 +43,15 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=auth_callback_missing_code`)
   } catch (err: any) {
     console.error("Auth Callback Error:", err)
-    return new Response(`Error procesando Auth Callback: ${err.message || err.toString()}`, { status: 500 })
+    const errText = `
+      <h1>Error Auth Callback</h1>
+      <pre>Message: ${err?.message || err}</pre>
+      <pre>Stack: ${err?.stack}</pre>
+      <pre>Name: ${err?.name}</pre>
+    `
+    return new Response(errText, { 
+        status: 200, 
+        headers: { 'Content-Type': 'text/html' } 
+    })
   }
 }
