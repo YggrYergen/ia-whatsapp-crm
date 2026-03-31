@@ -1,3 +1,239 @@
+# Arquitectura de Frontend
+
+Frontend/
+├── app
+│   ├── api
+│   │   └── simulate
+│   │       └── route.ts
+│   ├── config
+│   │   └── page.tsx
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── lib
+│   └── supabase.ts
+├── next-env.d.ts
+├── package.json
+├── postcss.config.js
+├── tailwind.config.js
+└── tsconfig.json
+
+---
+
+# Contenido de Archivos
+
+--- INICIO DE ARCHIVO: route.ts (Ruta: Frontend/app/api/simulate/route.ts) ---
+
+```typescript
+import { NextResponse } from 'next/server'
+
+export async function POST(req: Request) {
+    try {
+        const { phone, message, tenantId } = await req.json()
+
+        const payload = {
+            object: "whatsapp_business_account",
+            entry: [{
+                changes: [{
+                    value: {
+                        metadata: {
+                            phone_number_id: "123456789012345" // ID semilla
+                        },
+                        messages: [{
+                            from: phone,
+                            text: { body: message }
+                        }]
+                    }
+                }]
+            }]
+        }
+
+        const res = await fetch(process.env.BACKEND_URL || 'http://127.0.0.1:8000/webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+
+        if (!res.ok) {
+            throw new Error('Failed to reach backend')
+        }
+
+        return NextResponse.json({ success: true })
+    } catch (error) {
+        return NextResponse.json({ success: false, error: 'Simulation failed' }, { status: 500 })
+    }
+}
+
+```
+
+--- FIN DE ARCHIVO: route.ts ---
+
+--- INICIO DE ARCHIVO: page.tsx (Ruta: Frontend/app/config/page.tsx) ---
+
+```typescript
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase'
+import { Save, Bot } from 'lucide-react'
+
+export default function ConfigPanel() {
+    const supabase = createClient()
+    const [tenant, setTenant] = useState<any>(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        fetchTenant()
+    }, [])
+
+    const fetchTenant = async () => {
+        const { data } = await supabase.from('tenants').select('*').limit(1).single()
+        if (data) setTenant(data)
+        setLoading(false)
+    }
+
+    const handleSave = async () => {
+        if (!tenant) return
+        const { error } = await supabase.from('tenants').update({
+            llm_provider: tenant.llm_provider,
+            llm_model: tenant.llm_model,
+            system_prompt: tenant.system_prompt
+        }).eq('id', tenant.id)
+
+        if (!error) alert('Configuración guardada exitosamente')
+    }
+
+    if (loading) return <div>Cargando...</div>
+
+    return (
+        <div className="p-8 max-w-4xl mx-auto bg-white rounded-xl shadow-lg mt-10">
+            <div className="flex items-center gap-3 mb-8 border-b pb-4">
+                <Bot size={32} className="text-blue-600" />
+                <h1 className="text-2xl font-bold">Configuración del Asistente (Tenant)</h1>
+            </div>
+
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Proveedor de IA</label>
+                        <select
+                            value={tenant.llm_provider}
+                            onChange={(e) => setTenant({ ...tenant, llm_provider: e.target.value })}
+                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                            <option value="openai">OpenAI (GPT-5.4)</option>
+                            <option value="gemini">Google Gemini (3.1)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Modelo Seleccionado</label>
+                        <select
+                            value={tenant.llm_model}
+                            onChange={(e) => setTenant({ ...tenant, llm_model: e.target.value })}
+                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                            {tenant.llm_provider === 'openai' ? (
+                                <>
+                                    <option value="o4-mini">o4-mini (Reasoning/CoT)</option>
+                                    <option value="gpt-5-mini">GPT-5 Mini (Current/Reasoning)</option>
+                                    <option value="gpt-4o-mini">GPT-4o Mini (Legacy)</option>
+                                </>
+                            ) : (
+                                <>
+                                    <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Smart)</option>
+                                    <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash-Lite (Fast)</option>
+                                </>
+                            )}
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">System Prompt (Instrucciones)</label>
+                    <textarea
+                        rows={8}
+                        value={tenant.system_prompt}
+                        onChange={(e) => setTenant({ ...tenant, system_prompt: e.target.value })}
+                        className="w-full p-4 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm bg-gray-50"
+                        placeholder="Introduce las instrucciones del bot..."
+                    />
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                    <button
+                        onClick={handleSave}
+                        className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 transition"
+                    >
+                        <Save size={20} />
+                        Guardar Configuración
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+```
+
+--- FIN DE ARCHIVO: page.tsx ---
+
+--- INICIO DE ARCHIVO: globals.css (Ruta: Frontend/app/globals.css) ---
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f0f2f5;
+  --whatsapp-green: #00a884;
+  --whatsapp-panel: #ffffff;
+  --whatsapp-bubble-user: #dcf8c6;
+  --whatsapp-bubble-ai: #ffffff;
+}
+
+body {
+  background-color: var(--background);
+  color: #111b21;
+}
+
+.chat-height {
+  height: calc(100vh - 60px);
+}
+
+```
+
+--- FIN DE ARCHIVO: globals.css ---
+
+--- INICIO DE ARCHIVO: layout.tsx (Ruta: Frontend/app/layout.tsx) ---
+
+```typescript
+import './globals.css';
+
+export const metadata = {
+  title: 'AI CRM',
+  description: 'Generated by Next.js',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  )
+}
+
+```
+
+--- FIN DE ARCHIVO: layout.tsx ---
+
+--- INICIO DE ARCHIVO: page.tsx (Ruta: Frontend/app/page.tsx) ---
+
+```typescript
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
@@ -638,3 +874,157 @@ export default function CRMDashboard() {
         </div >
     )
 }
+
+```
+
+--- FIN DE ARCHIVO: page.tsx ---
+
+--- INICIO DE ARCHIVO: supabase.ts (Ruta: Frontend/lib/supabase.ts) ---
+
+```typescript
+import { createBrowserClient } from '@supabase/ssr'
+
+export const createClient = () =>
+    createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+```
+
+--- FIN DE ARCHIVO: supabase.ts ---
+
+--- INICIO DE ARCHIVO: next-env.d.ts (Ruta: Frontend/next-env.d.ts) ---
+
+```typescript
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/basic-features/typescript for more information.
+
+```
+
+--- FIN DE ARCHIVO: next-env.d.ts ---
+
+--- INICIO DE ARCHIVO: package.json (Ruta: Frontend/package.json) ---
+
+```json
+{
+  "name": "ai-whatsapp-crm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.1.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.364.0",
+    "next": "14.1.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/react": "^18.2.73",
+    "@types/react-dom": "^18.2.22",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.1.4",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.4.3"
+  }
+}
+
+```
+
+--- FIN DE ARCHIVO: package.json ---
+
+--- INICIO DE ARCHIVO: postcss.config.js (Ruta: Frontend/postcss.config.js) ---
+
+```javascript
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+
+```
+
+--- FIN DE ARCHIVO: postcss.config.js ---
+
+--- INICIO DE ARCHIVO: tailwind.config.js (Ruta: Frontend/tailwind.config.js) ---
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+
+
+```
+
+--- FIN DE ARCHIVO: tailwind.config.js ---
+
+--- INICIO DE ARCHIVO: tsconfig.json (Ruta: Frontend/tsconfig.json) ---
+
+```json
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": true,
+    "incremental": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+```
+
+--- FIN DE ARCHIVO: tsconfig.json ---
+
