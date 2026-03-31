@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { MessageCircle, Settings, User, Send, Bot, Pause, Play, Sparkles, Check, Phone, Clock, AlertTriangle, ArrowLeft, MoreVertical, Info } from 'lucide-react'
+import { MessageCircle, Settings, User, Send, Bot, Pause, Play, Sparkles, Check, Phone, Clock, AlertTriangle, ArrowLeft, MoreVertical, Info, LogOut } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 const formatWhatsAppText = (text: string) => {
     if (!text) return '';
@@ -27,6 +28,9 @@ const formatWhatsAppText = (text: string) => {
 const supabase = createClient()
 
 export default function CRMDashboard() {
+    const router = useRouter()
+    const [user, setUser] = useState<any>(null)
+    const [isLoadingAuth, setIsLoadingAuth] = useState(true)
     const [selectedContact, setSelectedContact] = useState<any>(null)
     const [contacts, setContacts] = useState<any[]>([])
     const [messages, setMessages] = useState<any[]>([])
@@ -39,10 +43,25 @@ export default function CRMDashboard() {
     const selectedContactRef = useRef<any>(null)
 
     useEffect(() => {
+        const checkUser = async () => {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session) {
+                router.push('/login')
+            } else {
+                setUser(session.user)
+                setIsLoadingAuth(false)
+            }
+        }
+        checkUser()
+    }, [router])
+
+    useEffect(() => {
         selectedContactRef.current = selectedContact
     }, [selectedContact])
 
     useEffect(() => {
+        if (!user) return; // Only fetch data if authenticated
+
         fetchContacts()
 
         // Ensure standard DB seed test contact exists
@@ -189,6 +208,22 @@ export default function CRMDashboard() {
 
     const isTestContact = selectedContact?.phone_number === "56912345678"
 
+    const handleLogout = async () => {
+        await supabase.auth.signOut()
+        router.push('/login')
+    }
+
+    if (isLoadingAuth) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-[#f4f7f6]">
+                <div className="animate-pulse flex flex-col items-center">
+                    <Bot size={48} className="text-emerald-500 mb-4" />
+                    <p className="text-slate-500 font-medium">Autenticando...</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="flex h-screen w-full bg-[#f4f7f6] overflow-hidden text-[#1e293b] font-sans antialiased relative">
             
@@ -235,11 +270,16 @@ export default function CRMDashboard() {
                         <MessageCircle size={28} className="fill-emerald-100" />
                         <h1 className="font-bold text-xl tracking-tight">Testing Javiera IA</h1>
                     </div>
-                    <Link href="/config">
-                        <button className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors">
-                            <Settings size={20} />
+                    <div className="flex gap-1">
+                        <Link href="/config">
+                            <button className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-full transition-colors" title="Configuración">
+                                <Settings size={20} />
+                            </button>
+                        </Link>
+                        <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" title="Cerrar sesión">
+                            <LogOut size={20} />
                         </button>
-                    </Link>
+                    </div>
                 </div>
 
                 {/* Sub Header & Search (Visual Only) */}
