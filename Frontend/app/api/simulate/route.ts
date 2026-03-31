@@ -23,18 +23,23 @@ export async function POST(req: Request) {
             }]
         }
 
-        const res = await fetch(process.env.BACKEND_URL || 'http://127.0.0.1:8000/webhook', {
+        const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-645489345350.europe-west1.run.app'
+        const webhookUrl = baseUrl.endsWith('/webhook') ? baseUrl : `${baseUrl}/webhook`
+
+        const res = await fetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
 
         if (!res.ok) {
-            throw new Error('Failed to reach backend')
+            const errText = await res.text();
+            throw new Error(`Failed to reach backend: HTTP ${res.status} - ${errText}`)
         }
 
         return NextResponse.json({ success: true })
-    } catch (error) {
-        return NextResponse.json({ success: false, error: 'Simulation failed' }, { status: 500 })
+    } catch (error: any) {
+        console.error("Simulation Error:", error);
+        return NextResponse.json({ success: false, error: error.message || 'Simulation failed' }, { status: 500 })
     }
 }
