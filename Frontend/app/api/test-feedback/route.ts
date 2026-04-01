@@ -4,7 +4,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     
-    const response = await fetch('http://127.0.0.1:8000/api/simulate', {
+    const response = await fetch('http://127.0.0.1:8000/api/test-feedback', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error: any) {
-    console.error('Proxy Simulation Error Trace:', error)
+    console.error('Proxy Feedback Error Trace:', error)
     return NextResponse.json({ status: 'error', message: `Fetch failed: ${error.message}` }, { status: 500 })
   }
 }

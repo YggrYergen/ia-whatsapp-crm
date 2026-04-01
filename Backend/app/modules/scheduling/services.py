@@ -7,12 +7,12 @@ class SchedulingService:
     @staticmethod
     async def check_availability(tenant: TenantContext, date_str: str, duration_minutes: int) -> dict:
         logger.info(f"Checking Google Calendar availability for {date_str}")
-        return GoogleCalendarClient.get_merged_availability(date_str, duration_minutes)
+        return await GoogleCalendarClient.get_merged_availability(tenant, date_str, duration_minutes)
 
     @staticmethod
     async def book_appointment(tenant: TenantContext, date_str: str, time_str: str, duration_minutes: int, user_name: str, patient_phone: str) -> dict:
         logger.info(f"Booking {patient_phone} at {date_str} {time_str}")
-        res = GoogleCalendarClient.book_round_robin(date_str, time_str, duration_minutes, user_name, patient_phone)
+        res = await GoogleCalendarClient.book_round_robin(tenant, date_str, time_str, duration_minutes, user_name, patient_phone)
         if res.get("status") == "success":
             payload = {
                 "tenant_id": tenant.id,
@@ -25,11 +25,11 @@ class SchedulingService:
 
     @staticmethod
     async def update_appointment(tenant: TenantContext, date_str: str, time_str: str, new_date: str, new_time: str, patient_phone: str, user_name: str) -> dict:
-        del_res = GoogleCalendarClient.delete_appointment(date_str, time_str, patient_phone)
+        del_res = await GoogleCalendarClient.delete_appointment(tenant, date_str, time_str, patient_phone)
         if del_res.get("status") == "error":
             return {"status": "error", "message": f"No se pudo reagendar. Falló cancelación previa: {del_res.get('message')}"}
         
-        book_res = GoogleCalendarClient.book_round_robin(new_date, new_time, 30, user_name, patient_phone)
+        book_res = await GoogleCalendarClient.book_round_robin(tenant, new_date, new_time, 30, user_name, patient_phone)
         if book_res.get("status") == "success":
             payload = {
                 "tenant_id": tenant.id,
@@ -44,7 +44,7 @@ class SchedulingService:
     @staticmethod
     async def cancel_appointment(tenant: TenantContext, date_str: str, time_str: str, patient_phone: str) -> dict:
         logger.info(f"Cancelling appointment for {patient_phone} at {date_str} {time_str}")
-        res = GoogleCalendarClient.delete_appointment(date_str, time_str, patient_phone)
+        res = await GoogleCalendarClient.delete_appointment(tenant, date_str, time_str, patient_phone)
         if res.get("status") == "success":
             items = res.get("items", [])
             if not items:
@@ -75,4 +75,4 @@ class SchedulingService:
     @staticmethod
     async def get_appointments(tenant: TenantContext, date_str: str, caller_phone: str, caller_role: str) -> dict:
         logger.info(f"Listing appointments for {date_str} (Role: {caller_role})")
-        return GoogleCalendarClient.list_appointments(date_str, caller_phone, caller_role)
+        return await GoogleCalendarClient.list_appointments(tenant, date_str, caller_phone, caller_role)

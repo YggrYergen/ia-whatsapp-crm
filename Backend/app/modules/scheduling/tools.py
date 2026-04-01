@@ -1,5 +1,6 @@
 from typing import Dict, Any
 import json
+import asyncio
 from app.modules.intelligence.tools.base import AITool
 from app.modules.scheduling.services import SchedulingService
 
@@ -142,8 +143,8 @@ class DeleteAppointmentTool(AITool):
         return json.dumps(res)
 
 class EscalateHumanTool(AITool):
-    name = "escalate_to_human"
-    description = "Pausa atención automática y notifica a un humano."
+    name = "request_human_escalation"
+    description = "Pausa atención automática de la IA y notifica a un humano inmediatamente para intervención manual."
     def get_schema(self, provider: str) -> Dict[str, Any]:
         return {
             "type": "function",
@@ -161,16 +162,63 @@ class EscalateHumanTool(AITool):
         }
     async def execute(self, **kwargs) -> str:
         tenant = kwargs.get("tenant_context")
-        patient_phone = kwargs.get("patient_phone", "unknown")
+        patient_phone = kwargs.get("caller_phone", "unknown")
+        reason = kwargs.get("reason", "Usuario requiere ayuda extrema humana")
         
-        # Opcional: Auto-apagar bot a nivel BD al mutear.
         if tenant:
             from app.infrastructure.database.supabase_client import SupabasePooler
             try:
                 db = SupabasePooler.get_client()
-                db.table("contacts").update({"bot_active": False}).eq("phone_number", patient_phone).execute()
-            except Exception as e:
+                # Use caller_phone to ensure we mute the correct person
+                db.table("contacts").update({"bot_active": False}).eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
+            except Exception:
                 pass
                 
-        res = await SchedulingService.request_human_escalation(tenant, patient_phone, kwargs.get("reason", "Usuario requiere ayuda extrema humana"))
+        res = await SchedulingService.request_human_escalation(tenant, patient_phone, reason)
         return json.dumps(res)
+
+class UpdatePatientScoringTool(AITool):
+    name = "update_patient_scoring"
+    description = "Actualiza el puntaje de Scoring CelluDetox (4-20) y metadatos clínicos del paciente en la base de datos."
+    def get_schema(self, provider: str) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "phone": {"type": "string", "description": "Teléfono del paciente"},
+                        "score": {"type": "integer", "description": "Puntaje calculado (4 a 20)"},
+                        "clinical_notes": {"type": "string", "description": "Resumen breve de hallazgos clínicos"}
+                    },
+                    "required": ["phone", "score"]
+                }
+            }
+        }
+    async def execute(self, **kwargs) -> str:
+        tenant = kwargs.get("tenant_context")
+        phone = kwargs.get("phone")
+        score = kwargs.get("score")
+        notes = kwargs.get("clinical_notes", "")
+        
+        if not tenant: return json.dumps({"status": "error", "message": "No tenant context"})
+        
+        from app.infrastructure.database.supabase_client import SupabasePooler
+        try:
+            db = SupabasePooler.get_client()
+            # Update metadata jsonb field
+            res = await asyncio.to_thread(
+                lambda: db.table("contacts").update({
+                    "metadata": {
+                        "celludetox_score": score,
+                        "last_assessment_notes": notes,
+                        "updated_at": "now"
+                    },
+                    "status": "lead_qualified" if score >= 8 else "lead"
+                }).eq("phone_number", phone).eq("tenant_id", tenant.id).execute()
+            )
+            return json.dumps({"status": "success", "message": f"Score {score} actualizado para {phone}"})
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})

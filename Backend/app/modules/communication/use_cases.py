@@ -1,6 +1,8 @@
 import asyncio
 from supabase import Client
 import json
+import pytz
+from datetime import datetime
 from app.core.models import TenantContext
 from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
 from app.modules.intelligence.router import LLMFactory
@@ -11,177 +13,163 @@ class ProcessMessageUseCase:
     
     @staticmethod
     async def execute(payload: dict, tenant: TenantContext, db: Client):
-        logger.info(f"Starting background orchestration for tenant: {tenant.id}")
+        logger.info(f"🚀 [ORCH] Start for Tenant={tenant.id}")
+        is_simulation = payload.get("is_simulation", False)
+        contact_id = None
         
         try:
             entry = payload["entry"][0]
             changes = entry["changes"][0]["value"]
             if "messages" not in changes:
+                logger.info("ℹ️ [ORCH] No messages in payload.")
                 return
                 
             message = changes["messages"][0]
             patient_phone = message.get("from")
-            text_body = message.get("text", {}).get("body", "")
+            text_body = message.get("text", {}).get("body", "").lower()
             
+            logger.info(f"📩 [ORCH] Message from {patient_phone}: '{text_body}'")
+
             if not tenant.is_active:
-                logger.warning("Tenant deactivated. Ignoring webhook.")
+                logger.warning("⚠️ [ORCH] Tenant deactivated. Ignoring.")
                 return
 
-            contact_res = await asyncio.to_thread(
-                lambda: db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
-            )
+            logger.info("🔍 [ORCH] Looking up contact...")
+            # Use separate function for to_thread to avoid lambda complexity
+            def get_contact():
+                return db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
             
-            # --- 1. Manage Contact & Bot Status ---
-            contact_id = None
+            contact_res = await asyncio.to_thread(get_contact)
+            
             bot_active = True
             contact_role = "cliente"
+            contact_data = None
             
             if contact_res.data:
-                bot_active = contact_res.data[0].get("bot_active", True)
-                contact_id = contact_res.data[0].get("id")
-                contact_role = contact_res.data[0].get("role", "cliente")
+                contact_data = contact_res.data[0]
+                bot_active = contact_data.get("bot_active", True)
+                contact_id = contact_data.get("id")
+                contact_role = contact_data.get("role", "cliente")
+                is_processing = contact_data.get("is_processing_llm", False)
+                logger.info(f"✅ [ORCH] Contact found: {contact_id} | BotActive={bot_active} | Processing={is_processing}")
             else:
-                # Crear contacto de forma automática si un número desconocido inicia la conversación
+                logger.info("🆕 [ORCH] Creating new contact...")
+                is_processing = False
                 try:
                     profile_name = changes.get("contacts", [{}])[0].get("profile", {}).get("name", "Lead")
-                    new_contact = await asyncio.to_thread(
-                        lambda: db.table("contacts").insert({
+                    def create_contact():
+                        return db.table("contacts").insert({
                             "tenant_id": tenant.id,
                             "phone_number": patient_phone,
                             "name": profile_name,
                             "bot_active": True
                         }).execute()
-                    )
+                    new_contact = await asyncio.to_thread(create_contact)
                     if new_contact.data:
                         contact_id = new_contact.data[0]["id"]
+                        contact_data = new_contact.data[0]
+                        logger.info(f"✅ [ORCH] New contact created: {contact_id}")
                 except Exception as e:
-                    logger.error(f"Failed creating new contact: {e}", exc_info=True)
-                
-            # --- 2. Sincronizar Mensaje Entrante para el Frontend Realtime ---
-            if contact_id:
+                    logger.error(f"❌ [ORCH] Failed creating contact: {e}")
+            
+            clinical_keywords = ["dolor", "fibrosis", "sangrado", "emergencia", "urgencia", "infectado"]
+            force_escalation = any(kw in text_body for kw in clinical_keywords)
+            if force_escalation:
+                logger.warning(f"🚨 [ORCH] Clinical keyword detected!")
+
+            if contact_id and not is_simulation:
+                logger.info("💾 [ORCH] Persisting inbound message...")
                 try:
-                    await asyncio.to_thread(
-                        lambda: db.table("messages").insert({
-                            "contact_id": contact_id,
-                            "tenant_id": tenant.id,
-                            "sender_role": "user",
-                            "content": text_body
+                    def persist_inbound():
+                        return db.table("messages").insert({
+                            "contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "user", "content": text_body
                         }).execute()
-                    )
-                    logger.info("Inbound user message synced to Database.")
-                except Exception as inbound_err:
-                    logger.error(f"Inbound DB Sync error: {inbound_err}", exc_info=True)
+                    await asyncio.to_thread(persist_inbound)
+                except Exception as e: logger.error(f"❌ [ORCH] Msg persistence err: {e}")
                 
             if not bot_active:
-                logger.info("Human in the loop mode active for contact. Bot muted.")
+                logger.info("🔇 [ORCH] Bot muted for this contact.")
                 return
-                
-            # --- 3. Memoria: Recuperar historial para contexto de la AI ---
+
+            if is_processing and not is_simulation:
+                logger.info("⏳ [ORCH] Already processing. Skipping.")
+                return
+
+            if contact_id:
+                def set_processing(val):
+                    return db.table("contacts").update({"is_processing_llm": val}).eq("id", contact_id).execute()
+                await asyncio.to_thread(set_processing, True)
+            
+            if not is_simulation: await asyncio.sleep(3)
+
+            logger.info("📚 [ORCH] Fetching history...")
             history = []
             if contact_id:
-                hist_res = await asyncio.to_thread(
-                    lambda: db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(15).execute()
-                )
+                def get_history():
+                    return db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
+                hist_res = await asyncio.to_thread(get_history)
                 if hist_res.data:
-                    # Invertir para leer cronológicamente
                     for m in reversed(hist_res.data):
                         rol = "assistant" if m["sender_role"] == "assistant" else "user"
                         history.append({"role": rol, "content": m["content"]})
             
-            import pytz
-            from datetime import datetime
             chile_tz = pytz.timezone("America/Santiago")
             current_time_str = datetime.now(chile_tz).strftime("%Y-%m-%d %H:%M")
 
-            # Si la query falló o la DB estaba vacía, inyectamos el actual por default
-            if not history or history[-1].get("content") != text_body:
-                # Inyección In-Prompt "Sesgo de Recencia" al final de la ventana de contexto
-                time_prefix = f"[(Log Interno): El usuario envió esto a las {current_time_str} hora Chile]\n"
-                history.append({"role": "user", "content": time_prefix + text_body})
+            if not history or history[-1].get("content", "").lower() != text_body:
+                history.append({"role": "user", "content": f"[(Log): {current_time_str}]\n{text_body}"})
 
+            logger.info(f"🧠 [ORCH] Calling LLM (Provider={tenant.llm_provider})...")
             llm_strategy = LLMFactory.create(tenant_context=tenant)
-            provider = tenant.llm_provider if tenant.llm_provider else "openai"
-            tools_schema = tool_registry.get_all_schemas(provider=provider.lower())
+            tools_schema = tool_registry.get_all_schemas(provider=tenant.llm_provider.lower())
             
-            system_prompt = tenant.system_prompt if tenant.system_prompt else f"You are a helpful assistant for {tenant.name}."
-            
-            # --- 3.5. Inject Current Time Context (Anti-Alucinaciones Armor) ---
-            system_prompt += f"""
+            system_prompt = f"{tenant.system_prompt}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nHora: {current_time_str}\n"
+            if force_escalation:
+                system_prompt += "\n⚠️ RIESGO: Avisa amablemente que derivas a humano y usa 'request_human_escalation'."
 
-[RELOJ INTERNO DEL SISTEMA - OBLIGATORIO]
-La fecha y hora exacta en Santiago de Chile es: {current_time_str}
-REGLA DE ORO: Ignora ABSOLUTAMENTE cualquier hora o fecha que hayas afirmado en cualquier mensaje anterior del historial. Tu "memoria" pasada ya no es confiable. Si el usuario pregunta la hora o para cualquier agendamiento, SIEMPRE BASATE ÚNICA Y ESTRICTAMENTE en este reloj maestro.
-"""
-            
-            # --- 4. First Inference Pass ---
             response_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=tools_schema)
-            
-            reply_text = ""
-            
+            logger.info(f"✅ [ORCH] LLM Reply received. ToolCalls={response_dto.has_tool_calls}")
+
+            reply_text = response_dto.content or ""
             if response_dto.has_tool_calls:
-                logger.info(f"Functional tooling triggered ({len(response_dto.tool_calls)}) actions")
-                tool_results = []
-                
-                for t_call in response_dto.tool_calls:
-                    name = t_call.get("name")
-                    args = t_call.get("arguments", "{}")
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except Exception:
-                            args = {}
-                            
-                    args["tenant_context"] = tenant
-                    args["caller_phone"] = patient_phone
-                    args["caller_role"] = contact_role
-                            
-                    logger.debug(f"Executing AI Tool: {name} con argumentos inyectados exitosamente.")
+                results = []
+                for t in response_dto.tool_calls:
+                    logger.info(f"🛠️ [ORCH] Executing tool: {t['name']}")
+                    args = json.loads(t["arguments"]) if isinstance(t["arguments"], str) else t["arguments"]
+                    args.update({"tenant_context": tenant, "patient_phone": patient_phone, "caller_phone": patient_phone, "caller_role": contact_role})
                     try:
-                        result = await tool_registry.execute_tool(name, **args)
-                        tool_results.append(f"Tool '{name}' result:\n{result}")
-                    except Exception as e:
-                        logger.exception(f"Tool Execution Vault Crash (Detailed Traceback): {e}")
-                        tool_results.append(f"Tool '{name}' failed: {str(e)}")
+                        res = await tool_registry.execute_tool(t["name"], **args)
+                        results.append(f"Tool {t['name']} result: {res}")
+                    except Exception as e: results.append(f"Tool {t['name']} failed: {e}")
                 
-                observations = "\n".join(tool_results)
-                history.append({
-                    "role": "system", 
-                    "content": f"SYSTEM TOOL EXECUTION RESULTS:\n{observations}\n\nCRITICAL INSTRUCTION: If the tool result contains an 'error', YOU MUST TELL THE USER IT FAILED and provide the exact reason. DO NOT hallucinate success if the status is 'error'."
-                })
-                
-                logger.info("Initiating LLM inference loop (Synthesis phase) injecting tool findings.")
+                history.append({"role": "user", "content": f"[Resultados]: {results}"})
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
-                reply_text = final_dto.content
-            else:
-                reply_text = response_dto.content
+                reply_text = final_dto.content or "Error final."
 
-            if not reply_text:
-                reply_text = "(Fallback) Se ha procesado tu solicitud."
+            if not reply_text: reply_text = "Lo siento, tuve un problema. ¿En qué te ayudo?"
 
-            # --- 5. Sync Outbound Message and Dispatch ---
+            logger.info(f"📤 [ORCH] Final Reply: '{reply_text[:50]}...'")
+
             if contact_id:
-                try:
-                    await asyncio.to_thread(
-                        lambda: db.table("messages").insert({
-                            "contact_id": contact_id,
-                            "tenant_id": tenant.id,
-                            "sender_role": "assistant",
-                            "content": reply_text
-                        }).execute()
-                    )
-                    logger.info("AI response synced to Supabase (Realtime Frontend Update Triggered)")
-                except Exception as db_err:
-                    logger.error(f"Failed DB Sync: {db_err}", exc_info=True)
+                def persist_assistant():
+                    return db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                await asyncio.to_thread(persist_assistant)
 
-            try:
-                await MetaGraphAPIClient.send_text_message(
-                    phone_number_id=tenant.ws_phone_id,
-                    to=patient_phone,
-                    text=reply_text,
-                    token=tenant.ws_token if tenant.ws_token else "mock_token" 
-                )
-            except Exception as meta_err:
-                logger.warning(f"Meta Sync bypassed (Local Dev Mode): {str(meta_err)}")
-                
+            if not is_simulation:
+                logger.info("📲 [ORCH] Sending via Meta API...")
+                await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+
+            if contact_id:
+                def unset_processing():
+                    return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                await asyncio.to_thread(unset_processing)
+            logger.info("✨ [ORCH] Done.")
+
         except Exception as e:
-            logger.error(f"FATAL orchestrator crash. Raw JSON snippet: {str(payload)[:250]}", exc_info=True)
+            logger.error(f"💥 [ORCH] FATAL: {e}", exc_info=True)
+            if contact_id:
+                try: 
+                    def recovery_unset():
+                        return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                    await asyncio.to_thread(recovery_unset)
+                except: pass

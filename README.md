@@ -88,8 +88,9 @@ A través de la clase base `AITool` y el `ToolRegistry`, el LLM puede invocar m�
 * **Human-In-The-Loop (HITL):** Capacidad del cliente administrador (vía Frontend) de alternar la columna booleana `bot_active` en tiempo real, bloqueando que el Backend envíe payloads al `LLMFactory`.
 * **Evaluador de Triaje Clínico:** Capa de dominio (`TriageEvaluator`) con capacidad de análisis léxico crudo sobre los síntomas ingresados para detectar *keywords* de emergencia antes o en paralelo a la lógica de la IA, publicando notificaciones asíncronas de urgencia.
 * **Bus de Eventos Asíncrono (`EventBus`):** Implementación de Pub/Sub en memoria (`asyncio.Queue`) que desvincula los casos de uso (ej. Agendamiento) de los efectos secundarios (ej. Notificar por WhatsApp al administrador), garantizando respuestas de red rápidas.
-* **Emisión de Alertas de Staff:** Creación y gestión de un contacto fantasma denominado `"Alertas Sistema 🚨"` atado al número configurado del administrador. Los mensajes despachados aquí fuerzan al Frontend a renderizar una notificación global (Toast) y centralizar el buzón de urgencias.
-* **Real-time POV Invertido:** El Frontend renderiza dinámicamente la posición visual de los mensajes (izquierda vs derecha) analizando si el chat actual corresponde a una vista administrativa (chats de prueba o alertas), forzando la percepción del agente de IA como el remitente principal.
+* **Centro de Alertas Real-Time (Tabla Dedicada):** Transición del modelo de "Chat de Sistema" a una tabla dedicada de `alerts`. Las urgencias (Triaje clínico, escalamiento humano, cancelaciones) se despachan al bus de eventos y se reflejan instantáneamente en la campana de notificaciones del dashboard del cliente, permitiendo un flujo de trabajo centralizado y salto directo al chat afectado para su resolución.
+* **Debouncing Cognitivo Eficiente (Mutex Lock):** El sistema implementa un patrón de bloqueo seguro a nivel de base de datos (`is_processing_llm`) para manejar usuarios "metralleta" (múltiples mensajes en segundos). Los webhooks subsecuentes detectan el candado, devuelven 200 OK a Meta y mueren silenciosamente sin detonar el LLM. La tarea principal consolida todo el bloque de mensajes acumulados durante la ventana antes de la inferencia, garantizando cero desperdicio de tokens y cómputo.
+* **Inyección Dinámica de Contexto:** El orquestador extrae los metadatos del CRM (`status`, `role`, `name`) de la base de datos y los inyecta en el *System Prompt* en tiempo de ejecución. Esto otorga a la IA conciencia situacional instantánea (ej. sabe si habla con un lead nuevo o un cliente recurrente) sin incurrir en complejas búsquedas vectoriales (RAG).
 
 ---
 
@@ -286,22 +287,26 @@ Esta matriz define el estado actual del proyecto de cara a su transformación en
 | :--- | :--- | :--- |
 | **Screaming Architecture** | ✅ Completado | Separación estricta de dominios (Infraestructura vs Casos de Uso). Código legible y escalable. |
 | **Resolución de Body en Webhook** | ✅ Completado | Inyección `Body(...)` en FastAPI, previniendo colapsos asíncronos y garantizando concurrencia. |
-| **Protección I/O Bloqueante** | ✅ Completado | `asyncio.to_thread` envuelve operaciones de `supabase-py` evitando la congelación del Event Loop. |
-| **Logging de Alto Rendimiento** | ✅ Completado | Logs estructurados JSON (orjson) asíncronos para producción, logs legibles con traceback en local. |
-| **Connection Pooling (Meta)** | ✅ Completado | Cliente HTTPX Singleton para Meta Graph, limitando conexiones abiertas y previniendo *socket exhaustion*. |
+| **Protección I/O Bloqueante** | ✅ Completado | `asyncio.to_thread` envuelve operaciones de base de datos evitando la congelación del Event Loop. |
+| **Logging de Alto Rendimiento** | ✅ Completado | Logs estructurados JSON asíncronos para producción, logs legibles con traceback en local. |
+| **Connection Pooling (Meta)** | ✅ Completado | Cliente efímero para BD que erradica timeouts HTTP/2 y cliente estático para Meta Graph API. |
+| **Autenticación SSO Frontend** | ✅ Completado | Supabase Auth (Google Login) integrado en Next.js. El Dashboard valida sesiones. |
+| **Rate Limiting Defensivo** | ✅ Completado | Integración de `slowapi` restringiendo el webhook frente ataques/Spam. |
+| **Seguridad de Secretos (GCP)** | ✅ Completado | Llaves de LLMs, Meta y base64 de Google Calendar aisladas en Google Secret Manager. Eliminadas del entorno estático. |
 
 ### B. Backlog Crítico (Transición a SaaS - P0 y P1)
 | Característica / Requerimiento | Prioridad | Descripción y Plan de Acción |
 | :--- | :--- | :--- |
-| **Autenticación SSO y RBAC Frontend** | 🚨 **P0** (Bloqueante) | Integrar Supabase Auth (Google Login) en Next.js. El acceso al panel de `tuasistentevirtual.cl` debe estar cerrado sin un JWT válido. |
-| **Políticas RLS Vinculantes (DB)** | 🚨 **P0** (Bloqueante) | Eliminar las políticas `Allow public...` actuales. Reescribir RLS utilizando la función `auth.uid()` acoplada a una tabla de privilegios `tenant_users`. |
-| **Caché en Memoria del TenantContext** | 🚨 **P0** (Bloqueante) | Implementar librería `cachetools` en `dependencies.py` (TTL de 5 min) para evitar consultar Supabase en cada uno de los cientos de webhooks por minuto. |
-| **Monitoreo Sintético y Deep Health** | ⚡ **P1** (Escalabilidad) | Extender endpoint `/health` para validar keys de LLMs y DB. Configurar Cronjob simulando inyección de JSON de Meta para testear transaccionalidad sin SMS real. |
-| **Rate Limiting Defensivo** | ⚡ **P1** (Escalabilidad) | Integrar middleware limitador de peticiones (ej. `slowapi`) por número telefónico. Previene consumo destructivo de cuota OpenAI/GCP ante ataques de Spam. |
-| **Meta Embedded Signup (Onboarding)**| ⚡ **P1** (Escalabilidad) | Omitir la creación manual de apps en Facebook. Permitir vinculación de números directamente desde el portal SaaS para integración automatizada de nuevos clientes. |
-| **Pruebas End-to-End (E2E)** | ⚡ **P1** (Escalabilidad) | Configurar scripts automatizados de Playwright en GitHub Actions contra las URLs de Preview de Cloudflare para testear interacciones de UI (Pausa IA, Roles). |
+| **Mocking UI Nivel Enterprise** | 🚨 **P0** (Bloqueante) | Implementar Layout estructurado (Sidebar, TopNav) con vistas simuladas para Dashboard principal, Agenda y Pacientes, aislando la interactividad real solo en 'Chats' y 'Configuración' para elevar el valor percibido del cliente. |
+| **Debouncing Mutex (Mensajes Múltiples)** | 🚨 **P0** (Bloqueante) | Implementar bandera de bloqueo (`is_processing_llm`) en Supabase. Consolidar ráfagas de mensajes del usuario en una sola llamada al LLM utilizando el patrón de Lock en `ProcessMessageUseCase` para optimizar tokens y UX. |
+| **Conciencia de Contexto (Inyección en Prompt)** | 🚨 **P0** (Bloqueante) | Extraer metadatos de la tabla `contacts` (estado, rol, nombre) e inyectarlos dinámicamente en la instrucción del sistema antes de invocar a `LLMFactory`. |
+| **Sistema de Alertas Real-time (Campana)** | ⚡ **P1** (Escalabilidad) | Finalizar reemplazo del contacto fantasma "Alertas Sistema" por la tabla `alerts`. Implementar suscripción WebSocket en el Navbar del Frontend para notificaciones accionables. |
+| **Caché en Memoria del TenantContext** | ⚡ **P1** (Escalabilidad) | Implementar librería `cachetools` en `dependencies.py` (TTL de 5 min) para evitar consultar Supabase en cada uno de los cientos de webhooks por minuto. |
 
-### C. Optimizaciones Futuras (P2)
+### C. Plataforma SuperAdmin y FinOps (Deuda Técnica - P2)
+*Actualmente pendiente de desarrollo robusto en backend para control comercial y rentabilidad.*
 | Característica / Requerimiento | Prioridad | Descripción y Plan de Acción |
 | :--- | :--- | :--- |
-| **Peticiones REST Nativas a DB** | 🔧 **P2** (Optimización) | Migrar la dependencia a nivel backend de `supabase-py` (síncrono bajo el capó) hacia llamadas REST asíncronas puras utilizando un cliente `httpx`, eliminando la necesidad de `asyncio.to_thread`. |
+| **Telemetría de Consumo LLM (FinOps)** | 💰 **P2** (Comercial) | Modificar el DTO `LLMResponse` para capturar `prompt_tokens` y `completion_tokens`. Emitir evento asíncrono para guardar en nueva tabla `tenant_billing_logs` calculando el costo en USD por petición y por cliente. |
+| **Panel de Control SuperAdmin** | 💰 **P2** (Comercial) | Vista maestra protegida por RLS estricto. Permite ver el margen de ganancia por clínica (Costo Tokens vs Suscripción Mensual) y activar un "Kill-Switch" (`is_active=False`) para clínicas morosas, cortando su webhook. |
+| **Políticas RLS Vinculantes (DB)** | 🔧 **P3** (Optimización) | Eliminar las políticas `Allow public...` actuales en la Base de Datos. Reescribir RLS utilizando la función `auth.uid()` acoplada a la tabla de privilegios `tenant_users`. |

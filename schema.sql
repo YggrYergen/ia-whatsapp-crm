@@ -34,6 +34,7 @@ CREATE TABLE public.contacts (
     bot_active BOOLEAN DEFAULT TRUE,
     role TEXT DEFAULT 'cliente' CHECK (role IN ('cliente', 'staff', 'admin')),
     status TEXT DEFAULT 'lead',
+    is_processing_llm BOOLEAN DEFAULT FALSE,
     last_message_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE(tenant_id, phone_number)
@@ -47,6 +48,17 @@ CREATE TABLE public.messages (
     sender_role TEXT NOT NULL CHECK (sender_role IN ('user', 'assistant', 'human_agent', 'system_alert')),
     content TEXT NOT NULL,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Table: alerts
+CREATE TABLE public.alerts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    contact_id UUID REFERENCES public.contacts(id) ON DELETE SET NULL,
+    type TEXT NOT NULL, -- e.g., 'human_requested', 'urgent_cancellation'
+    message TEXT NOT NULL,
+    is_resolved BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Insert Seed Tenant "CasaVitaCure"
@@ -76,6 +88,7 @@ ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.alerts ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get the current user's tenant_id(s)
 CREATE OR REPLACE FUNCTION get_user_tenant_ids() 
@@ -107,6 +120,16 @@ CREATE POLICY "Users can view own messages" ON public.messages
 
 CREATE POLICY "Users can insert own messages" ON public.messages
     FOR INSERT WITH CHECK (tenant_id IN (SELECT get_user_tenant_ids()));
+
+-- Alerts: Users can view/update alerts of their own tenant
+CREATE POLICY "Users can view own alerts" ON public.alerts
+    FOR SELECT USING (tenant_id IN (SELECT get_user_tenant_ids()));
+
+CREATE POLICY "Users can update own alerts" ON public.alerts
+    FOR UPDATE USING (tenant_id IN (SELECT get_user_tenant_ids()));
+
+-- Enable Realtime for alerts
+-- Note: In Supabase Dashboard, go to Database -> Replication -> enable for 'alerts' table.
 
 -- Note for Backend: 
 -- The backend API will use the Supabase Service Role Key which bypasses RLS.

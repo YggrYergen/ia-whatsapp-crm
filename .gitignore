@@ -32,9 +32,29 @@ whatsapp_crm.log
 Backend/whatsapp_crm.log
 Backend/report.md
 
-# Local files
-check_realtime.py
-debug_gpt5_tools.py
-check_realtime.py
-temp_*.py
-out.txt
+# Local files & Diagnostic Artifacts
+**/check_realtime.py
+**/debug_gpt5_tools.py
+**/temp_*.py
+**/report.md
+**/reporter.py
+**/seed_mock_chats.py
+**/migrate_feedback.py
+**/run_sql.py
+**/fix_db.py
+**/check_schema.py
+**/check_data.py
+**/schema_dev.sql
+**/setup_dev_env.py
+**/temp/
+**/sql/
+**/whatsapp_ai_crm.egg-info/
+**/*.log
+**/.env.new
+**/google_credentials_base64.txt
+**/.DS_Store
+**/.vercel
+**/.next
+**/node_modules
+**/venv
+**/.venv
