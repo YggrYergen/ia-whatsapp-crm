@@ -115,6 +115,10 @@ def create_app() -> FastAPI:
 
     app.include_router(webhook_router)
 
+    @app.get("/api/debug-ping")
+    async def debug_ping():
+        return {"status": "ok", "message": "Backend is alive!"}
+
     @app.post("/api/simulate")
     async def simulate_webhook(background_tasks: BackgroundTasks, payload: dict = Body(...)):
         # Simulates a WhatsApp payload to trigger the ProcessMessageUseCase
