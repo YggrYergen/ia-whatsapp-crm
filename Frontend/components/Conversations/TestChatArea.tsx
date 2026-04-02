@@ -292,7 +292,7 @@ export default function TestChatArea() {
             </div>
 
             {/* Barra Inferior Sandbox */}
-            <div className="bg-[#f0f2f5] p-5 space-y-4 shrink-0 border-t z-20">
+            <div className="bg-[#f0f2f5] p-5 pb-24 lg:pb-5 space-y-4 shrink-0 border-t z-20">
                 <form onSubmit={handleSendMessage} className="flex gap-3 items-center">
                     <div className="flex-1 bg-white rounded-xl shadow-sm border focus-within:ring-2 ring-indigo-500 transition-all overflow-hidden">
                         <input 

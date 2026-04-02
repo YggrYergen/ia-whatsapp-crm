@@ -47,11 +47,22 @@ export function CrmProvider({ children }: { children: React.ReactNode }) {
     const [dashboardRole, setDashboardRole] = useState<'admin' | 'staff'>('admin')
     const [toasts, setToasts] = useState<any[]>([])
 
-    // TODO: CRITICAL - REVERT BEFORE PROD
-    // Dev login bypass
     useEffect(() => {
-        setUser({ id: '00000000-0000-0000-0000-000000000000', email: 'tomasgemes@gmail.com' })
-        setIsLoadingAuth(false)
+        const checkUser = async () => {
+            const { data: { session } } = await supabase.auth.getSession()
+            setUser(session?.user || null)
+            setIsLoadingAuth(false)
+        }
+        
+        checkUser()
+
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            setUser(session?.user || null)
+        })
+
+        return () => {
+            authListener?.subscription?.unsubscribe()
+        }
     }, [])
 
     // Initial Fetch

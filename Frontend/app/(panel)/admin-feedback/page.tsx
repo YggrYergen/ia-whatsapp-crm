@@ -25,13 +25,15 @@ export default function AdminFeedbackPage() {
         setLoading(false)
     }
 
+    const allowedAdmins = ['tomasgemes@gmail.com', 'alejandra.tamar.rojas@gmail.com', 'instagramelectrimax@gmail.com'];
+
     useEffect(() => {
-        if (user?.email === 'tomasgemes@gmail.com') {
+        if (allowedAdmins.includes(user?.email)) {
             fetchFeedback()
         }
     }, [user])
 
-    if (user?.email !== 'tomasgemes@gmail.com') {
+    if (!allowedAdmins.includes(user?.email)) {
         return (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
                 <Badge variant="destructive" className="p-4 text-lg">ACCESO RESTRINGIDO</Badge>

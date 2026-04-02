@@ -24,7 +24,7 @@ export default function Sidebar() {
         { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
         { href: '/finops', icon: Receipt, title: 'FinOps', desktopOnly: true },
-        ...(user?.email === 'tomasgemes@gmail.com' ? [
+        ...(['tomasgemes@gmail.com', 'alejandra.tamar.rojas@gmail.com', 'instagramelectrimax@gmail.com'].includes(user?.email) ? [
             { href: '/admin-feedback', icon: Terminal, title: 'Auditoría Dev', label: 'Dev' }
         ] : [])
     ]
