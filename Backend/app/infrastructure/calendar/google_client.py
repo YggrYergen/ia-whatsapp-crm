@@ -8,7 +8,7 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 TIMEZONE = "America/Santiago"
-SERVICE_ACCOUNT_FILE = r'D:\WebDev\IA\Backend\credentials\casavitacure-crm-09dc734ad361.json'
+SERVICE_ACCOUNT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../credentials/casavitacure-crm-09dc734ad361.json")
 
 class GoogleCalendarClient:
     @staticmethod
