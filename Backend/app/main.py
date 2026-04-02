@@ -122,9 +122,9 @@ def create_app() -> FastAPI:
     @app.post("/api/simulate")
     async def simulate_webhook(background_tasks: BackgroundTasks, payload: dict = Body(...)):
         # Simulates a WhatsApp payload to trigger the ProcessMessageUseCase
-        phone = payload.get("phone", "56912345678")
-        message = payload.get("message", "Hola")
-        tenant_id = payload.get("tenantId")
+        phone = payload.get("phone") or payload.get("phone_number", "56912345678")
+        message = payload.get("message") or payload.get("message_text", "Hola")
+        tenant_id = payload.get("tenantId") or payload.get("tenant_id")
         
         logger.info(f"🚀 [SIM] Start: Phone={phone}, Message='{message}', Tenant={tenant_id}")
         
