@@ -5,8 +5,9 @@ export const runtime = 'edge';
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
     
-    const response = await fetch('http://127.0.0.1:8000/api/test-feedback', {
+    const response = await fetch(`${baseUrl}/api/test-feedback`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
