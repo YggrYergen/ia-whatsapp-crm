@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/layers/google.python.uv/uv-dependencies/.venv/lib/python3.14/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

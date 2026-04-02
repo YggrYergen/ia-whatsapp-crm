@@ -1,0 +1,60 @@
+INFO:     Finished server process [1]
+INFO:     Application shutdown complete.
+INFO:     Waiting for application shutdown.
+INFO:     Shutting down
+
+
+
+
+
+
+
+
+INFO:     169.254.169.126:39738 - "POST /api/simulate HTTP/1.1" 200 OK
+  response = await f(request)
+/layers/google.python.uv/uv-dependencies/.venv/lib/python3.14/site-packages/fastapi/routing.py:120: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+
+
+
+
+Default STARTUP TCP probe succeeded after 1 attempt for container "ia-backend-prod-1" on port 8080.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     Application startup complete.
+
+
+
+
+
+
+INFO:     Waiting for application startup.
+
+
+
+INFO:     Started server process [1]
+
+
+
+  import google.generativeai as genai
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+See README for more details:
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+/workspace/app/infrastructure/llm_providers/gemini_adapter.py:7: FutureWarning: 
+INFO:     169.254.169.126:19738 - "GET /api/calendar/events?start_iso=2026-04-01T03:00:00.000Z&end_iso=2026-05-01T03:59:59.000Z HTTP/1.1" 200 OK
+
+Starting new instance. Reason: DEPLOYMENT_ROLLOUT - Instance started due to traffic shifting between revisions due to deployment, traffic split adjustment, or deployment health check.
+
+
+
+INFO:     169.254.169.126:58394 - "POST /api/simulate HTTP/1.1" 200 OK
+
+
+INFO:     169.254.169.126:35684 - "GET /api/calendar/events?start_iso=2026-04-01T03:00:00.000Z&end_iso=2026-05-01T03:59:59.000Z HTTP/1.1" 200 OK
+  response = await f(request)
+/layers/google.python.uv/uv-dependencies/.venv/lib/python3.14/site-packages/fastapi/routing.py:120: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+
+INFO:     169.254.169.126:18684 - "GET /api/calendar/events?start_iso=2026-04-01T03:00:00.000Z&end_iso=2026-05-01T03:59:59.000Z HTTP/1.1" 500 Internal Server Error
+  return await dependant.call(**values)
+/layers/google.python.uv/uv-dependencies/.venv/lib/python3.14/site-packages/fastapi/routing.py:328: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+
+INFO:     Finished server process [1]
