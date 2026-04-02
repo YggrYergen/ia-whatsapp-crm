@@ -2,3 +2,7 @@ name = "ia-whatsapp-crm"
 pages_build_output_dir = ".vercel/output/static"
 compatibility_date = "2024-03-31"
 compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://nemrjlimrnrusodivtoa.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_VgBbGeISLGQy1GSXrS-Drg_IGBoVsyn"
