@@ -208,15 +208,19 @@ def create_app() -> FastAPI:
 
     @app.get("/api/calendar/events")
     async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = "d8376510-911e-42ef-9f3b-e018d9f10915"):
-        from app.infrastructure.database.supabase_client import SupabasePooler
-        db = SupabasePooler.get_client()
-        tenant_res = await asyncio.to_thread(lambda: db.table("tenants").select("*").eq("id", tenant_id).execute())
-        if not tenant_res.data:
-            return {"status": "error", "message": "Tenant not found"}
-        from app.core.models import TenantContext
-        tenant = TenantContext(**tenant_res.data[0])
-        from app.infrastructure.calendar.google_client import GoogleCalendarClient
-        return await GoogleCalendarClient.get_structured_events(tenant, start_iso, end_iso)
+        try:
+            from app.infrastructure.database.supabase_client import SupabasePooler
+            db = SupabasePooler.get_client()
+            tenant_res = await asyncio.to_thread(lambda: db.table("tenants").select("*").eq("id", tenant_id).execute())
+            if not tenant_res.data:
+                return {"status": "error", "message": "Tenant not found"}
+            from app.core.models import TenantContext
+            tenant = TenantContext(**tenant_res.data[0])
+            from app.infrastructure.calendar.google_client import GoogleCalendarClient
+            return await GoogleCalendarClient.get_structured_events(tenant, start_iso, end_iso)
+        except Exception as e:
+            import traceback
+            return ORJSONResponse(status_code=500, content={"status": "fatal", "message": str(e), "trace": traceback.format_exc()})
 
     @app.post("/api/calendar/book")
     async def api_book_calendar_event(payload: dict = Body(...)):
