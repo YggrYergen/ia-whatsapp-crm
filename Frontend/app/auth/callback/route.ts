@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       const cookieStore = cookies()
       const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nemrjlimrnrusodivtoa.supabase.co',
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_mzFR3EawYdrwGVOtWfYmzA_QaVdkj_H',
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_VgBbGeISLGQy1GSXrS-Drg_IGBoVsyn',
         {
           cookies: {
             get(name: string) {
