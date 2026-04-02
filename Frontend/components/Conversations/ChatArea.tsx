@@ -100,7 +100,10 @@ export default function ChatArea() {
 
     const formatWhatsAppText = (text: string) => {
         if (!text) return '';
-        const lines = text.split('\n').map((line, i) => {
+        // Convert Markdown ** to WhatsApp *
+        let processedText = text.replace(/\*\*/g, '*');
+        
+        const lines = processedText.split('\n').map((line, i) => {
             if (line.trim().startsWith('>')) {
                 return (
                     <blockquote key={i} className="border-l-4 border-slate-300 pl-3 py-1 my-2 bg-slate-50/50 italic text-slate-600 rounded-r">
@@ -111,12 +114,20 @@ export default function ChatArea() {
             if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
                  return <li key={i} className="ml-4 list-disc marker:text-emerald-500">{line.trim().substring(2).trim()}</li>
             }
-            const parts = line.split(/(\*[^*]+\*)/g);
+            
+            // Handle *, _, ~ inline
+            const parts = line.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
             return (
-                <div key={i}>
+                <div key={i} className="min-h-[1em]">
                     {parts.map((part, j) => {
                         if (part.startsWith('*') && part.endsWith('*')) {
-                            return <strong key={j} className="font-bold text-slate-800">{part.slice(1, -1)}</strong>;
+                            return <strong key={j} className="font-bold text-inherit">{part.slice(1, -1)}</strong>;
+                        }
+                        if (part.startsWith('_') && part.endsWith('_')) {
+                            return <em key={j}>{part.slice(1, -1)}</em>;
+                        }
+                        if (part.startsWith('~') && part.endsWith('~')) {
+                            return <del key={j} className="opacity-70">{part.slice(1, -1)}</del>;
                         }
                         return part;
                     })}

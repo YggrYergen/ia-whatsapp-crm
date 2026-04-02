@@ -168,7 +168,39 @@ export default function TestChatArea() {
 
     const formatWhatsAppText = (text: string) => {
         if (!text) return '';
-        return text.split('\n').map((line, i) => <div key={i}>{line}</div>);
+        let processedText = text.replace(/\*\*/g, '*');
+        
+        const lines = processedText.split('\n').map((line, i) => {
+            if (line.trim().startsWith('>')) {
+                return (
+                    <blockquote key={i} className="border-l-4 border-slate-300 pl-3 py-1 my-2 bg-slate-50/50 italic text-slate-600 rounded-r">
+                        {line.trim().substring(1).trim()}
+                    </blockquote>
+                );
+            }
+            if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+                 return <li key={i} className="ml-4 list-disc marker:text-emerald-500">{line.trim().substring(2).trim()}</li>
+            }
+            
+            const parts = line.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
+            return (
+                <div key={i} className="min-h-[1em]">
+                    {parts.map((part, j) => {
+                        if (part.startsWith('*') && part.endsWith('*')) {
+                            return <strong key={j} className="font-bold text-inherit">{part.slice(1, -1)}</strong>;
+                        }
+                        if (part.startsWith('_') && part.endsWith('_')) {
+                            return <em key={j}>{part.slice(1, -1)}</em>;
+                        }
+                        if (part.startsWith('~') && part.endsWith('~')) {
+                            return <del key={j} className="opacity-70">{part.slice(1, -1)}</del>;
+                        }
+                        return part;
+                    })}
+                </div>
+            );
+        });
+        return lines;
     };
 
     return (
