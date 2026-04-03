@@ -249,8 +249,18 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppBaseException)
     async def app_exception_handler(request: Request, exc: AppBaseException):
-        logger.error(f"Screaming Domain Core issue identified: {str(exc)}")
-        return ORJSONResponse(status_code=200, content={"message": "Suppressed Internal Base Ex", "error": str(exc)})
+        import traceback
+        err_msg = f"Screaming Domain Core issue identified: {str(exc)}"
+        full_trace = traceback.format_exc()
+        logger.error(f"{err_msg}\n{full_trace}")
+        return ORJSONResponse(status_code=500, content={"message": "Domain Logic Error", "error": str(exc), "traceback": full_trace})
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        import traceback
+        full_trace = traceback.format_exc()
+        logger.error(f"FATAL UNHANDLED EXCEPTION: {str(exc)}\n{full_trace}")
+        return ORJSONResponse(status_code=500, content={"message": "Internal Server Error", "error": str(exc), "traceback": full_trace})
 
     return app
 

@@ -99,6 +99,18 @@ export default function TestChatArea() {
         }
     }
 
+    const toggleBot = async () => {
+        const newState = !selectedContact.bot_active
+        const { error } = await supabase.from('contacts').update({ bot_active: newState }).eq('id', selectedContact.id)
+        if (!error) {
+            setSelectedContact({ ...selectedContact, bot_active: newState })
+            setContacts(contacts.map((c: any) => c.id === selectedContact.id ? { ...c, bot_active: newState } : c))
+            setToasts(prev => [...prev, { id: Date.now(), payload: { content: newState ? 'Asistente reanudado ▶️' : 'Asistente pausado ⏸️' } }])
+        } else {
+            console.error("Error toggling bot:", error)
+        }
+    }
+
     const handleSendTest = async () => {
         console.log("[Sandbox] Preparando envío de prueba al equipo de desarrollo...");
         
@@ -233,6 +245,24 @@ export default function TestChatArea() {
                 </div>
 
                 <div className="flex items-center gap-1">
+                    {/* Botón Pausa/Reanudar */}
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBot();
+                        }}
+                        className={`
+                            hide-on-mobile flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-black uppercase transition-all border
+                            ${selectedContact.bot_active
+                                ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                                : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
+                            }
+                        `}
+                    >
+                        {selectedContact.bot_active ? <Pause size={16} className="fill-current" /> : <Play size={16} className="fill-current" />}
+                        <span className="hidden sm:inline">{selectedContact.bot_active ? 'Pausar IA' : 'Activar IA'}</span>
+                    </button>
+
                     {/* Botón Config (Mobile/Desktop Toggle) */}
                     <button 
                         onClick={() => {
@@ -352,7 +382,7 @@ export default function TestChatArea() {
                     <Button variant="outline" size="sm" className="bg-white text-indigo-600 text-[10px] h-8 font-bold">
                         <Sparkles size={14} className="mr-1" /> CAMBIAR MODELO
                     </Button>
-                    <Button variant="outline" size="sm" className="bg-white text-slate-600 text-[10px] h-8 font-bold">
+                    <Button variant="outline" size="sm" className="bg-white text-slate-600 text-[10px] h-8 font-bold" onClick={() => setShowDesktopInfo(true)}>
                         <Settings size={14} className="mr-1" /> CONFIGURACIÓN
                     </Button>
                     <Button variant="outline" size="sm" className="bg-white text-slate-600 text-[10px] h-8 font-bold">
