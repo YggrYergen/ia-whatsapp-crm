@@ -123,7 +123,7 @@ class ProcessMessageUseCase:
             llm_strategy = LLMFactory.create(tenant_context=tenant)
             tools_schema = tool_registry.get_all_schemas(provider=tenant.llm_provider.lower())
             
-            system_prompt = f"{tenant.system_prompt}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nHora: {current_time_str}\n"
+            system_prompt = f"{tenant.system_prompt}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nTeléfono: {patient_phone}\nRol: {contact_role}\nHora: {current_time_str}\n"
             if force_escalation:
                 system_prompt += "\n⚠️ RIESGO: Avisa amablemente que derivas a humano y usa 'request_human_escalation'."
 
