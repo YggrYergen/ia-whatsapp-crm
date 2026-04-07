@@ -6,28 +6,40 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const next = requestUrl.searchParams.get('next') ?? '/'
+  const origin = requestUrl.origin
+
   try {
-    const { searchParams, origin } = new URL(request.url)
-    const code = searchParams.get('code')
-    
-    // if "next" is in param, use it as the redirect URL
-    const next = searchParams.get('next') ?? '/'
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nemrjlimrnrusodivtoa.supabase.co'
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_VgBbGeISLGQy1GSXrS-Drg_IGBoVsyn'
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Missing Supabase Environment Variables")
+    }
 
     if (code) {
       const cookieStore = cookies()
       const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nemrjlimrnrusodivtoa.supabase.co',
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_VgBbGeISLGQy1GSXrS-Drg_IGBoVsyn',
+        supabaseUrl,
+        supabaseAnonKey,
         {
           cookies: {
             get(name: string) {
               return cookieStore.get(name)?.value
             },
             set(name: string, value: string, options: CookieOptions) {
-              cookieStore.set({ name, value, ...options })
+              try {
+                cookieStore.set({ name, value, ...options })
+              } catch (e) {
+                console.warn("Cookie set warning (non-critical in GET):", e)
+              }
             },
             remove(name: string, options: CookieOptions) {
-              cookieStore.delete({ name, ...options })
+              try {
+                cookieStore.delete({ name, ...options })
+              } catch (e) {}
             },
           },
         }
@@ -36,23 +48,33 @@ export async function GET(request: Request) {
       if (!error) {
         return NextResponse.redirect(`${origin}${next}`)
       } else {
-        throw error;
+        console.error("Supabase exchange error:", error)
+        return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`)
       }
     }
 
-    // return the user to an error page with instructions
     return NextResponse.redirect(`${origin}/login?error=auth_callback_missing_code`)
   } catch (err: any) {
-    console.error("Auth Callback Error:", err)
-    const errText = `
-      <h1>Error Auth Callback</h1>
-      <pre>Message: ${err?.message || err}</pre>
-      <pre>Stack: ${err?.stack}</pre>
-      <pre>Name: ${err?.name}</pre>
+    console.error("Critical Auth Callback Failure:", err)
+    // Fail-safe HTML response to prevent generic 500
+    const failSafeHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>Auth Error</title></head>
+        <body style="font-family: sans-serif; padding: 2rem;">
+          <h1 style="color: #e11d48;">Error de Autenticación</h1>
+          <p>Ocurrió un error crítico durante el proceso de callback.</p>
+          <div style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;">
+            <p><strong>Error:</strong> ${err?.message || "Error desconocido"}</p>
+            <p><strong>Detalles:</strong> ${err?.name || "N/A"}</p>
+          </div>
+          <a href="/login" style="display: inline-block; margin-top: 1rem; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 0.25rem;">Volver al Login</a>
+        </body>
+      </html>
     `
-    return new Response(errText, { 
-        status: 200, 
-        headers: { 'Content-Type': 'text/html' } 
+    return new Response(failSafeHtml, { 
+        status: 200, // Return 200 to ensure Cloudflare displays the content
+        headers: { 'Content-Type': 'text/html; charset=utf-8' } 
     })
   }
 }

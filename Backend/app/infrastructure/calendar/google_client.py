@@ -24,7 +24,7 @@ class _GoogleServiceSingleton:
             from app.core.config import settings
             import json
             
-            # Priority: 1. ENV JSON string, 2. Local File
+            # Priority: 1. ENV JSON string
             if settings.GOOGLE_SERVICE_ACCOUNT_JSON:
                 try:
                     logger.info("✅ [GCal] Using Service Account from environment variable.")
@@ -33,16 +33,19 @@ class _GoogleServiceSingleton:
                         creds_dict, scopes=SCOPES
                     )
                 except Exception as e:
-                    logger.error(f"❌ [GCal] Failed to load credentials from ENV: {e}. Falling back to file.")
+                    logger.error(f"❌ [GCal] Failed to load credentials from ENV: {e}")
             
             if cls._credentials is None:
+                # Fallback to local file only if not in production or for testing
                 if os.path.exists(SERVICE_ACCOUNT_FILE):
-                    cls._credentials = service_account.Credentials.from_service_account_file(
+                     logger.info(f"📂 [GCal] Falling back to local credentials file: {SERVICE_ACCOUNT_FILE}")
+                     cls._credentials = service_account.Credentials.from_service_account_file(
                         SERVICE_ACCOUNT_FILE, scopes=SCOPES
-                    )
+                     )
                 else:
-                    logger.error("❌ [GCal] No credentials file found and no ENV variable set.")
-                    raise RuntimeError("Google Calendar credentials not configured.")
+                    msg = "❌ [GCal] CRITICAL: Google Service Account credentials missing. Please set GOOGLE_SERVICE_ACCOUNT_JSON environment variable."
+                    logger.error(msg)
+                    raise RuntimeError(msg)
 
             cls._service = build('calendar', 'v3', credentials=cls._credentials)
             logger.info("✅ [GCal] Singleton service ready.")
