@@ -23,3 +23,6 @@ class SupabasePooler:
 def get_db() -> Client:
     """Dependency injection helper for FastAPI."""
     return SupabasePooler.get_client()
+
+# Alias for legacy or mismatched imports in other modules
+get_supabase_client = get_db
