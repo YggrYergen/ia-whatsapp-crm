@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
+    
+    DISCORD_WEBHOOK_URL: str | None = None
+    RESEND_API_KEY: str | None = None
+    
+    PROACTIVE_INTERVAL: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

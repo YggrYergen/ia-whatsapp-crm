@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Save, Bot, Info, Sparkles, Zap, ChevronLeft } from 'lucide-react'
+import { Save, Bot, Info, Sparkles, Zap, ChevronLeft, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -178,6 +178,64 @@ export default function ConfigPanel() {
                                     <p className="text-xs text-amber-700 font-semibold leading-relaxed">
                                         Recuerda incluir siempre el nombre de la clínica y los horarios de atención. El prompt es la base de la confianza del paciente.
                                     </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-slate-100 shadow-2xl overflow-hidden rounded-[2rem]">
+                        <CardHeader className="bg-slate-900 text-white p-8 md:p-10 relative overflow-hidden">
+                            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg transform -rotate-3">
+                                        <Calendar size={36} className="text-white" />
+                                    </div>
+                                    <div>
+                                        <CardTitle className="text-3xl font-black tracking-tight">Google Calendar</CardTitle>
+                                        <CardDescription className="text-slate-400 font-medium text-lg mt-1">Conecta la agenda clínica (Google Workspace).</CardDescription>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        
+                        <CardContent className="p-8 md:p-10 space-y-10 bg-white">
+                            <div className="flex items-center justify-between p-6 bg-slate-50 border border-slate-200 rounded-2xl">
+                                <div>
+                                    <h4 className="text-lg font-bold text-slate-800">Estado de Conexión</h4>
+                                    {tenant.google_calendar_status === 'connected' ? (
+                                        <div className="flex flex-col mt-2">
+                                            <span className="flex items-center gap-2 text-emerald-600 font-bold"><CheckCircle2 size={16} /> Conectado</span>
+                                            <span className="text-sm text-slate-500 font-medium mt-1">Cuenta: {tenant.google_calendar_email || 'Oculta'}</span>
+                                        </div>
+                                    ) : (
+                                        <span className="flex items-center gap-2 text-rose-500 font-bold mt-2"><XCircle size={16} /> Desconectado</span>
+                                    )}
+                                </div>
+                                <div>
+                                    {tenant.google_calendar_status === 'connected' ? (
+                                        <Button 
+                                            onClick={async () => {
+                                                const res = await fetch(`/api/google/disconnect?tenant_id=${tenant.id}`, { method: 'POST' });
+                                                if (res.ok) {
+                                                    setTenant({ ...tenant, google_calendar_status: 'disconnected', google_calendar_email: null });
+                                                    alert('Google Calendar Desconectado exitosamente');
+                                                }
+                                            }}
+                                            variant="destructive"
+                                            className="font-bold px-6 py-6 rounded-xl text-md"
+                                        >
+                                            Desconectar
+                                        </Button>
+                                    ) : (
+                                        <Button 
+                                            onClick={() => {
+                                                window.location.href = `/api/google/auth?tenant_id=${tenant.id}`;
+                                            }}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-6 rounded-xl shadow-lg shadow-blue-600/20 text-md"
+                                        >
+                                            Conectar Google Calendar
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         </CardContent>
