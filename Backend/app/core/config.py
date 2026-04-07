@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     DISCORD_WEBHOOK_URL: str | None = None
     RESEND_API_KEY: str | None = None
     
+    GOOGLE_SERVICE_ACCOUNT_JSON: str | None = None
+    GOOGLE_OAUTH_CLIENT_ID: str | None = None
+    GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
+    GOOGLE_OAUTH_REDIRECT_URI: str | None = None
+    
     PROACTIVE_INTERVAL: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

@@ -41,17 +41,16 @@ SCOPES = [
 
 def _get_google_client_config():
     """Read OAuth client credentials from env or credentials file."""
-    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
-    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
-
-    if client_id and client_secret:
+    from app.core.config import settings
+    
+    if settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET:
         return {
             "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
+                "client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+                "client_secret": settings.GOOGLE_OAUTH_CLIENT_SECRET,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/google/callback")]
+                "redirect_uris": [settings.GOOGLE_OAUTH_REDIRECT_URI or "http://localhost:8000/api/google/callback"]
             }
         }
     
