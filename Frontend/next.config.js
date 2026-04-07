@@ -24,4 +24,9 @@ module.exports = withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
   disableLogger: true,
   hideSourceMaps: true,
+}, {
+  // Disable automatic instrumentation to prevent Edge runtime crashes
+  automaticVercelMonitors: false,
+  disableServerInstrumentation: true,
+  disableClientInstrumentation: true,
 });
