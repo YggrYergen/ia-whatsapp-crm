@@ -27,7 +27,7 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY Backend/app/ ./app/
-COPY Backend/credentials/ ./credentials/
+
 
 ENV ENVIRONMENT="production"
 ENV PYTHONUNBUFFERED=1

@@ -2,6 +2,8 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'edge';
+
 export async function GET(request: Request) {
   try {
     const { searchParams, origin } = new URL(request.url)
