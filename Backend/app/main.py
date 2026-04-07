@@ -1,9 +1,13 @@
+import os
 import asyncio
-# v2.6 - Fixed GCalendar Credentials Path & Proactive Worker
+
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 
 from app.core.config import settings
 from app.core.exceptions import AppBaseException
@@ -12,6 +16,7 @@ from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
 from app.core.event_bus import event_bus
 
 from app.modules.communication.routers import router as webhook_router
+from app.modules.integrations.google_oauth_router import router as google_oauth_router
 
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy
@@ -61,6 +66,12 @@ async def lifespan(app_ctx: FastAPI):
                 lambda: db.table("alerts").insert(alert_payload).execute()
             )
             logger.info("🚨 ALERTA GUARDADA EN BD. Frontend notificado vía WebSockets.")
+            
+            # 3. Notificar vía Email al negocio usando Resend (background)
+            from app.infrastructure.email.email_service import send_business_email_alert
+            html_body = f"<h2>Nueva Alerta del CRM</h2><p><strong>Razón:</strong> {reason}</p><p><strong>Paciente:</strong> {patient_phone or 'Desconocido'}</p><p>Inicia sesión en el CRM para revisar.</p>"
+            asyncio.create_task(send_business_email_alert("ALERTA CRM: Handoff Requerido / Asistencia", html_body))
+
         except Exception as e:
             logger.error(f"Fallo al insertar en tabla 'alerts'. Detalles: {e}")
         
@@ -114,10 +125,15 @@ def create_app() -> FastAPI:
     tool_registry.register(UpdatePatientScoringTool())
 
     app.include_router(webhook_router)
+    app.include_router(google_oauth_router)
 
     @app.get("/api/debug-ping")
     async def debug_ping():
         return {"status": "ok", "message": "Backend is alive!"}
+
+    @app.get("/api/debug-exception")
+    async def debug_exception():
+        raise Exception("🚨 This is a Sentry test exception from Javiera CRM!")
 
     @app.post("/api/simulate")
     async def simulate_webhook(background_tasks: BackgroundTasks, payload: dict = Body(...)):
@@ -173,8 +189,7 @@ def create_app() -> FastAPI:
             logger.info("🔄 [SIM] Executing Background Task...")
             
             # Execute in background to respond 200 OK immediately
-            background_tasks.add_task(
-                ProcessMessageUseCase.execute,
+            await ProcessMessageUseCase.execute(
                 mock_payload,
                 tenant,
                 db
@@ -249,10 +264,27 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppBaseException)
     async def app_exception_handler(request: Request, exc: AppBaseException):
+        from app.core.exceptions import TenantNotFoundError
+        if isinstance(exc, TenantNotFoundError):
+            logger.warning(f"Ignored/Error reading tenant context: {exc}")
+            return ORJSONResponse(status_code=200, content={"status": "ignored", "message": str(exc)})
+            
         import traceback
         err_msg = f"Screaming Domain Core issue identified: {str(exc)}"
         full_trace = traceback.format_exc()
         logger.error(f"{err_msg}\n{full_trace}")
+        
+
+            
+        # Send to Discord for devs
+        from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+        asyncio.create_task(send_discord_alert(
+            title="AppBaseException: Domain Logic Error",
+            description=f"Path: `{request.url.path}`",
+            error=exc,
+            severity="warning"
+        ))
+            
         return ORJSONResponse(status_code=500, content={"message": "Domain Logic Error", "error": str(exc), "traceback": full_trace})
 
     @app.exception_handler(Exception)
@@ -260,6 +292,18 @@ def create_app() -> FastAPI:
         import traceback
         full_trace = traceback.format_exc()
         logger.error(f"FATAL UNHANDLED EXCEPTION: {str(exc)}\n{full_trace}")
+        
+
+            
+        # Send to Discord for devs
+        from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+        asyncio.create_task(send_discord_alert(
+            title="FATAL: Unhandled Exception",
+            description=f"Path: `{request.url.path}` | Method: `{request.method}`",
+            error=exc,
+            severity="error"
+        ))
+            
         return ORJSONResponse(status_code=500, content={"message": "Internal Server Error", "error": str(exc), "traceback": full_trace})
 
     return app

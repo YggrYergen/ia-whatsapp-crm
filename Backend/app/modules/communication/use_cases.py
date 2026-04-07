@@ -8,6 +8,7 @@ from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.telemetry.logger_service import logger
 from app.modules.intelligence.tool_registry import tool_registry
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 
 class ProcessMessageUseCase:
     
@@ -35,7 +36,6 @@ class ProcessMessageUseCase:
                 return
 
             logger.info("🔍 [ORCH] Looking up contact...")
-            # Use separate function for to_thread to avoid lambda complexity
             def get_contact():
                 return db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
             
@@ -77,42 +77,63 @@ class ProcessMessageUseCase:
             if force_escalation:
                 logger.warning(f"🚨 [ORCH] Clinical keyword detected!")
 
+            # ============================================================
+            # STEP 1: Persist inbound message always (Bot or Human)
+            # ============================================================
             if contact_id and not is_simulation:
                 logger.info("💾 [ORCH] Persisting inbound message...")
                 try:
-                    def persist_inbound():
+                    def persist():
                         return db.table("messages").insert({
-                            "contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "user", "content": text_body
+                            "contact_id": contact_id, "tenant_id": tenant.id,
+                            "sender_role": "user", "content": text_body
                         }).execute()
-                    await asyncio.to_thread(persist_inbound)
-                except Exception as e: logger.error(f"❌ [ORCH] Msg persistence err: {e}")
-                
+                    await asyncio.to_thread(persist)
+                except Exception as e:
+                    logger.error(f"❌ [ORCH] Msg persistence err: {e}")
+
+            # ============================================================
+            # STEP 2: Logic routing (Bot Active check)
+            # ============================================================
             if not bot_active:
-                logger.info("🔇 [ORCH] Bot muted for this contact.")
+                logger.info("🔇 [ORCH] Bot muted for this contact. Skipping LLM.")
                 return
 
             if is_processing and not is_simulation:
                 logger.info("⏳ [ORCH] Already processing. Skipping.")
                 return
 
-            if contact_id:
-                def set_processing(val):
-                    return db.table("contacts").update({"is_processing_llm": val}).eq("id", contact_id).execute()
-                await asyncio.to_thread(set_processing, True)
-            
-            if not is_simulation: await asyncio.sleep(3)
+            # ============================================================
+            # PARALLEL: Set processing lock + fetch history
+            # ============================================================
+            async def _set_processing():
+                if contact_id:
+                    def set_proc():
+                        return db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
+                    await asyncio.to_thread(set_proc)
 
-            logger.info("📚 [ORCH] Fetching history...")
-            history = []
-            if contact_id:
-                def get_history():
-                    return db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
-                hist_res = await asyncio.to_thread(get_history)
-                if hist_res.data:
-                    for m in reversed(hist_res.data):
-                        rol = "assistant" if m["sender_role"] == "assistant" else "user"
-                        history.append({"role": rol, "content": m["content"]})
-            
+            async def _fetch_history():
+                history = []
+                if contact_id:
+                    logger.info("📚 [ORCH] Fetching history...")
+                    def get_hist():
+                        return db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
+                    hist_res = await asyncio.to_thread(get_hist)
+                    if hist_res.data:
+                        for m in reversed(hist_res.data):
+                            rol = "assistant" if m["sender_role"] == "assistant" else "user"
+                            history.append({"role": rol, "content": m["content"]})
+                return history
+
+            # Run concurrently
+            _, history = await asyncio.gather(
+                _set_processing(),
+                _fetch_history()
+            )
+
+            if not is_simulation:
+                await asyncio.sleep(3)
+
             chile_tz = pytz.timezone("America/Santiago")
             current_time_str = datetime.now(chile_tz).strftime("%Y-%m-%d %H:%M")
 
@@ -140,7 +161,9 @@ class ProcessMessageUseCase:
                     try:
                         res = await tool_registry.execute_tool(t["name"], **args)
                         results.append(f"Tool {t['name']} result: {res}")
-                    except Exception as e: results.append(f"Tool {t['name']} failed: {e}")
+                    except Exception as e: 
+                        results.append(f"Tool {t['name']} failed: {e}")
+                        asyncio.create_task(send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e))
                 
                 history.append({"role": "user", "content": f"[Resultados]: {results}"})
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
@@ -150,23 +173,36 @@ class ProcessMessageUseCase:
 
             logger.info(f"📤 [ORCH] Final Reply: '{reply_text[:50]}...'")
 
-            if contact_id:
-                def persist_assistant():
-                    return db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
-                await asyncio.to_thread(persist_assistant)
+            # ============================================================
+            # PARALLEL: Persist assistant reply + send via Meta API + unset processing
+            # ============================================================
+            async def _persist_reply():
+                if contact_id:
+                    def persist_assistant():
+                        return db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                    await asyncio.to_thread(persist_assistant)
 
-            if not is_simulation:
-                logger.info("📲 [ORCH] Sending via Meta API...")
-                await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+            async def _send_meta():
+                if not is_simulation:
+                    logger.info("📲 [ORCH] Sending via Meta API...")
+                    await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
 
-            if contact_id:
-                def unset_processing():
-                    return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                await asyncio.to_thread(unset_processing)
+            async def _unset_processing():
+                if contact_id:
+                    def unset():
+                        return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                    await asyncio.to_thread(unset)
+
+            await asyncio.gather(
+                _persist_reply(),
+                _send_meta(),
+                _unset_processing()
+            )
             logger.info("✨ [ORCH] Done.")
 
         except Exception as e:
             logger.error(f"💥 [ORCH] FATAL: {e}", exc_info=True)
+            asyncio.create_task(send_discord_alert(title="AI Orchestration Fatal Crash", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error"))
             if contact_id:
                 try: 
                     def recovery_unset():

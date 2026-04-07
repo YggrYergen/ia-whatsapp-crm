@@ -3,7 +3,9 @@
 import React from 'react'
 import { AlertTriangle, XCircle, ArrowRight } from 'lucide-react'
 import { useCrm } from '@/contexts/CrmContext'
+import { useUI } from '@/contexts/UIContext'
 import { createClient } from '@/lib/supabase'
+import NotificationFeed from './NotificationFeed'
 
 const supabase = createClient()
 
@@ -55,6 +57,8 @@ export default function GlobalNotifications() {
                     </button>
                 </div>
             ))}
+
+            <NotificationFeed />
         </div>
     )
 }

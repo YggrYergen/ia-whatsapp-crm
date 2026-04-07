@@ -1,14 +1,16 @@
 'use client'
 
 import React from 'react'
-import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal } from 'lucide-react'
+import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCrm } from '@/contexts/CrmContext'
+import { useUI } from '@/contexts/UIContext'
 
 export default function Sidebar() {
     const pathname = usePathname()
     const { setMobileView, user } = useCrm()
+    const { unreadCount, isNotificationFeedOpen, setIsNotificationFeedOpen } = useUI()
 
     const handleLogout = () => {
         // Mock logout
@@ -62,9 +64,36 @@ export default function Sidebar() {
                         {item.label && <span className="text-[10px] mt-1 md:hidden">{item.label}</span>}
                     </Link>
                 ))}
+                
+                {/* Mobile Notification Button */}
+                <button 
+                    onClick={() => setIsNotificationFeedOpen(true)}
+                    className={`
+                        p-2.5 md:p-3 rounded-xl flex-col items-center justify-center transition-all relative
+                        flex md:hidden
+                        ${isNotificationFeedOpen ? 'text-emerald-400 font-bold' : 'text-slate-500 hover:text-slate-300'}
+                    `} 
+                    title="Notificaciones"
+                >
+                    <Bell className="w-[20px] h-[20px] md:w-[22px] md:h-[22px]" />
+                    {unreadCount > 0 && (
+                        <span className="absolute top-2 right-2 md:top-2 md:right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 shadow-sm"></span>
+                    )}
+                    <span className="text-[10px] mt-1 md:hidden">Alertas</span>
+                </button>
             </div>
             
             <div className="hidden md:flex flex-col gap-4 w-full px-2 mt-auto">
+                <button 
+                    onClick={() => setIsNotificationFeedOpen(!isNotificationFeedOpen)}
+                    className={`w-full justify-center p-3 rounded-xl flex transition-all relative ${isNotificationFeedOpen ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-500 hover:text-emerald-400 hover:bg-slate-800/50'}`} 
+                    title="Notificaciones"
+                >
+                    <Bell size={22} />
+                    {unreadCount > 0 && (
+                        <span className="absolute top-2 right-2 w-3 h-3 bg-rose-500 rounded-full border-2 border-slate-900 shadow-sm"></span>
+                    )}
+                </button>
                 <Link href="/config">
                     <div className={`w-full justify-center p-3 rounded-xl flex transition-all ${isActive('/config') ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-500 hover:text-emerald-400 hover:bg-slate-800/50'}`} title="Configuración">
                         <Settings size={22} />

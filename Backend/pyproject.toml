@@ -17,6 +17,8 @@ dependencies = [
     "pytz>=2024.1",
     "google-api-python-client>=2.122.0",
     "google-auth-oauthlib>=1.2.0",
+    "sentry-sdk[fastapi]>=2.0.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
