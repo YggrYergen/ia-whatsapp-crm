@@ -2,3 +2,6 @@ name = "ia-whatsapp-crm"
 pages_build_output_dir = ".vercel/output/static"
 compatibility_date = "2024-03-31"
 compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NEXT_PUBLIC_SENTRY_DSN = "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"

@@ -43,9 +43,15 @@ class _GoogleServiceSingleton:
                         SERVICE_ACCOUNT_FILE, scopes=SCOPES
                      )
                 else:
-                    msg = "❌ [GCal] CRITICAL: Google Service Account credentials missing. Please set GOOGLE_SERVICE_ACCOUNT_JSON environment variable."
-                    logger.error(msg)
-                    raise RuntimeError(msg)
+                    # Final Fallback: Application Default Credentials (Native Google Cloud Run)
+                    logger.info("☁️ [GCal] No credentials file found. Falling back to GCP Application Default Credentials (ADC).")
+                    import google.auth
+                    try:
+                        cls._credentials, _ = google.auth.default(scopes=SCOPES)
+                    except Exception as adc_err:
+                        msg = f"❌ [GCal] CRITICAL: Google Service Account credentials missing and ADC failed. Error: {adc_err}"
+                        logger.error(msg)
+                        raise RuntimeError(msg)
 
             cls._service = build('calendar', 'v3', credentials=cls._credentials)
             logger.info("✅ [GCal] Singleton service ready.")
