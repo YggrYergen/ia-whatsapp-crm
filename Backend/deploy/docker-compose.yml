@@ -4,7 +4,7 @@ services:
   backend:
     build:
       context: ../
-      dockerfile: deploy/Dockerfile
+      dockerfile: Dockerfile
     container_name: whatsapp-crm-backend
     ports:
       - "8000:8000"
