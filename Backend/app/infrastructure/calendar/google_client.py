@@ -126,6 +126,8 @@ class GoogleCalendarClient:
             return await asyncio.to_thread(_sync_call)
         except Exception as e:
             logger.exception("Error checking merged availability in GCalendar API")
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "message": str(e)}
 
     @staticmethod
@@ -171,6 +173,8 @@ class GoogleCalendarClient:
             return await asyncio.to_thread(_sync_call)
         except Exception as e:
             logger.exception("Error in book_round_robin executing Google API Call")
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "message": str(e)}
 
     @staticmethod
@@ -219,6 +223,8 @@ class GoogleCalendarClient:
             return await asyncio.to_thread(_sync_call)
         except Exception as e:
             logger.exception("Error deleting appointment executing Google API Call")
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "message": str(e)}
 
     @staticmethod
@@ -258,6 +264,8 @@ class GoogleCalendarClient:
             return await asyncio.to_thread(_sync_call)
         except Exception as e:
             logger.exception("Error listing appointments in GCalendar API")
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "message": str(e)}
 
     @staticmethod
@@ -288,4 +296,6 @@ class GoogleCalendarClient:
             return await asyncio.to_thread(_sync_call)
         except Exception as e:
             logger.exception("Error getting structured events from Google API")
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "events": []}
