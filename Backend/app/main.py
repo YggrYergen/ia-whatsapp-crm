@@ -1,3 +1,15 @@
+# ================================================================================
+# ⚠️  DOCS FIRST: Antes de modificar este archivo o diagnosticar errores,
+#     consultar la documentación oficial actualizada de cada servicio:
+#     - FastAPI: https://fastapi.tiangolo.com/
+#     - Sentry Python: https://docs.sentry.io/platforms/python/integrations/fastapi/
+#     - Cloud Run: https://cloud.google.com/run/docs/
+#     - Supabase: https://supabase.com/docs
+#
+# ⚠️  LOGGING: Todo error debe ser capturado por Sentry con traceback completo.
+#     Si Sentry no captura un error, es un BUG que se resuelve antes que el error en sí.
+#     Cada excepción, timeout, API failure, y tool failure debe llegar a Sentry.
+# ================================================================================
 import os
 import asyncio
 

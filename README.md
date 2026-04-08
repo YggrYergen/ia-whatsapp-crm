@@ -2,6 +2,8 @@
 
 > **SaaS Multi-tenant B2B** para automatizar la primera línea de atención al cliente vía WhatsApp mediante LLMs con Function Calling, bajo paradigma Human-In-The-Loop (HITL).
 
+> **⚠️ REGLA #1 — DOCS FIRST:** Antes de implementar CUALQUIER cambio, fix, o integración, consultar la documentación oficial más actualizada del servicio correspondiente (Supabase, Cloudflare, Google Cloud, Sentry, Meta, etc.). No asumir comportamiento basado en experiencia previa — las APIs cambian entre versiones. Esta regla existe porque su violación ya costó horas de debugging innecesario (ver §0.1).
+
 ---
 
 ## 0. Estado Actual del Proyecto (2026-04-08 18:10 CLT)
@@ -471,6 +473,14 @@ Habilitado en tablas `contacts`, `messages` y `alerts`. El frontend suscribe tre
 
 ### Backend (Google Cloud Run)
 
+> **⚠️ DOCS FIRST — Cloud Run:** Antes de modificar CUALQUIER aspecto del deploy del backend (Dockerfile, Cloud Build, IAM, logging), consultar las docs oficiales vigentes:
+> - [Cloud Build → Cloud Run](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run)
+> - [Cloud Build IAM](https://cloud.google.com/build/docs/securing-builds/configure-access-control)
+> - [Cloud Run deploy](https://cloud.google.com/run/docs/deploying)
+> - [Cloud Logging](https://cloud.google.com/logging/docs)
+>
+> **El deploy DEBE producir logs visibles.** Si un deploy falla sin logs, el problema de logging se resuelve PRIMERO antes de intentar arreglar el deploy en sí.
+
 **Dockerfile** (multi-stage en `./Dockerfile` raíz + symlink en `Backend/deploy/Dockerfile`):
 1. **Builder:** `python:3.11-slim` → instala pip + venv en `/opt/venv` → `pip install .` desde pyproject.toml
 2. **Runner:** `python:3.11-slim` → usuario no-root `crmuser` → copia solo `/opt/venv` + `app/`
@@ -539,6 +549,8 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | **Inversion of Control** | TenantContext inyectado como parámetro, no global | `api/dependencies.py` |
 
 ---
+
+> **⚠️ DOCS FIRST — Debugging:** Antes de diagnosticar o corregir CUALQUIER problema listado abajo, consultar la documentación oficial del servicio involucrado. La solución del auth PKCE (§0.1) demostró que el problema y la solución estaban documentados en los docs oficiales de Supabase desde el principio.
 
 ## 6. Problemas Conocidos y Deuda Técnica
 

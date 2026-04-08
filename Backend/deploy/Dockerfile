@@ -1,3 +1,13 @@
+# ================================================================================
+# ⚠️  DOCS FIRST: Antes de modificar este Dockerfile o el pipeline de deploy,
+#     consultar la documentación oficial actualizada:
+#     - Cloud Build → Cloud Run: https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run
+#     - Cloud Build IAM: https://cloud.google.com/build/docs/securing-builds/configure-access-control
+#     - Dockerfile best practices: https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
+#
+# ⚠️  LOGGING: El proceso de deploy DEBE producir logs visibles en Cloud Build.
+#     Si un deploy falla sin logs, resolver el problema de logging PRIMERO.
+# ================================================================================
 # Stage 1: Dependency Resolution
 FROM python:3.11-slim as builder
 

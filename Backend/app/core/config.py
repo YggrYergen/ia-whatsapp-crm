@@ -1,3 +1,10 @@
+# ================================================================================
+# ⚠️  DOCS FIRST: Antes de modificar configuración o agregar variables de entorno,
+#     consultar la documentación oficial del servicio correspondiente.
+#     - Sentry DSN: https://docs.sentry.io/platforms/python/integrations/fastapi/
+#     - Cloud Run env vars: https://cloud.google.com/run/docs/configuring/environment-variables
+#     - Supabase keys: https://supabase.com/docs/guides/api/api-keys
+# ================================================================================
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
