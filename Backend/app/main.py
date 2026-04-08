@@ -117,11 +117,20 @@ def create_app() -> FastAPI:
         default_response_class=ORJSONResponse
     )
 
+    allowed_origins = [
+        "https://dash.tuasistentevirtual.cl",
+        "https://ia-whatsapp-crm.pages.dev",
+        os.getenv("FRONTEND_URL", ""),
+    ]
+    # Filter out empty strings
+    allowed_origins = [o for o in allowed_origins if o]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
+        allow_origins=allowed_origins,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
 
     logger.info("Strap-loading LLM Abstract Strategies")
@@ -252,8 +261,9 @@ def create_app() -> FastAPI:
             from app.infrastructure.calendar.google_client import GoogleCalendarClient
             return await GoogleCalendarClient.get_structured_events(tenant, start_iso, end_iso)
         except Exception as e:
-            import traceback
-            return ORJSONResponse(status_code=500, content={"status": "fatal", "message": str(e), "trace": traceback.format_exc()})
+            logger.error(f"Calendar events error: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)
+            return ORJSONResponse(status_code=500, content={"status": "error", "message": "Error interno al obtener eventos del calendario."})
 
     @app.post("/api/calendar/book")
     async def api_book_calendar_event(payload: dict = Body(...)):
@@ -299,7 +309,7 @@ def create_app() -> FastAPI:
             severity="warning"
         )
             
-        return ORJSONResponse(status_code=500, content={"message": "Domain Logic Error", "error": str(exc), "traceback": full_trace})
+        return ORJSONResponse(status_code=500, content={"message": "Error de lógica de dominio.", "code": "DOMAIN_ERROR"})
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
@@ -318,7 +328,7 @@ def create_app() -> FastAPI:
             severity="error"
         )
             
-        return ORJSONResponse(status_code=500, content={"message": "Internal Server Error", "error": str(exc), "traceback": full_trace})
+        return ORJSONResponse(status_code=500, content={"message": "Error interno del servidor.", "code": "INTERNAL_ERROR"})
 
     return app
 

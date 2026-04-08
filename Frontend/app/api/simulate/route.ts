@@ -5,7 +5,7 @@ export const runtime = 'edge';
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-645489345350.europe-west1.run.app'
+    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
     
     const response = await fetch(`${baseUrl}/api/simulate`, {
       method: 'POST',

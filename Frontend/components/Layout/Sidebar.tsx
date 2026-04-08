@@ -12,8 +12,10 @@ export default function Sidebar() {
     const { setMobileView, user } = useCrm()
     const { unreadCount, isNotificationFeedOpen, setIsNotificationFeedOpen } = useUI()
 
-    const handleLogout = () => {
-        // Mock logout
+    const handleLogout = async () => {
+        const { createClient } = await import('@/lib/supabase')
+        const supabase = createClient()
+        await supabase.auth.signOut()
         window.location.href = '/login'
     }
 
