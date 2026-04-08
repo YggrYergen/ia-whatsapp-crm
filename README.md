@@ -481,17 +481,21 @@ Habilitado en tablas `contacts`, `messages` y `alerts`. El frontend suscribe tre
 >
 > **El deploy DEBE producir logs visibles.** Si un deploy falla sin logs, el problema de logging se resuelve PRIMERO.
 
-#### Diagnóstico: Por qué falla el deploy (investigado 2026-04-08)
+#### Diagnóstico: 3 Root Causes del Deploy (todos resueltos 2026-04-08)
 
-**Root cause según docs oficiales:**
+**Estado: ✅ RESUELTO — Pipeline completo Build→Push→Deploy funcionando. Revision `00046-hfx` sirviendo 100% tráfico, API 200 OK.**
 
-1. **Error `iam.serviceaccounts.actAs`:** La cuenta de servicio del build NO tiene `roles/iam.serviceAccountUser`. Documentado explícitamente en [Continuous Deployment docs](https://cloud.google.com/run/docs/continuous-deployment): la service account que ejecuta el build necesita `roles/cloudbuild.builds.builder` + `roles/run.admin` + **`roles/iam.serviceAccountUser`**.
+**Root Cause 1 — Error `iam.serviceaccounts.actAs` (RESUELTO ✅):**
+La cuenta de servicio del build NO tenía `roles/iam.serviceAccountUser`. Documentado en [Continuous Deployment docs](https://cloud.google.com/run/docs/continuous-deployment): la SA necesita `roles/cloudbuild.builds.builder` + `roles/run.admin` + **`roles/iam.serviceAccountUser`**.
 
-2. **Sin logs:** El build probablemente falla durante el paso Docker antes de escribir logs. Esto puede deberse a la estructura incompatible del Dockerfile.
+**Root Cause 2 — Trigger sin paso de Deploy (RESUELTO ✅):**
+El trigger original solo hacía `docker build` — no incluía pasos de Push ni Deploy. El [Cloud Build deploy docs](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run) especifica 3 pasos: Build → Push → Deploy (usando `gcr.io/google.com/cloudsdktool/cloud-sdk` con `gcloud run services update`).
 
-3. **Estructura del Dockerfile incompatible con patrón oficial:** El [FastAPI Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy/deploy-python-fastapi-service) espera un directorio flat con `main.py` + `requirements.txt` en la raíz del directorio fuente. Nuestro Dockerfile en la raíz del repo hace `COPY Backend/...` — esto NO es el patrón estándar.
+**Root Cause 3 — Secretos no configurados en Secret Manager (RESUELTO ✅):**
+Los deploys anteriores (via `gcloud run deploy --source .` con buildpacks) tenían las credenciales baked into la imagen. Con Dockerfile propio, los secretos deben estar en **Secret Manager** y configurados con `--update-secrets`. Doc: [Configure secrets](https://cloud.google.com/run/docs/configuring/services/secrets).
 
-**Solución (respaldada por docs):** Restructurar `Backend/` para ser self-contained con su propio `Dockerfile`:
+**Estructura del Dockerfile (REESTRUCTURADO ✅):**
+El [FastAPI Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy/deploy-python-fastapi-service) espera directorio self-contained. Se movió `Dockerfile` a `Backend/Dockerfile`.
 
 ```
 ANTES (no estándar):                  DESPUÉS (patrón oficial):
@@ -505,8 +509,6 @@ Cloud Build trigger:                  Cloud Build trigger:
   Context: /                            Context: /Backend/
 ```
 
-**IAM roles requeridos (por docs):**
-```bash
 **IAM roles aplicados (2026-04-08) a `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com`:**
 
 | Role | Por qué (según docs) |
@@ -516,6 +518,7 @@ Cloud Build trigger:                  Cloud Build trigger:
 | `roles/iam.serviceAccountUser` | Actuar como la service identity del servicio Cloud Run (**causa raíz del error `iam.serviceaccounts.actAs`**) |
 | `roles/storage.admin` | Escribir imágenes a Artifact Registry |
 | `roles/developerconnect.readTokenAccessor` | Leer código del repo GitHub vía Developer Connect |
+| `roles/secretmanager.secretAccessor` | Leer secretos de Secret Manager (aplicado **por secreto**, no a nivel proyecto) |
 
 Comandos ejecutados:
 ```bash
@@ -530,6 +533,11 @@ gcloud projects add-iam-policy-binding saas-javiera \
 gcloud projects add-iam-policy-binding saas-javiera \
   --member=serviceAccount:ia-calendar-bot@saas-javiera.iam.gserviceaccount.com \
   --role=roles/iam.serviceAccountUser --condition=None
+
+# Secret Manager access (por cada secreto):
+gcloud secrets add-iam-policy-binding SECRET_NAME --project=saas-javiera \
+  --member="serviceAccount:ia-calendar-bot@saas-javiera.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 ```
 
 #### Cloud Build Trigger — Configuración Exacta (verificada)
