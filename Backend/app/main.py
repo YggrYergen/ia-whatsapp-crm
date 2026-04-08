@@ -163,9 +163,9 @@ def create_app() -> FastAPI:
         logger.info(f"🚀 [SIM] Start: Phone={phone}, Message='{message}', Tenant={tenant_id}")
         
         from app.core.config import settings
-        from supabase import create_client
+        from supabase import create_async_client
         # Use service role or anon key from settings
-        db = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        db = await create_async_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
         
         try:
             # Direct tenant lookup
