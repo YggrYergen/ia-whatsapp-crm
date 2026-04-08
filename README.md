@@ -543,13 +543,15 @@ gcloud projects add-iam-policy-binding saas-javiera \
 
 ```yaml
 # Cloud Build trigger config (exportada con gcloud beta builds triggers export)
+# Docs: https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run
 build:
   images:
   - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
   options:
     logging: CLOUD_LOGGING_ONLY
   steps:
-  - args:
+  - id: Build
+    args:
     - build
     - -t
     - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
@@ -557,9 +559,24 @@ build:
     - Backend/Dockerfile        # ← Dockerfile DENTRO de Backend/ (self-contained)
     - Backend                   # ← Build context = Backend/ (NO raíz del repo)
     name: gcr.io/cloud-builders/docker
+  - id: Push
+    args:
+    - push
+    - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
+    name: gcr.io/cloud-builders/docker
+  - id: Deploy
+    args:
+    - run
+    - services
+    - update
+    - ia-backend-prod
+    - --image=europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
+    - --region=europe-west1
+    entrypoint: gcloud
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
 ```
 
-> **⚠️ NO MODIFICAR** la configuración del trigger sin consultar [Continuous Deployment docs](https://cloud.google.com/run/docs/continuous-deployment). El `-f Backend/Dockerfile` y el contexto `Backend` son intencionales y siguen el patrón oficial.
+> **⚠️ NO MODIFICAR** la configuración del trigger sin consultar [Cloud Build deploy docs](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run). Los 3 pasos (Build → Push → Deploy) y las rutas (`-f Backend/Dockerfile`, contexto `Backend`) son intencionales y siguen el patrón oficial.
 
 #### Configuración del Servicio Cloud Run
 
@@ -568,22 +585,39 @@ build:
 2. **Runner:** `python:3.11-slim` → usuario no-root `crmuser` → copia solo `/opt/venv` + `app/`
 3. **CMD:** `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log`
 
-Variables de entorno requeridas (inyectadas via GCP Secret Manager):
+**Secrets (via Secret Manager — [docs](https://cloud.google.com/run/docs/configuring/services/secrets)):**
+
+Los secretos se configuran con `--update-secrets` (NO como plain env vars). La service account
+(`ia-calendar-bot@`) necesita `roles/secretmanager.secretAccessor` en cada secreto.
+
+| Env Var | Secret Manager Name | Requerido |
+|:---|:---|:---|
+| `WHATSAPP_VERIFY_TOKEN` | `WHATSAPP_VERIFY_TOKEN` | ✅ |
+| `OPENAI_API_KEY` | `OPENAI_API_KEY` | ✅ |
+| `GEMINI_API_KEY` | `GEMINI_API_KEY` | ✅ |
+| `SUPABASE_URL` | `SUPABASE_URL` | ✅ |
+| `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SERVICE_ROLE_KEY` | ✅ |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | `GOOGLE_CALENDAR_CREDENTIALS` | Opcional |
+
+Para configurar/actualizar secretos en el servicio:
+```bash
+gcloud run services update ia-backend-prod \
+  --project=saas-javiera --region=europe-west1 \
+  --update-secrets="WHATSAPP_VERIFY_TOKEN=WHATSAPP_VERIFY_TOKEN:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,GOOGLE_SERVICE_ACCOUNT_JSON=GOOGLE_CALENDAR_CREDENTIALS:latest"
 ```
-ENVIRONMENT=production
-WHATSAPP_VERIFY_TOKEN=<token>
-OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=AIza...
-SUPABASE_URL=https://<id>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=ey...
-GOOGLE_SERVICE_ACCOUNT_JSON=<json>     # Credenciales de Google Calendar
-DISCORD_WEBHOOK_URL=<url>              # Opcional
-RESEND_API_KEY=<key>                   # Opcional
-SENTRY_DSN=<dsn>
-GOOGLE_OAUTH_CLIENT_ID=<id>           # Opcional, para OAuth Calendar
-GOOGLE_OAUTH_CLIENT_SECRET=<secret>    # Opcional
-GOOGLE_OAUTH_REDIRECT_URI=<uri>        # Opcional
+
+**Env vars adicionales (plain, no secretos):**
 ```
+ENVIRONMENT=production                  # Set en Dockerfile
+RESEND_API_KEY=<key>                    # Plain env var en Cloud Run UI
+SENTRY_DSN=<dsn>                        # Plain env var (TODO: migrar a Secret Manager)
+DISCORD_WEBHOOK_URL=<url>               # Opcional
+GOOGLE_OAUTH_CLIENT_ID=<id>             # Opcional
+GOOGLE_OAUTH_CLIENT_SECRET=<secret>     # Opcional
+GOOGLE_OAUTH_REDIRECT_URI=<uri>         # Opcional
+```
+
+> **⚠️ IMPORTANTE:** Los secretos se resuelven al momento de startup (no de build). Si se agrega un secreto nuevo, se debe: (1) crearlo en Secret Manager, (2) dar acceso a `ia-calendar-bot@` con `roles/secretmanager.secretAccessor`, (3) ejecutar `--update-secrets` en el servicio.
 
 ### Frontend (Cloudflare Pages)
 
