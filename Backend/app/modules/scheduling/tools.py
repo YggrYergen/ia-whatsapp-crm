@@ -168,9 +168,9 @@ class EscalateHumanTool(AITool):
         if tenant:
             from app.infrastructure.database.supabase_client import SupabasePooler
             try:
-                db = SupabasePooler.get_client()
+                db = await SupabasePooler.get_client()
                 # Use caller_phone to ensure we mute the correct person
-                db.table("contacts").update({"bot_active": False}).eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
+                await db.table("contacts").update({"bot_active": False}).eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
             except Exception:
                 pass
                 
@@ -207,18 +207,16 @@ class UpdatePatientScoringTool(AITool):
         
         from app.infrastructure.database.supabase_client import SupabasePooler
         try:
-            db = SupabasePooler.get_client()
+            db = await SupabasePooler.get_client()
             # Update metadata jsonb field
-            res = await asyncio.to_thread(
-                lambda: db.table("contacts").update({
-                    "metadata": {
-                        "celludetox_score": score,
-                        "last_assessment_notes": notes,
-                        "updated_at": "now"
-                    },
-                    "status": "lead_qualified" if score >= 8 else "lead"
-                }).eq("phone_number", phone).eq("tenant_id", tenant.id).execute()
-            )
+            res = await db.table("contacts").update({
+                "metadata": {
+                    "celludetox_score": score,
+                    "last_assessment_notes": notes,
+                    "updated_at": "now"
+                },
+                "status": "lead_qualified" if score >= 8 else "lead"
+            }).eq("phone_number", phone).eq("tenant_id", tenant.id).execute()
             return json.dumps({"status": "success", "message": f"Score {score} actualizado para {phone}"})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)})

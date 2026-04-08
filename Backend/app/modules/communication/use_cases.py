@@ -1,5 +1,5 @@
 import asyncio
-from supabase import Client
+from supabase import AsyncClient
 import json
 import pytz
 from datetime import datetime
@@ -9,11 +9,12 @@ from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.telemetry.logger_service import logger
 from app.modules.intelligence.tool_registry import tool_registry
 from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+import sentry_sdk
 
 class ProcessMessageUseCase:
     
     @staticmethod
-    async def execute(payload: dict, tenant: TenantContext, db: Client):
+    async def execute(payload: dict, tenant: TenantContext, db: AsyncClient):
         logger.info(f"🚀 [ORCH] Start for Tenant={tenant.id}")
         is_simulation = payload.get("is_simulation", False)
         contact_id = None
@@ -36,10 +37,7 @@ class ProcessMessageUseCase:
                 return
 
             logger.info("🔍 [ORCH] Looking up contact...")
-            def get_contact():
-                return db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
-            
-            contact_res = await asyncio.to_thread(get_contact)
+            contact_res = await db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
             
             bot_active = True
             contact_role = "cliente"
@@ -57,14 +55,12 @@ class ProcessMessageUseCase:
                 is_processing = False
                 try:
                     profile_name = changes.get("contacts", [{}])[0].get("profile", {}).get("name", "Lead")
-                    def create_contact():
-                        return db.table("contacts").insert({
-                            "tenant_id": tenant.id,
-                            "phone_number": patient_phone,
-                            "name": profile_name,
-                            "bot_active": True
-                        }).execute()
-                    new_contact = await asyncio.to_thread(create_contact)
+                    new_contact = await db.table("contacts").insert({
+                        "tenant_id": tenant.id,
+                        "phone_number": patient_phone,
+                        "name": profile_name,
+                        "bot_active": True
+                    }).execute()
                     if new_contact.data:
                         contact_id = new_contact.data[0]["id"]
                         contact_data = new_contact.data[0]
@@ -83,12 +79,10 @@ class ProcessMessageUseCase:
             if contact_id and not is_simulation:
                 logger.info("💾 [ORCH] Persisting inbound message...")
                 try:
-                    def persist():
-                        return db.table("messages").insert({
-                            "contact_id": contact_id, "tenant_id": tenant.id,
-                            "sender_role": "user", "content": text_body
-                        }).execute()
-                    await asyncio.to_thread(persist)
+                    await db.table("messages").insert({
+                        "contact_id": contact_id, "tenant_id": tenant.id,
+                        "sender_role": "user", "content": text_body
+                    }).execute()
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Msg persistence err: {e}")
 
@@ -108,17 +102,13 @@ class ProcessMessageUseCase:
             # ============================================================
             async def _set_processing():
                 if contact_id:
-                    def set_proc():
-                        return db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
-                    await asyncio.to_thread(set_proc)
+                    await db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
 
             async def _fetch_history():
                 history = []
                 if contact_id:
                     logger.info("📚 [ORCH] Fetching history...")
-                    def get_hist():
-                        return db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
-                    hist_res = await asyncio.to_thread(get_hist)
+                    hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
                     if hist_res.data:
                         for m in reversed(hist_res.data):
                             rol = "assistant" if m["sender_role"] == "assistant" else "user"
@@ -163,7 +153,7 @@ class ProcessMessageUseCase:
                         results.append(f"Tool {t['name']} result: {res}")
                     except Exception as e: 
                         results.append(f"Tool {t['name']} failed: {e}")
-                        asyncio.create_task(send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e))
+                        await send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e)
                 
                 history.append({"role": "user", "content": f"[Resultados]: {results}"})
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
@@ -178,9 +168,7 @@ class ProcessMessageUseCase:
             # ============================================================
             async def _persist_reply():
                 if contact_id:
-                    def persist_assistant():
-                        return db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
-                    await asyncio.to_thread(persist_assistant)
+                    await db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
 
             async def _send_meta():
                 if not is_simulation:
@@ -189,9 +177,7 @@ class ProcessMessageUseCase:
 
             async def _unset_processing():
                 if contact_id:
-                    def unset():
-                        return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                    await asyncio.to_thread(unset)
+                    await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
 
             await asyncio.gather(
                 _persist_reply(),
@@ -202,10 +188,9 @@ class ProcessMessageUseCase:
 
         except Exception as e:
             logger.error(f"💥 [ORCH] FATAL: {e}", exc_info=True)
-            asyncio.create_task(send_discord_alert(title="AI Orchestration Fatal Crash", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error"))
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(title="AI Orchestration Fatal Crash", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error")
             if contact_id:
                 try: 
-                    def recovery_unset():
-                        return db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                    await asyncio.to_thread(recovery_unset)
+                    await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
                 except: pass

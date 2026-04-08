@@ -122,8 +122,8 @@ async def google_callback(code: str, state: str):
 
     # Encrypt and store
     encrypted_refresh = encrypt_token(credentials.refresh_token)
-    db = SupabasePooler.get_client()
-    db.table("tenants").update({
+    db = await SupabasePooler.get_client()
+    await db.table("tenants").update({
         "google_refresh_token_encrypted": encrypted_refresh,
         "google_calendar_email": email,
         "google_calendar_connected_at": "now()",
@@ -140,8 +140,8 @@ async def google_callback(code: str, state: str):
 @router.post("/disconnect")
 async def google_disconnect(tenant_id: str):
     """Revoke Google Calendar connection for a tenant."""
-    db = SupabasePooler.get_client()
-    db.table("tenants").update({
+    db = await SupabasePooler.get_client()
+    await db.table("tenants").update({
         "google_refresh_token_encrypted": None,
         "google_calendar_email": None,
         "google_calendar_connected_at": None,

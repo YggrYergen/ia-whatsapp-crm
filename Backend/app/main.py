@@ -14,6 +14,7 @@ from app.core.exceptions import AppBaseException
 from app.infrastructure.telemetry.logger_service import logger
 from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
 from app.core.event_bus import event_bus
+import sentry_sdk
 
 from app.modules.communication.routers import router as webhook_router
 from app.modules.integrations.google_oauth_router import router as google_oauth_router
@@ -39,7 +40,7 @@ async def lifespan(app_ctx: FastAPI):
         
     async def on_system_alert(data: dict):
         logger.warning(f"🚨 SYSTEM ALERT TRIGGERED -> {data.get('reason')}")
-        db = SupabasePooler.get_client()
+        db = await SupabasePooler.get_client()
         tenant_id = data.get("tenant_id")
         reason = data.get("reason", "Solicita asistencia")
         patient_phone = data.get("patient_phone")
@@ -47,9 +48,7 @@ async def lifespan(app_ctx: FastAPI):
         # 1. Buscar el ID del contacto real
         contact_id = None
         if patient_phone:
-            c_res = await asyncio.to_thread(
-                lambda: db.table("contacts").select("id").eq("phone_number", patient_phone).eq("tenant_id", tenant_id).execute()
-            )
+            c_res = await db.table("contacts").select("id").eq("phone_number", patient_phone).eq("tenant_id", tenant_id).execute()
             if c_res.data:
                 contact_id = c_res.data[0]["id"]
         
@@ -62,18 +61,30 @@ async def lifespan(app_ctx: FastAPI):
                 "type": "escalation",
                 "is_resolved": False
             }
-            res = await asyncio.to_thread(
-                lambda: db.table("alerts").insert(alert_payload).execute()
-            )
+            res = await db.table("alerts").insert(alert_payload).execute()
             logger.info("🚨 ALERTA GUARDADA EN BD. Frontend notificado vía WebSockets.")
             
-            # 3. Notificar vía Email al negocio usando Resend (background)
+            # 3. Notificar vía Discord (Devs)
+            from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+            asyncio.create_task(send_discord_alert(
+                title=f"🚨 ESCALACIÓN: {reason}",
+                description=f"Paciente: `{patient_phone or 'Desconocido'}`\nTenant: `{tenant_id}`",
+                severity="warning"
+            ))
+
+            # 4. Notificar vía Email al negocio usando Resend (background)
             from app.infrastructure.email.email_service import send_business_email_alert
             html_body = f"<h2>Nueva Alerta del CRM</h2><p><strong>Razón:</strong> {reason}</p><p><strong>Paciente:</strong> {patient_phone or 'Desconocido'}</p><p>Inicia sesión en el CRM para revisar.</p>"
             asyncio.create_task(send_business_email_alert("ALERTA CRM: Handoff Requerido / Asistencia", html_body))
 
         except Exception as e:
             logger.error(f"Fallo al insertar en tabla 'alerts'. Detalles: {e}")
+            from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+            asyncio.create_task(send_discord_alert(
+                title="Error en on_system_alert",
+                description="No se pudo procesar la alerta o notificación.",
+                error=e
+            ))
         
     event_bus.subscribe("triage_alert", on_triage)
     event_bus.subscribe("system_alert", on_system_alert)
@@ -91,6 +102,13 @@ async def lifespan(app_ctx: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # Configuración inteligente de Sentry tal cual su instructivo
+    sentry_sdk.init(
+        dsn=getattr(settings, "SENTRY_DSN", "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"),
+        send_default_pii=True,
+        enable_logs=True,
+    )
+    
     # Notice ORJSONResponse globally set
     app = FastAPI(
         title="WhatsApp AI CRM Refactor (Screaming Infrastructure)",
@@ -151,9 +169,7 @@ def create_app() -> FastAPI:
         
         try:
             # Direct tenant lookup
-            res = await asyncio.to_thread(
-                lambda: db.table("tenants").select("*").eq("id", tenant_id).execute()
-            )
+            res = await db.table("tenants").select("*").eq("id", tenant_id).execute()
             
             if not res.data:
                 logger.error(f"❌ [SIM] Tenant {tenant_id} NOT found")
@@ -205,18 +221,16 @@ def create_app() -> FastAPI:
         """Bypass Supabase REST Cache by using service role via Python Client."""
         logger.info(f"📩 [FEEDBACK] Received payload for tenant {payload.get('tenant_id')}")
         from app.infrastructure.database.supabase_client import SupabasePooler
-        db = SupabasePooler.get_client()
+        db = await SupabasePooler.get_client()
         
         try:
-            res = await asyncio.to_thread(
-                lambda: db.table("test_feedback").insert({
+            res = await db.table("test_feedback").insert({
                     "tenant_id": payload.get("tenant_id"),
                     "patient_phone": payload.get("patient_phone"),
                     "history": payload.get("history"),
                     "notes": payload.get("notes"),
                     "tester_email": payload.get("tester_email", "tomasgemes@gmail.com")
                 }).execute()
-            )
             logger.info("✅ [FEEDBACK] Saved successfully via Backend Proxy.")
             return {"status": "success", "data": res.data}
         except Exception as e:
@@ -229,8 +243,8 @@ def create_app() -> FastAPI:
     async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = "d8376510-911e-42ef-9f3b-e018d9f10915"):
         try:
             from app.infrastructure.database.supabase_client import SupabasePooler
-            db = SupabasePooler.get_client()
-            tenant_res = await asyncio.to_thread(lambda: db.table("tenants").select("*").eq("id", tenant_id).execute())
+            db = await SupabasePooler.get_client()
+            tenant_res = await db.table("tenants").select("*").eq("id", tenant_id).execute()
             if not tenant_res.data:
                 return {"status": "error", "message": "Tenant not found"}
             from app.core.models import TenantContext
@@ -245,8 +259,8 @@ def create_app() -> FastAPI:
     async def api_book_calendar_event(payload: dict = Body(...)):
         tenant_id = payload.get("tenant_id", "d8376510-911e-42ef-9f3b-e018d9f10915")
         from app.infrastructure.database.supabase_client import SupabasePooler
-        db = SupabasePooler.get_client()
-        tenant_res = await asyncio.to_thread(lambda: db.table("tenants").select("*").eq("id", tenant_id).execute())
+        db = await SupabasePooler.get_client()
+        tenant_res = await db.table("tenants").select("*").eq("id", tenant_id).execute()
         if not tenant_res.data:
             return {"status": "error", "message": "Tenant not found"}
         from app.core.models import TenantContext
@@ -278,12 +292,12 @@ def create_app() -> FastAPI:
             
         # Send to Discord for devs
         from app.infrastructure.telemetry.discord_notifier import send_discord_alert
-        asyncio.create_task(send_discord_alert(
+        await send_discord_alert(
             title="AppBaseException: Domain Logic Error",
             description=f"Path: `{request.url.path}`",
             error=exc,
             severity="warning"
-        ))
+        )
             
         return ORJSONResponse(status_code=500, content={"message": "Domain Logic Error", "error": str(exc), "traceback": full_trace})
 
@@ -297,12 +311,12 @@ def create_app() -> FastAPI:
             
         # Send to Discord for devs
         from app.infrastructure.telemetry.discord_notifier import send_discord_alert
-        asyncio.create_task(send_discord_alert(
+        await send_discord_alert(
             title="FATAL: Unhandled Exception",
             description=f"Path: `{request.url.path}` | Method: `{request.method}`",
             error=exc,
             severity="error"
-        ))
+        )
             
         return ORJSONResponse(status_code=500, content={"message": "Internal Server Error", "error": str(exc), "traceback": full_trace})
 

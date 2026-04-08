@@ -1,11 +1,11 @@
 import asyncio
 from fastapi import HTTPException
-from supabase import Client
+from supabase import AsyncClient
 from app.core.models import TenantContext
 from app.infrastructure.telemetry.logger_service import logger
 from app.core.exceptions import TenantNotFoundError
 
-async def get_tenant_context_from_payload(payload: dict, db: Client) -> TenantContext:
+async def get_tenant_context_from_payload(payload: dict, db: AsyncClient) -> TenantContext:
     """
     Extracts tenant context based on webhook payload string safely parsed once gracefully.
     """
@@ -24,9 +24,7 @@ async def get_tenant_context_from_payload(payload: dict, db: Client) -> TenantCo
             
         phone_id = value["metadata"]["phone_number_id"]
             
-        response = await asyncio.to_thread(
-            lambda: db.table("tenants").select("*").eq("ws_phone_id", phone_id).execute()
-        )
+        response = await db.table("tenants").select("*").eq("ws_phone_id", phone_id).execute()
         
         if not response.data:
             logger.warning(f"Tenant Context missing for internal phone_id mapping: {phone_id}")

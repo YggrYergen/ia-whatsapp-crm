@@ -1,28 +1,28 @@
-from supabase import create_client, Client
+from supabase import create_async_client, AsyncClient
 from app.core.config import settings
 from app.infrastructure.telemetry.logger_service import logger
 
 class SupabasePooler:
     """Singleton implementation for Supabase Client to avoid memory leaks across multiple requests."""
-    _instance: Client = None
+    _instance: AsyncClient = None
 
     @classmethod
-    def get_client(cls) -> Client:
+    async def get_client(cls) -> AsyncClient:
         if cls._instance is None:
-            logger.info("Initializing fresh Supabase client connection pool.")
+            logger.info("Initializing fresh Async Supabase client connection pool.")
             try:
-                cls._instance = create_client(
+                cls._instance = await create_async_client(
                     settings.SUPABASE_URL,
                     settings.SUPABASE_SERVICE_ROLE_KEY
                 )
             except Exception as e:
-                logger.error(f"Failed to initialize Supabase client: {str(e)}")
+                logger.error(f"Failed to initialize Async Supabase client: {str(e)}")
                 raise
         return cls._instance
 
-def get_db() -> Client:
+async def get_db() -> AsyncClient:
     """Dependency injection helper for FastAPI."""
-    return SupabasePooler.get_client()
+    return await SupabasePooler.get_client()
 
 # Alias for legacy or mismatched imports in other modules
 get_supabase_client = get_db

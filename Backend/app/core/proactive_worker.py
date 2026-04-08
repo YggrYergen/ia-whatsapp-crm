@@ -29,7 +29,7 @@ class ProactiveWorker:
 
     async def process_tasks(self):
         logger.info("Checking for proactive tasks...")
-        db = SupabasePooler.get_client()
+        db = await SupabasePooler.get_client()
         chile_tz = pytz.timezone("America/Santiago")
         now = datetime.now(chile_tz)
 
@@ -41,7 +41,7 @@ class ProactiveWorker:
         thirty_days_ago = (now - timedelta(days=30)).isoformat()
         
         # Get tenants to process
-        tenants_res = await asyncio.to_thread(lambda: db.table("tenants").select("*").eq("is_active", True).execute())
+        tenants_res = await db.table("tenants").select("*").eq("is_active", True).execute()
         
         for tenant_data in tenants_res.data:
             # Get inactive contacts
