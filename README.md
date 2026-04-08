@@ -4,35 +4,113 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-08)
+## 0. Estado Actual del Proyecto (2026-04-08 18:10 CLT)
 
-**Estado global:** 🟡 En estabilización — producción inestable, primera clienta esperando.
+**Estado global:** 🟡 En estabilización — Fase 1C completada (auth PKCE ✅), pendiente backend deploy y E2E completo.
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
-| **Backend (Cloud Run)** | 🟡 Desplegado, funcionalidad parcial | Última serie de commits son todos fixes. CORS abierto, tracebacks expuestos, endpoints sin auth |
-| **Frontend (CF Pages)** | 🔴 Inestable | Chat y agenda reportan errores de conexión. Auth guard inexistente. Logout no invalida sesión |
-| **BD Producción** | 🟡 Funcional, config sin verificar | RLS activo. Realtime probablemente habilitado. Schema y datos por confirmar vía MCP |
-| **BD Desarrollo** | ⚪ Sin verificar | Existe (`nzsksjczswndjjbctasu`). No confirmado si tiene schema ni datos actualizados |
-| **Rama `main`** | 🟡 10 archivos modificados sin commit | Cambios probablemente de sesión anterior (Gemini Flash). Deben revisarse antes de aceptar |
-| **Rama `desarrollo`** | ⚪ 5 commits detrás de main | Se sincroniza DESPUÉS de estabilizar main |
-| **Monitoreo** | 🟡 Parcial | Sentry inicializado pero frontend instrumentation deshabilitada. Discord recibe algunos errores, no todos |
+| **Backend (Cloud Run)** | 🟡 Operativo (rev 00041), build falla | Servicio responde (`debug-ping` 200 OK). Cloud Build trigger falla sin logs. CORS `*` y tracebacks expuestos (fix commiteado, pendiente deploy) |
+| **Frontend (CF Pages)** | 🟢 Auth funcional | Auth guard ✅, logout real ✅, **login PKCE ✅** (ciclo completo login→dashboard→logout→re-login validado). Último deploy: `8cb46c2` |
+| **BD Producción** | 🟢 Funcional | RLS activo. Migraciones aplicadas: `alerts` RLS + `is_read` + GCal OAuth columns. Schema verificado vía MCP |
+| **BD Desarrollo** | 🟢 Sincronizada | `is_read` column aplicada. Schema funcional |
+| **Rama `main`** | 🟢 Limpia | Todos los cambios commiteados y pusheados. Último: `8cb46c2` |
+| **Rama `desarrollo`** | ⚪ Detrás de main | Se sincroniza DESPUÉS de estabilizar main |
+| **Monitoreo** | 🟡 Parcial | Sentry client-side funciona. Server-side requiere migración a OpenNext (ver backlog) |
 
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ──► FASE 1: Estabilizar main ──► FASE 2: Monitoreo ──► FASE 3: Separación entornos ──► FASE 4: Meta + Go-Live
+FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main 🔄 ──► FASE 2: Monitoreo ──► FASE 3: Separación entornos ──► FASE 4: Meta + Go-Live
 ```
 
 | Fase | Objetivo | Estado |
 |:---|:---|:---|
-| **Fase 0** | Limpiar working tree, inspeccionar diffs sospechosos, tag de restauración | Pendiente |
-| **Fase 1** | Diagnosticar y arreglar producción (auth, logout, CORS, agenda, chat) | Pendiente |
-| **Fase 2** | Sentry completo + Discord para TODOS los errores + email fallback | Pendiente |
-| **Fase 3** | Separar `main`→prod (`dash.tuasistentevirtual.cl`) y `desarrollo`→dev (`ohno.tuasistentevirtual.cl`) | Pendiente |
+| **Fase 0** | Limpiar working tree, inspeccionar diffs sospechosos, tag de restauración | ✅ Completada |
+| **Fase 1A** | Infraestructura: env vars, backend URLs, SQL migrations | ✅ Completada |
+| **Fase 1B** | Seguridad: auth guard, logout, CORS, traceback removal | ✅ Frontend desplegado, backend pendiente deploy |
+| **Fase 1C** | **Auth PKCE callback** | ✅ **Completada** — login/logout funcional (ver §0.1) |
+| **Fase 1D** | Backend deploy (Cloud Build trigger falla) | ❌ Bloqueado — error `iam.serviceaccounts.actAs` |
+| **Fase 1E** | Validación E2E completa (agenda, chat, notificaciones) | Pendiente |
+| **Fase 2** | Sentry completo + Discord alertas | Pendiente (Sentry server-side requiere migración a OpenNext) |
+| **Fase 3** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
 | **Fase 4** | Conectar webhook de Meta, test end-to-end, go-live | Pendiente |
 
-> **⚠️ PENDIENTE DE VERIFICACIÓN:** La configuración exacta de los auto-deploys (build commands, env vars inyectadas, service accounts, regiones), los esquemas de ambas bases de datos, y el estado real de Cloud Run y Cloudflare Pages requieren auditoría directa vía herramientas MCP de Supabase y Google Cloud Run. Se verificará al iniciar las Fases 1 y 3.
+### Backlog Técnico
+
+| Prioridad | Tarea | Referencia |
+|:---|:---|:---|
+| **Alta** | Resolver fallo de Cloud Build trigger para backend | Error `iam.serviceaccounts.actAs` denied + build sin logs. **Consultar [docs oficiales de Cloud Build](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run) primero** |
+| Media | Migrar `@cloudflare/next-on-pages` (deprecated) a **OpenNext** | [Doc: opennext.js.org/cloudflare](https://opennext.js.org/cloudflare) |
+| Media | Sentry server-side en CF Pages (requiere OpenNext + `nodejs_compat` flag) | [Doc: Sentry Next.js on Cloudflare](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/nextjs/) |
+| Baja | Actualizar Next.js 14.1.4 → parche de seguridad | [CVE: nextjs.org/blog/security-update-2025-12-11](https://nextjs.org/blog/security-update-2025-12-11) |
+
+---
+
+## 0.1. Autenticación OAuth PKCE — Solución Documentada (NO MODIFICAR sin leer esto)
+
+> **⚠️ IMPORTANTE:** La solución de autenticación actual FUNCIONA y está respaldada 1:1 por la [documentación oficial de Supabase para SSR con Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs). Si algo deja de funcionar, revisar primero estos docs antes de cambiar código.
+
+### Cómo funciona el flujo (paso a paso)
+
+```
+1. Usuario clickea "Continuar con Google" en /login
+   └─► signInWithOAuth() de @supabase/ssr createBrowserClient
+       ├─ Genera code_verifier aleatorio
+       ├─ Lo guarda como cookie (document.cookie, path=/, SameSite=Lax)
+       └─ Redirige a Supabase /auth/v1/authorize
+
+2. Supabase redirige a Google OAuth → usuario aprueba
+
+3. Google redirige a Supabase /auth/v1/callback
+   └─ Supabase genera un auth code propio
+
+4. Supabase redirige a nuestra app: /auth/confirm?code=XXX
+   (configurado via redirectTo en signInWithOAuth)
+
+5. /auth/confirm/page.tsx (client component) se carga
+   └─ createBrowserClient() singleton se auto-inicializa
+      └─ _initialize() detecta ?code=XXX en window.location
+         ├─ Lee code_verifier de la cookie
+         ├─ Llama exchangeCodeForSession() internamente
+         └─ Dispara onAuthStateChange con evento SIGNED_IN
+
+6. Nuestro listener en /auth/confirm escucha SIGNED_IN
+   └─ router.replace('/dashboard') → usuario autenticado ✅
+```
+
+### Root cause del error anterior
+
+El error `PKCE code verifier not found in storage` ocurría porque llamábamos `exchangeCodeForSession()` **manualmente** en un `useEffect`. Pero `createBrowserClient` es un **singleton** que ejecuta `_initialize()` automáticamente. Esta auto-inicialización ya detectaba el `?code=` en la URL y llamaba `exchangeCodeForSession` internamente, **consumiendo el code_verifier**. Cuando nuestro `useEffect` lo llamaba después, el verifier ya no existía.
+
+### La solución (oficial)
+
+**NO llamar `exchangeCodeForSession()` manualmente.** En su lugar:
+1. Dejar que el singleton se auto-inicialice (esto ocurre al hacer `createClient()`)
+2. Escuchar `onAuthStateChange` para el evento `SIGNED_IN`
+3. Redirigir al dashboard cuando se recibe el evento
+
+**Archivos involucrados:**
+
+| Archivo | Rol |
+|:---|:---|
+| `lib/supabase.ts` | Browser client singleton (`createBrowserClient` de `@supabase/ssr`) |
+| `app/login/page.tsx` | Llama `signInWithOAuth({redirectTo: '/auth/confirm'})` |
+| `app/auth/callback/route.ts` | Thin redirect: `?code=` → `/auth/confirm?code=` (preserva params) |
+| `app/auth/confirm/page.tsx` | **Solo escucha `onAuthStateChange`**, NO llama `exchangeCodeForSession` |
+
+### Docs de referencia
+
+- [Supabase SSR + Next.js — Creating a Client](https://supabase.com/docs/guides/auth/server-side/nextjs)
+- [Supabase SSR — Advanced Guide (PKCE)](https://supabase.com/docs/guides/auth/server-side/advanced-guide)
+- [Ejemplo oficial Next.js](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+- [`@supabase/ssr` v0.10.0](https://www.npmjs.com/package/@supabase/ssr) — almacena code_verifier en cookies, NO en localStorage
+
+### Regla de oro para futuras implementaciones
+
+> **Siempre consultar la documentación oficial MÁS ACTUALIZADA de cada servicio (Supabase, Cloudflare, Google Cloud) ANTES de implementar o debuggear.** No asumir comportamiento basándose en experiencia previa — las APIs cambian entre versiones.
+
+---
 
 ### Herramientas MCP Configuradas
 
@@ -53,6 +131,7 @@ Config en: `~/.gemini/antigravity/mcp_config.json`
 |:---|:---|:---|
 | Cloud Run service URL | `ia-backend-prod-645489345350.europe-west1.run.app` | Hardcodeada en `next.config.js` como fallback |
 | GCP project number | `645489345350` | Implícito en la URL de Cloud Run |
+| GCP project ID | `saas-javiera` | Para Cloud Build, IAM, etc. |
 | Supabase prod project | `nemrjlimrnrusodivtoa` | `nemrjlimrnrusodivtoa.supabase.co` |
 | Supabase dev project | `nzsksjczswndjjbctasu` | `nzsksjczswndjjbctasu.supabase.co` |
 | Cloudflare Pages project | `ia-whatsapp-crm` | En `wrangler.toml` |
@@ -676,7 +755,7 @@ Dev: pytest>=8.0.0, pytest-asyncio>=0.23.5, coverage>=7.4.0
 
 ```
 next@14.1.4                react@^18.2.0
-@supabase/ssr@^0.1.0       @supabase/supabase-js@^2.98.0
+@supabase/ssr@^0.10.0      @supabase/supabase-js@^2.98.0
 @sentry/nextjs@^10.47.0    lucide-react@^0.364.0
 date-fns@^4.1.0            recharts@^3.8.1
 radix-ui@^1.4.3            shadcn@^4.1.2
