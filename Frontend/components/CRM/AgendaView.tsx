@@ -45,8 +45,7 @@ export default function AgendaView() {
             const startIso = new Date(yr, mo, 1).toISOString()
             const endIso = new Date(yr, mo + 1, 0, 23, 59, 59).toISOString()
             
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-            const res = await fetch(`${baseUrl}/api/calendar/events?start_iso=${startIso}&end_iso=${endIso}`)
+            const res = await fetch(`/api/calendar/events?start_iso=${startIso}&end_iso=${endIso}`)
             const data = await res.json()
             if (data.status === 'success') {
                 setEvents(data.events)
@@ -116,8 +115,7 @@ export default function AgendaView() {
                 patient_name: patientName,
                 phone: patientPhone
             }
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-            const res = await fetch(`${baseUrl}/api/calendar/book`, {
+            const res = await fetch(`/api/calendar/book`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

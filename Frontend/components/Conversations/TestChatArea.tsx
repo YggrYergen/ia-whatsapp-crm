@@ -81,8 +81,7 @@ export default function TestChatArea() {
         }, 30000)
 
         try {
-            const baseUrl = 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
-            await fetch(`${baseUrl}/api/simulate`, {
+            await fetch('/api/simulate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -127,8 +126,7 @@ export default function TestChatArea() {
         }))
 
         try {
-            const baseUrl = 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
-            const response = await fetch(`${baseUrl}/api/test-feedback`, {
+            const response = await fetch('/api/test-feedback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

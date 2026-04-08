@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const start_iso = searchParams.get('start_iso')
     const end_iso = searchParams.get('end_iso')
-    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
+    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-645489345350.europe-west1.run.app'
     
     const response = await fetch(`${baseUrl}/api/calendar/events?start_iso=${start_iso}&end_iso=${end_iso}`)
     

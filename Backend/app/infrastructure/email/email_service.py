@@ -13,7 +13,10 @@ async def send_business_email_alert(subject: str, html_body: str):
     Sends an email alert to the business staff using Resend API.
     """
     if not RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY not configured. Skipping email alert.")
+        msg = "RESEND_API_KEY not configured. Skipping email alert."
+        logger.warning(msg)
+        import sentry_sdk
+        sentry_sdk.capture_message(msg, level="warning")
         return
 
     payload = {
@@ -32,8 +35,13 @@ async def send_business_email_alert(subject: str, html_body: str):
         async with httpx.AsyncClient() as client:
             res = await client.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=5.0)
             if res.status_code >= 400:
-                logger.error(f"Failed to send email alert via Resend: {res.text}")
+                msg = f"Failed to send email alert via Resend: {res.text}"
+                logger.error(msg)
+                import sentry_sdk
+                sentry_sdk.capture_message(msg, level="error")
             else:
                 logger.info(f"Email alert sent successfully: {subject}")
     except Exception as e:
         logger.error(f"Failed to send email alert: {e}")
+        import sentry_sdk
+        sentry_sdk.capture_exception(e)

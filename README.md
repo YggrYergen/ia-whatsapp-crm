@@ -1,312 +1,688 @@
-# Documentación Técnica: AI WhatsApp CRM B2B (Screaming Architecture)
+# AI WhatsApp CRM — Documentación Técnica
 
-## 1. Visión General y Arquitectura del Sistema
+> **SaaS Multi-tenant B2B** para automatizar la primera línea de atención al cliente vía WhatsApp mediante LLMs con Function Calling, bajo paradigma Human-In-The-Loop (HITL).
 
-El AI WhatsApp CRM es una plataforma Software as a Service (SaaS) multi-tenant diseñada para unificar, automatizar y gestionar la atención al cliente de pequeñas y medianas empresas (B2B) a través de WhatsApp. El sistema delega la primera línea de interacción a Modelos de Lenguaje Extenso (LLMs) configurables por el cliente, dotados de herramientas activas (Function Calling) para ejecutar lógicas de negocio reales, operando bajo un paradigma estricto de Human-In-The-Loop (HITL).
+---
 
-El sistema está compuesto por tres componentes principales distribuidos:
+## 0. Estado Actual del Proyecto (2026-04-08)
 
-1.  **Frontend (React/Next.js):** Actúa como el panel de control administrativo del cliente. Proporciona una interfaz en tiempo real reactiva impulsada por websockets para monitorear conversaciones, pausar agentes de IA e intervenir manualmente. Se despliega mediante edge computing (Cloudflare Pages).
-2.  **Backend (Python/FastAPI):** El núcleo de procesamiento asíncrono y orquestador de lógica de negocio. Mantiene el estado, procesa webhooks entrantes de Meta, inyecta memoria al contexto del LLM, y ejecuta las herramientas del sistema. Optimizado para entornos serverless (Google Cloud Run).
-3.  **Capa de Datos y Real-time (Supabase/PostgreSQL):** Almacenamiento persistente multi-tenant con seguridad a nivel de fila (RLS). Actúa como fuente de la verdad y motor de eventos pub/sub para sincronizar el estado entre el Backend y el Frontend instantáneamente.
+**Estado global:** 🟡 En estabilización — producción inestable, primera clienta esperando.
 
-### Diagrama de Arquitectura de Alto Nivel
+| Pieza | Estado | Detalle |
+|:---|:---|:---|
+| **Backend (Cloud Run)** | 🟡 Desplegado, funcionalidad parcial | Última serie de commits son todos fixes. CORS abierto, tracebacks expuestos, endpoints sin auth |
+| **Frontend (CF Pages)** | 🔴 Inestable | Chat y agenda reportan errores de conexión. Auth guard inexistente. Logout no invalida sesión |
+| **BD Producción** | 🟡 Funcional, config sin verificar | RLS activo. Realtime probablemente habilitado. Schema y datos por confirmar vía MCP |
+| **BD Desarrollo** | ⚪ Sin verificar | Existe (`nzsksjczswndjjbctasu`). No confirmado si tiene schema ni datos actualizados |
+| **Rama `main`** | 🟡 10 archivos modificados sin commit | Cambios probablemente de sesión anterior (Gemini Flash). Deben revisarse antes de aceptar |
+| **Rama `desarrollo`** | ⚪ 5 commits detrás de main | Se sincroniza DESPUÉS de estabilizar main |
+| **Monitoreo** | 🟡 Parcial | Sentry inicializado pero frontend instrumentation deshabilitada. Discord recibe algunos errores, no todos |
 
-```mermaid
-flowchart TD
-    subgraph Ecosistema Externo
-        WA[Meta WhatsApp API]
-        GC[Google Calendar API]
-    end
+### Plan de Go-Live (en ejecución)
 
-    subgraph Backend (FastAPI - Cloud Run)
-        GW[API Gateway /webhook]
-        Q[Background Tasks]
-        Router[LLM Router Strategy]
-        ToolReg[Tool Registry]
-        Event[Event Bus]
-        
-        GW -->|200 OK Sync| WA
-        GW -->|Encola Payload| Q
-        Q --> Router
-        Router <-->|Tools Call| ToolReg
-        ToolReg --> Event
-        ToolReg -->|Citas| GC
-    end
-
-    subgraph Modelos Fundacionales
-        OpenAI[OpenAI gpt-4o-mini / o4-mini]
-        Gemini[Google Gemini 1.5 Flash / 3.1]
-        
-        Router <--> OpenAI
-        Router <--> Gemini
-    end
-
-    subgraph Base de Datos & Eventos
-        DB[(Supabase PostgreSQL)]
-        PubSub[Realtime Channels]
-        
-        Q <--> DB
-        DB --> PubSub
-    end
-
-    subgraph Frontend (Next.js - Cloudflare Pages)
-        CRM[Dashboard HITL]
-        Conf[Panel Configuración]
-        
-        PubSub --> CRM
-        CRM -->|Pausa IA| DB
-        CRM -->|Intervención| DB
-        Conf -->|Guarda Prompt| DB
-    end
-    
-    Router -->|Despacha SMS final| WA
-    Event -->|Notifica Staff| WA
+```
+FASE 0: Pre-flight ──► FASE 1: Estabilizar main ──► FASE 2: Monitoreo ──► FASE 3: Separación entornos ──► FASE 4: Meta + Go-Live
 ```
 
+| Fase | Objetivo | Estado |
+|:---|:---|:---|
+| **Fase 0** | Limpiar working tree, inspeccionar diffs sospechosos, tag de restauración | Pendiente |
+| **Fase 1** | Diagnosticar y arreglar producción (auth, logout, CORS, agenda, chat) | Pendiente |
+| **Fase 2** | Sentry completo + Discord para TODOS los errores + email fallback | Pendiente |
+| **Fase 3** | Separar `main`→prod (`dash.tuasistentevirtual.cl`) y `desarrollo`→dev (`ohno.tuasistentevirtual.cl`) | Pendiente |
+| **Fase 4** | Conectar webhook de Meta, test end-to-end, go-live | Pendiente |
+
+> **⚠️ PENDIENTE DE VERIFICACIÓN:** La configuración exacta de los auto-deploys (build commands, env vars inyectadas, service accounts, regiones), los esquemas de ambas bases de datos, y el estado real de Cloud Run y Cloudflare Pages requieren auditoría directa vía herramientas MCP de Supabase y Google Cloud Run. Se verificará al iniciar las Fases 1 y 3.
+
+### Herramientas MCP Configuradas
+
+Para auditoría y gestión de infraestructura, se dispone de 4 MCP servers:
+
+| MCP | Config Key | Protocolo | Función |
+|:---|:---|:---|:---|
+| Google Cloud Run | `cloudrun` | CLI (`npx @google-cloud/cloud-run-mcp`) | Servicios, env vars, logs, deploys del backend |
+| Supabase Producción | `supabase-prod` | HTTP (`mcp.supabase.com`, ref: `nemrjlimrnrusodivtoa`) | Schema, RLS, datos, realtime de BD producción |
+| Supabase Desarrollo | `supabase-dev` | HTTP (`mcp.supabase.com`, ref: `nzsksjczswndjjbctasu`) | Schema, datos de BD desarrollo |
+| Cloudflare | `cloudflare` | CLI (`npx mcp-remote → bindings.mcp.cloudflare.com`) | Config de Cloudflare Pages, dominios, bindings |
+
+Config en: `~/.gemini/antigravity/mcp_config.json`
+
+### Identificadores de Infraestructura
+
+| Recurso | Identificador | Notas |
+|:---|:---|:---|
+| Cloud Run service URL | `ia-backend-prod-645489345350.europe-west1.run.app` | Hardcodeada en `next.config.js` como fallback |
+| GCP project number | `645489345350` | Implícito en la URL de Cloud Run |
+| Supabase prod project | `nemrjlimrnrusodivtoa` | `nemrjlimrnrusodivtoa.supabase.co` |
+| Supabase dev project | `nzsksjczswndjjbctasu` | `nzsksjczswndjjbctasu.supabase.co` |
+| Cloudflare Pages project | `ia-whatsapp-crm` | En `wrangler.toml` |
+| Frontend dominio prod | `dash.tuasistentevirtual.cl` | Custom domain en CF Pages |
+| Frontend dominio dev | `ohno.tuasistentevirtual.cl` | Pendiente de configurar |
+| GitHub repo | `YggrYergen/ia-whatsapp-crm` | Auto-deploys desde rama `main` |
+| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | En `wrangler.toml` y `sentry.client.config.ts` |
+
 ---
 
-## 2. Catálogo Exhaustivo de Características y Capacidades
+## 1. Arquitectura del Sistema
 
-El sistema actual posee las siguientes capacidades funcionales implementadas:
+Tres componentes distribuidos:
 
-### Capacidades de Inteligencia Artificial
-* **Orquestación Multi-LLM Dinámica:** Implementación del patrón Strategy (`LLMFactory`) que permite instanciar e intercambiar en caliente entre proveedores y modelos (ej. OpenAI GPT-4o-mini, Google Gemini Flash) basado en las preferencias almacenadas en la fila de configuración de cada *tenant*.
-* **Inyección de Memoria y Sesgo de Recencia:** El sistema recupera los últimos 15 mensajes de la base de datos, construyendo el contexto conversacional. Inyecta un marcador temporal explícito ("Log Interno") en el último mensaje para dotar a la IA de conocimiento exacto sobre la fecha y hora de la interacción, mitigando alucinaciones temporales.
-* **Zero-Trust System Prompting:** Inyección obligatoria de directivas a nivel de sistema que fuerzan a la IA a priorizar el reloj interno del servidor sobre su propia "memoria" generada, y restringen la alucinación de resultados exitosos cuando las herramientas (Tools) retornan errores explícitos.
+| Componente | Stack | Despliegue | Función |
+|:---|:---|:---|:---|
+| **Frontend** | Next.js 14.1.4 / React 18 / TailwindCSS 3.4 / shadcn/ui | Cloudflare Pages | Panel CRM administrativo con realtime |
+| **Backend** | Python 3.11 / FastAPI 0.110+ / uvicorn | Google Cloud Run (Docker) | Procesamiento de webhooks, orquestación LLM, Function Calling |
+| **Base de Datos** | PostgreSQL (Supabase) con RLS + Realtime | Supabase Cloud | Persistencia multi-tenant, pub/sub WebSocket |
 
-### Ejecución de Herramientas (Function Calling)
-A través de la clase base `AITool` y el `ToolRegistry`, el LLM puede invocar métodos asíncronos en el backend:
-* **`get_merged_availability`:** Lectura simultánea y unificación (Round-Robin) de disponibilidad sobre dos calendarios de Google (Box 1 y Box 2). Limita la consulta estrictamente entre 09:00 y 19:00 horas, parseando los rangos `FreeBusy` en franjas disponibles de 30 o 60 minutos.
-* **`get_my_appointments`:** Permite al sistema listar las citas futuras, bifurcando la cantidad de información entregada según el rol del remitente (RBAC). Si es un administrador (`admin`/`staff`), muestra todas las citas del día; si es un cliente, filtra devolviendo únicamente las citas asociadas al número telefónico de origen.
-* **`book_round_robin`:** Inserción de eventos en Google Calendar aplicando lógica de decisión: evalúa qué box específico está libre en el bloque solicitado e inyecta la cita. Dispara un evento `system_alert` asíncrono para notificar al staff.
-* **`update_appointment`:** Función compuesta atómica que ejecuta una cancelación seguida de un reagendamiento. Retorna error si el borrado original falla.
-* **`delete_appointment`:** Eliminación segura (Zero-Trust). Búsqueda de eventos en todo el día especificado. Solo procede a borrar si el número de teléfono del originador coincide con el inyectado en la descripción original del evento en Google Calendar, previniendo cancelaciones maliciosas de terceros.
-* **`escalate_to_human`:** Interrupción de control delegada a la IA. La IA puede decidir emitir un evento crítico al EventBus que pausará su propio comportamiento (`bot_active = False`) y notificará al personal.
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         FLUJO PRINCIPAL                                │
+│                                                                        │
+│  WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)                │
+│                                        │                               │
+│                                   ┌────┴────┐                          │
+│                                   │ Resolve │ TenantContext             │
+│                                   │ HITL?   │ bot_active check         │
+│                                   └────┬────┘                          │
+│                                        │                               │
+│                          ┌─────────────┼─────────────┐                 │
+│                          │    Background Task         │                 │
+│                          │  ┌──────────────────────┐  │                 │
+│                          │  │ 1. Persist inbound   │  │                 │
+│                          │  │ 2. Mutex Lock check  │  │                 │
+│                          │  │ 3. Fetch history(20) │  │                 │
+│                          │  │ 4. Inject context    │  │                 │
+│                          │  │ 5. LLM inference     │  │                 │
+│                          │  │ 6. Tool execution    │  │ ──► GCal API   │
+│                          │  │ 7. Synthesis pass    │  │                 │
+│                          │  │ 8. Persist + Send    │  │ ──► Meta API   │
+│                          │  └──────────────────────┘  │                 │
+│                          └────────────────────────────┘                 │
+│                                        │                               │
+│                               Supabase Realtime                        │
+│                                        │                               │
+│                          Frontend (Cloudflare Pages)                    │
+│                          Dashboard / Chats / Agenda                     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-### Operaciones de Negocio y Enrutamiento (Core CRM)
-* **Human-In-The-Loop (HITL):** Capacidad del cliente administrador (vía Frontend) de alternar la columna booleana `bot_active` en tiempo real, bloqueando que el Backend envíe payloads al `LLMFactory`.
-* **Evaluador de Triaje Clínico:** Capa de dominio (`TriageEvaluator`) con capacidad de análisis léxico crudo sobre los síntomas ingresados para detectar *keywords* de emergencia antes o en paralelo a la lógica de la IA, publicando notificaciones asíncronas de urgencia.
-* **Bus de Eventos Asíncrono (`EventBus`):** Implementación de Pub/Sub en memoria (`asyncio.Queue`) que desvincula los casos de uso (ej. Agendamiento) de los efectos secundarios (ej. Notificar por WhatsApp al administrador), garantizando respuestas de red rápidas.
-* **Centro de Alertas Real-Time (Tabla Dedicada):** Transición del modelo de "Chat de Sistema" a una tabla dedicada de `alerts`. Las urgencias (Triaje clínico, escalamiento humano, cancelaciones) se despachan al bus de eventos y se reflejan instantáneamente en la campana de notificaciones del dashboard del cliente, permitiendo un flujo de trabajo centralizado y salto directo al chat afectado para su resolución.
-* **Debouncing Cognitivo Eficiente (Mutex Lock):** El sistema implementa un patrón de bloqueo seguro a nivel de base de datos (`is_processing_llm`) para manejar usuarios "metralleta" (múltiples mensajes en segundos). Los webhooks subsecuentes detectan el candado, devuelven 200 OK a Meta y mueren silenciosamente sin detonar el LLM. La tarea principal consolida todo el bloque de mensajes acumulados durante la ventana antes de la inferencia, garantizando cero desperdicio de tokens y cómputo.
-* **Inyección Dinámica de Contexto:** El orquestador extrae los metadatos del CRM (`status`, `role`, `name`) de la base de datos y los inyecta en el *System Prompt* en tiempo de ejecución. Esto otorga a la IA conciencia situacional instantánea (ej. sabe si habla con un lead nuevo o un cliente recurrente) sin incurrir en complejas búsquedas vectoriales (RAG).
+### APIs Externas Integradas
+
+| Servicio | Uso | Módulo |
+|:---|:---|:---|
+| Meta WhatsApp Cloud API v19.0 | Recepción/envío de mensajes | `infrastructure/messaging/` |
+| Google Calendar API v3 | Consulta FreeBusy, CRUD de eventos, Round-Robin | `infrastructure/calendar/` |
+| OpenAI API | Inferencia LLM + Function Calling (adaptador activo) | `infrastructure/llm_providers/openai_adapter.py` |
+| Google Generative AI | Registrado en factory pero **adaptador NO implementado** (retorna mock) | `infrastructure/llm_providers/gemini_adapter.py` |
+| Sentry | Error tracking y APM (backend + frontend) | `sentry_sdk`, `@sentry/nextjs` |
+| Discord Webhooks | Alertas dev en tiempo real | `infrastructure/telemetry/discord_notifier.py` |
+| Resend | Emails transaccionales de alerta al negocio | `infrastructure/email/email_service.py` |
+| Supabase Auth | SSO Google para el panel administrativo | Frontend `AuthContext` + Supabase RLS |
 
 ---
 
-## 3. Topología del Proyecto (Screaming Architecture)
+## 2. Estructura del Repositorio
 
-La base de código abandona el patrón tradicional MVC para adoptar la Screaming Architecture (basada en principios de Domain-Driven Design y Puertos/Adaptadores). La estructura de directorios comunica inmediatamente las intenciones del negocio, separando estrictamente los detalles tecnológicos (Frameworks, DBs) de la lógica transaccional.
+### Backend (`Backend/app/`)
 
-```text
+Implementa **Screaming Architecture** (Domain-Driven Design + Puertos/Adaptadores). La estructura comunica intención de negocio; los detalles técnicos están aislados en `infrastructure/`.
+
+```
 Backend/app/
-├── api/                  # Puertos de Entrada: Dependencias inyectables de FastAPI.
-│   └── dependencies.py   # Extracción y validación del TenantContext desde el webhook.
+├── main.py                              # Application Factory: lifespan, CORS, routers,
+│                                        # exception handlers, y 6 endpoints inline
+│                                        # (simulate, test-feedback, calendar/events, 
+│                                        #  calendar/book, debug-ping, debug-exception)
 │
-├── core/                 # Configuración universal y primitivas del sistema.
-│   ├── config.py         # Variables de entorno (Pydantic Settings).
-│   ├── event_bus.py      # Motor central asíncrono pub/sub.
-│   ├── exceptions.py     # Errores de dominio tipados.
-│   ├── models.py         # DTOs base (ej. TenantContext).
-│   └── security.py       # Validadores criptográficos de Meta.
+├── api/
+│   └── dependencies.py                  # Extrae TenantContext del payload de Meta
+│                                        # via ws_phone_id → query a tabla tenants
 │
-├── infrastructure/       # ADAPTADORES (Detalles Tecnológicos): Nada de lógica de negocio aquí.
-│   ├── calendar/         # SDK de Google.
-│   ├── database/         # Singleton de Supabase y repositorios genéricos.
-│   ├── llm_providers/    # Adaptadores concretos (OpenAI SDK, Gemini SDK).
-│   ├── messaging/        # Clientes HTTPX puros (Meta Graph API).
-│   └── telemetry/        # Configuración de logs asíncronos y colas de impresión.
+├── core/
+│   ├── config.py                        # Pydantic Settings (14 variables de entorno)
+│   ├── event_bus.py                     # Pub/Sub in-memory (asyncio.Queue)
+│   ├── exceptions.py                    # AppBaseException, TenantNotFoundError,
+│   │                                    # ProviderNotRegisteredError, WhatsAppAPIError
+│   ├── models.py                        # TenantContext (id, ws_phone_id, llm_provider,
+│   │                                    # llm_model, system_prompt, is_active, ws_token)
+│   ├── proactive_worker.py              # Worker periódico (STUB: loop con pass)
+│   └── security.py                      # Verificación de hub.verify_token de Meta
 │
-├── modules/              # CASOS DE USO (Screaming Architecture): El corazón del negocio.
-│   ├── clinical_triage/  # Lógica de evaluación médica.
-│   ├── communication/    # Recepción de webhooks, verificación HITL y orquestación general.
-│   ├── intelligence/     # Estrategia LLM, Factory Pattern, y Registro de Herramientas.
-│   └── scheduling/       # Reglas de negocio de agendamiento (Overlap, Round-Robin).
+├── infrastructure/
+│   ├── calendar/
+│   │   └── google_client.py             # Singleton GCal service. FreeBusy, book_round_robin,
+│   │                                    # delete, list. Credenciales: ENV JSON > file > ADC
+│   ├── database/
+│   │   ├── supabase_client.py           # SupabasePooler (AsyncClient singleton) + get_db()
+│   │   └── repositories/
+│   │       └── base.py                  # BaseRepository genérico (NO USADO en producción)
+│   ├── email/
+│   │   └── email_service.py             # Resend API. Emails hardcodeados a 2 destinatarios
+│   ├── llm_providers/
+│   │   ├── openai_adapter.py            # AsyncOpenAI chat.completions con tool_choice=auto
+│   │   ├── gemini_adapter.py            # ⚠️ MOCK: retorna string estático, sin tool calling
+│   │   └── mock_adapter.py              # Echo adapter para testing local (MOCK_LLM=True)
+│   ├── messaging/
+│   │   └── meta_graph_api.py            # httpx.AsyncClient singleton con pooling (50/100)
+│   └── telemetry/
+│       ├── logger_service.py            # QueueHandler async. JSON en prod, human en dev
+│       └── discord_notifier.py          # Embeds con severity (error/warning/info) + traceback
 │
-└── main.py               # Application Factory: Unifica módulos, registra herramientas y arranca uvicorn.
+└── modules/
+    ├── clinical_triage/
+    │   └── evaluator.py                 # Keyword matching ("dolor pecho", "sangrado").
+    │                                    # ⚠️ Referencia tenant.staff_notification_number
+    │                                    # que NO existe en TenantContext → AttributeError
+    │
+    ├── communication/
+    │   ├── routers.py                   # GET /webhook (verify) + POST /webhook (enqueue)
+    │   └── use_cases.py                 # ProcessMessageUseCase: orquestador principal.
+    │                                    # Mutex lock, history fetch (20 msgs), context injection,
+    │                                    # LLM call, tool loop (1 pasada), persist+send parallel
+    │
+    ├── integrations/
+    │   └── google_oauth_router.py       # OAuth 2.0 multi-tenant. Fernet encryption de
+    │                                    # refresh_token derivada de SUPABASE_SERVICE_ROLE_KEY
+    │
+    ├── intelligence/
+    │   ├── router.py                    # LLMStrategy (ABC), LLMResponse (DTO), LLMFactory
+    │   ├── tool_registry.py             # ToolRegistry singleton. register(), get_all_schemas(),
+    │   │                                # execute_tool() con try/except → error JSON estándar
+    │   └── tools/
+    │       └── base.py                  # AITool (ABC): get_schema(provider) + execute(**kwargs)
+    │
+    └── scheduling/
+        ├── services.py                  # SchedulingService: capa de negocio que invoca
+        │                                # GoogleCalendarClient y publica eventos al EventBus
+        └── tools.py                     # 7 AITools registradas:
+                                         # - CheckAvailabilityTool (get_merged_availability)
+                                         # - CheckMyAppointmentsTool (get_my_appointments) [RBAC]
+                                         # - BookAppointmentTool (book_round_robin)
+                                         # - UpdateAppointmentTool (delete+rebook atómico)
+                                         # - DeleteAppointmentTool (zero-trust phone match)
+                                         # - EscalateHumanTool (bot_active=False + alerta)
+                                         # - UpdatePatientScoringTool (metadata jsonb update)
 ```
 
-### Reglas Arquitectónicas Críticas (Inviolables)
+### Frontend (`Frontend/`)
 
-1.  **Regla de Dependencia Unidireccional:** Ningún archivo dentro de `app/modules/` (Lógica de Dominio) puede importar código de frameworks web específicos de `app/infrastructure/` a menos que sea a través de interfaces (ej. clases Abstractas) u objetos pre-instanciados pasados como dependencia (Inversion of Control).
-2.  **Aislamiento de Fast Routing:** Los enrutadores (`routers.py`) están prohibidos de contener declaraciones `if/else` relacionadas con el negocio. Su única responsabilidad es recibir el stream `Body(...)`, inyectar dependencias y transferir el payload a `use_cases.py` (Background Tasks) respondiendo instantáneamente al emisor externo.
-3.  **Expansión mediante Registro (OCP):** Agregar un nuevo modelo de inteligencia no debe modificar `use_cases.py`. Se debe crear un adaptador en `infrastructure/llm_providers/` y registrarse en `main.py` mediante `LLMFactory.register_strategy()`. Idéntico procedimiento aplica para herramientas de IA mediante el `ToolRegistry`.
-4.  **Desacoplamiento Operativo:** Todo efecto secundario (envío de notificaciones, registro en sistemas paralelos) resultado de un proceso primario debe emitirse a través del `EventBus`, liberando el ciclo de ejecución de la corrutina principal.
+Next.js 14 con App Router, shadcn/ui, TailwindCSS. Desplegado como **static export** en Cloudflare Pages.
 
-
-## 4. Modelo de Datos y Multi-tenancy
-
-El sistema está diseñado fundamentalmente como una plataforma multi-tenant (SaaS B2B). La arquitectura de datos impone que toda operación de lectura/escritura (I/O) esté estrictamente limitada a las fronteras del negocio que la invoca, garantizando aislamiento de datos criptográfico y lógico entre los distintos clientes (ej. Muebles Nagu vs CasaVitaCure).
-
-La persistencia de datos y el motor de eventos en tiempo real son manejados por **Supabase (PostgreSQL)**.
-
-### Aislamiento de Datos Criptográfico (Row Level Security - RLS)
-
-La base de datos delega la protección de acceso a las políticas RLS nativas de PostgreSQL. El acceso público anónimo a las tablas está prohibido en el diseño final (requiriendo JWT). 
-
-* **Identidad Transaccional:** El identificador principal para enrutar el tráfico entrante de Meta no es un nombre de usuario, sino el `phone_number_id` (`ws_phone_id` en BD), un token UUID inmutable emitido por Facebook asociado a cada número de WhatsApp.
-* **Cascada Multi-tenant:** Toda fila insertada en las tablas hijas (`contacts`, `messages`) exige referenciar obligatoriamente el `tenant_id` de la tabla madre (`tenants`).
-
-### Esquema Relacional Base
-
-1.  **Tabla `tenants` (Clientes del SaaS)**
-    * **Rol:** Nodo raíz de aislamiento y almacén de configuraciones operativas.
-    * **Columnas Clave:**
-        * `id` (UUID): Primary Key.
-        * `ws_phone_id` (Text/Unique): ID único de Meta para enrutar webhooks.
-        * `llm_provider` (Text): Ej. 'openai' o 'gemini'.
-        * `llm_model` (Text): Ej. 'gpt-4o-mini' o 'gemini-1.5-flash'.
-        * `system_prompt` (Text): Comportamiento de IA inyectado.
-
-2.  **Tabla `contacts` (Usuarios Finales / Leads)**
-    * **Rol:** Identificación de pacientes/clientes finales por número telefónico.
-    * **Índices:** Mantiene un índice compuesto único en `[tenant_id, phone_number]` para evitar colisiones de pacientes entre distintas clínicas.
-    * **Columnas Clave:**
-        * `bot_active` (Boolean): Bandera crítica (Kill-switch) manejada por el Frontend. Si es `false`, el Backend suspende inmediatamente el enrutamiento al LLM, logrando el Human-In-The-Loop.
-        * `role` (Text): Implementación RBAC estático ('cliente', 'staff', 'admin') usado para bifurcar la visibilidad de información sensible dentro de las Tools de la IA (Ej. `CheckMyAppointmentsTool`).
-
-3.  **Tabla `messages` (Historial Transaccional)**
-    * **Rol:** Almacenamiento conversacional y detonador de eventos Real-time (vía `pg_publication`).
-    * **Columnas Clave:**
-        * `sender_role` (Text): Diferencia entre 'user' (cliente), 'assistant' (IA), 'human_agent' (staff manual) y 'system_alert' (Alertas urgentes).
-
-### Flujo del `TenantContext`
-A nivel de aplicación (FastAPI), la abstracción multi-tenant se logra instanciando el modelo Pydantic `TenantContext` en la puerta de enlace (`dependencies.py`). Una vez extraído el `ws_phone_id` del payload de Meta, se consulta el Tenant y este objeto fluye unidireccionalmente hacia las Background Tasks, el `LLMFactory` y el `ToolRegistry`, erradicando el uso de variables globales o configuraciones estáticas.
+```
+Frontend/
+├── app/
+│   ├── layout.tsx                       # Root: Inter font, metadata "AI CRM Enterprise"
+│   ├── page.tsx                         # Redirect → /dashboard
+│   ├── globals.css                      # Tailwind directives + CSS vars (oklch) + scrollbar
+│   ├── login/page.tsx                   # Google SSO via Supabase Auth
+│   ├── auth/callback/                   # OAuth redirect handler
+│   ├── config/page.tsx                  # Configuración: LLM provider/model selector,
+│   │                                    # system prompt editor, Google Calendar OAuth connect
+│   ├── api/                             # Next.js API routes (proxy al backend)
+│   │   ├── calendar/events/route.ts     # Proxy → Backend /api/calendar/events
+│   │   ├── calendar/book/route.ts       # Proxy → Backend /api/calendar/book
+│   │   ├── simulate/route.ts           # Proxy → Backend /api/simulate
+│   │   └── test-feedback/route.ts      # Proxy → Backend /api/test-feedback
+│   └── (panel)/                         # Route group — Layout con Sidebar + CrmProvider
+│       ├── layout.tsx                   # CrmProvider → AuthProvider+ChatProvider+UIProvider
+│       ├── dashboard/page.tsx           # KPIs y métricas (⚠️ datos HARDCODEADOS, no reales)
+│       ├── chats/page.tsx               # Chat bidireccional con realtime (FUNCIONAL)
+│       ├── agenda/page.tsx              # Vista calendario integrada con Google Calendar (FUNCIONAL)
+│       ├── pacientes/page.tsx           # Tabla CRM de contactos (FUNCIONAL, datos de Supabase)
+│       ├── reportes/page.tsx            # ⚠️ MOCK: "Módulo en Construcción", datos estáticos
+│       ├── finops/page.tsx              # ⚠️ MOCK: métricas de costos con datos estáticos
+│       └── admin-feedback/page.tsx      # Panel dev para revisar test_feedback (admin-only)
+│
+├── components/
+│   ├── Layout/
+│   │   ├── Sidebar.tsx                  # Navegación lateral responsive (desktop/mobile)
+│   │   ├── GlobalNotifications.tsx      # Toast overlay para alertas realtime
+│   │   ├── NotificationFeed.tsx         # Panel de historial de alertas con mark-as-read
+│   │   └── GlobalFeedbackButton.tsx     # Widget flotante para feedback de QA
+│   ├── CRM/
+│   │   ├── AgendaView.tsx               # Calendario semanal con drag & book (29KB)
+│   │   ├── PacientesView.tsx            # Tabla de contactos con filtros y estado (12KB)
+│   │   └── FinopsView.tsx               # Métricas de costos LLM (9KB, datos mock)
+│   ├── Conversations/
+│   │   ├── ContactList.tsx              # Lista de conversaciones con last_message preview
+│   │   ├── ChatArea.tsx                 # Chat real con envío de mensajes (human_agent)
+│   │   ├── TestChatArea.tsx             # Chat simulación (phone 56912345678)
+│   │   ├── ClientProfilePanel.tsx       # Panel lateral con datos del contacto
+│   │   └── TestConfigPanel.tsx          # Config de simulación (prompt, provider)
+│   ├── Dashboard/
+│   │   └── DashboardView.tsx            # 4 bloques: PAZ MENTAL, LEADS, INTERVENCIÓN,
+│   │                                    # DESEMPEÑO (⚠️ TODOS con datos hardcodeados)
+│   └── ui/                              # 9 primitivas shadcn/ui:
+│                                        # badge, button, card, dialog, dropdown-menu,
+│                                        # input, select, skeleton, tooltip
+│
+├── contexts/
+│   ├── AuthContext.tsx                  # Supabase session + dashboardRole (admin|staff)
+│   ├── ChatContext.tsx                  # contacts[], messages[], realtime subscriptions
+│   ├── UIContext.tsx                    # toasts, notifications (alerts table), Web Notifications,
+│   │                                    # AudioContext sound, mark-as-read
+│   └── CrmContext.tsx                   # Shim: compone Auth+Chat+UI y re-exporta useCrm()
+│
+├── lib/
+│   ├── supabase.ts                      # createBrowserClient (Supabase SSR)
+│   └── utils.ts                         # cn() = clsx + tailwind-merge
+│
+├── next.config.js                       # Rewrites /api/* → Cloud Run URL + Sentry config
+├── wrangler.toml                        # Cloudflare Pages: output dir, compat flags
+├── sentry.client.config.ts              # DSN + tracesSampleRate=0.3
+├── sentry.server.config.ts              # Server-side Sentry init
+├── tailwind.config.js                   # shadcn/ui theme con CSS variables
+├── postcss.config.js                    # autoprefixer
+├── tsconfig.json                        # paths: @/* → ./*
+├── components.json                      # shadcn/ui config (rsc:false, style:default)
+└── package.json                         # 15 deps runtime + 8 devDeps
+```
 
 ---
 
-## 5. Flujo de Control Principal (El Ciclo de Vida del Webhook)
+## 3. Modelo de Datos (Supabase PostgreSQL)
 
-El sistema procesa la ingestión de datos de Meta de forma asíncrona y orquestada para evadir los límites de tiempo de inactividad restrictivos impuestos por los servidores de WhatsApp.
+### Tablas
 
-1.  **Recepción y Aceptación Temprana (API Gateway):**
-    El endpoint de FastAPI (`POST /webhook`) lee el stream de bytes una única vez utilizando `payload: dict = Body(...)`. Esta estrategia elude los bloqueos internos de consumo asíncrono (HTTP 500 Stream Consumed). El sistema responde inmediatamente `HTTP 200 OK` (JSON {"status": "enqueued"}) a Meta, finalizando la conexión TCP.
-2.  **Resolución de Contexto:**
-    La inyección de dependencias invoca `get_tenant_context_from_payload`. Parseando el JSON anidado, extrae el `phone_number_id` y ejecuta una llamada HTTP síncrona a Supabase aislada mediante `await asyncio.to_thread(...)` previniendo la congelación del Event Loop. Se instancia el `TenantContext`.
-3.  **Orquestación en Segundo Plano:**
-    FastAPI lanza `ProcessMessageUseCase.execute` a la cola de `BackgroundTasks`.
-    * *Verificación HITL:* Consulta la bandera `bot_active` del contacto en Supabase (creándolo si no existe). Si el bot está en pausa manual, el flujo termina silenciosamente.
-    * *Sincronización Inbound:* Inserta el mensaje del usuario en la tabla `messages` para detonar la renderización inmediata en el Frontend (Supabase Real-time).
-4.  **Inyección de Memoria y RAG Lineal:**
-    Extrae los últimos 15 mensajes del contacto, los invierte cronológicamente, e inyecta la hora actual chilena del servidor mediante el *System Prompt* y un marcador temporal en el último mensaje del usuario para cimentar el contexto del modelo y prevenir "Alucinaciones Temporales".
-5.  **Inferencia LLM y Bucle de Función:**
-    * El `LLMFactory` instancía la estrategia dinámicamente según la preferencia del Tenant.
-    * El modelo ejecuta una inferencia. Si determina invocar herramientas, el `tool_registry` entra en acción, capturando las respuestas e inyectándolas recursivamente al historial del modelo para una segunda pasada de síntesis lógica ("Observation Loop").
-6.  **Despacho y Sincronización Outbound:**
-    La cadena de texto final producida por el modelo es insertada en la tabla `messages` (con `sender_role="assistant"`) e inmediatamente lanzada por un socket de red mediante `httpx.AsyncClient` hacia la Meta Graph API para su entrega física al dispositivo del usuario final.
+```sql
+-- tenants: Nodo raíz multi-tenant. Cada fila = un negocio cliente del SaaS.
+tenants (
+    id UUID PK,
+    name TEXT NOT NULL,
+    ws_phone_id TEXT UNIQUE NOT NULL,     -- Meta Phone Number ID (enrutamiento webhook)
+    ws_token TEXT NOT NULL,               -- WhatsApp permanent access token
+    llm_provider TEXT CHECK IN ('openai','gemini'),
+    llm_model TEXT,                       -- ej. 'gpt-4o-mini', 'o4-mini'
+    system_prompt TEXT,
+    is_active BOOLEAN DEFAULT TRUE,       -- kill-switch global del tenant
+    -- Campos Google Calendar OAuth (agregados post-schema):
+    google_refresh_token_encrypted TEXT,  -- Fernet-encrypted refresh token
+    google_calendar_email TEXT,
+    google_calendar_status TEXT,          -- 'connected' | 'disconnected'
+    google_calendar_connected_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ
+)
+
+-- tenant_users: Mapea auth.users (Supabase Auth) → tenants para RLS.
+tenant_users (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    user_id UUID FK → auth.users,
+    UNIQUE(tenant_id, user_id)
+)
+
+-- contacts: Usuarios finales (pacientes/clientes de WhatsApp).
+contacts (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    phone_number TEXT,
+    name TEXT,
+    bot_active BOOLEAN DEFAULT TRUE,      -- HITL kill-switch por contacto
+    role TEXT CHECK IN ('cliente','staff','admin'),  -- RBAC
+    status TEXT DEFAULT 'lead',
+    is_processing_llm BOOLEAN DEFAULT FALSE,  -- Mutex debouncing lock
+    metadata JSONB,                       -- CelluDetox score, clinical notes (usado por UpdatePatientScoringTool)
+    last_message_at TIMESTAMPTZ,
+    UNIQUE(tenant_id, phone_number)
+)
+
+-- messages: Historial conversacional. Trigger de Supabase Realtime para frontend.
+messages (
+    id UUID PK,
+    contact_id UUID FK → contacts,
+    tenant_id UUID FK → tenants,          -- Desnormalizado para RLS eficiente
+    sender_role TEXT CHECK IN ('user','assistant','human_agent','system_alert'),
+    content TEXT,
+    timestamp TIMESTAMPTZ
+)
+
+-- alerts: Notificaciones del sistema (escalaciones, cancelaciones, triaje).
+alerts (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    contact_id UUID FK → contacts (NULL OK),
+    type TEXT,                            -- 'escalation', 'cancellation', etc.
+    message TEXT,
+    is_resolved BOOLEAN DEFAULT FALSE,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ
+)
+
+-- test_feedback: Registros de QA del simulador de chat.
+test_feedback (
+    id UUID PK,
+    tenant_id UUID,
+    patient_phone TEXT,
+    history JSONB,                        -- Array de mensajes simulados
+    notes JSONB,                          -- Observaciones del tester
+    tester_email TEXT,
+    created_at TIMESTAMPTZ
+)
+```
+
+### Row Level Security (RLS)
+
+| Tabla | Política | Mecanismo |
+|:---|:---|:---|
+| tenants | SELECT/UPDATE solo si `id IN get_user_tenant_ids()` | Función SQL que consulta `tenant_users` filtrando por `auth.uid()` |
+| contacts | SELECT/UPDATE/INSERT restringido por `tenant_id` | Mismo mecanismo |
+| messages | SELECT/INSERT restringido por `tenant_id` | Mismo mecanismo |
+| alerts | SELECT/UPDATE restringido por `tenant_id` | Mismo mecanismo |
+
+**Nota:** El backend usa `SUPABASE_SERVICE_ROLE_KEY` que bypassea RLS. El webhook necesita escribir sin contexto de autenticación dentro del límite de 3 segundos de Meta.
+
+### Supabase Realtime
+
+Habilitado en tablas `contacts`, `messages` y `alerts`. El frontend suscribe tres channels:
+- `chat_contacts_changes` → refresca lista de contactos
+- `chat_messages_changes` → renderiza mensajes nuevos en el chat activo
+- `alerts-realtime-ui` → toasts + Web Notifications + sonido
 
 ---
 
-## 6. Sistema de Inteligencia y Herramientas (Tool Registry)
+## 4. Despliegue
 
-La arquitectura abstrae completamente las interacciones de herramientas, permitiendo añadir capacidades infinitas (ej. Búsqueda SQL de inventario, integraciones con ERPs, calculadoras de envío) sin alterar los bucles recursivos del LLM en `use_cases.py`.
+### Topología de Ramas
 
-### Arquitectura de Registro (Tool Vault)
-Basado fuertemente en los principios SOLID (Open/Closed Principle), el motor utiliza un patrón de Registro Global:
-1.  **Abstracción `AITool`:** Toda herramienta debe heredar obligatoriamente de la clase abstracta `AITool` (ubicada en `app/modules/intelligence/tools/base.py`). Exige la declaración de un método `get_schema()` para construir el JSON Schema específico del proveedor (OpenAI vs Gemini) y un método asíncrono `execute(**kwargs)` para inyectar la lógica de negocio real.
-2.  **`ToolRegistry` Singleton:** Inicializado durante el `lifespan` de FastAPI, captura y acopla las instancias de las herramientas (`tool_registry.register(CheckAvailabilityTool())`).
-3.  **Inyección de Contexto Mágico:** Al ejecutar una herramienta dictada por el LLM, el `use_cases.py` inyecta en los `**kwargs` metadatos críticos (`tenant_context`, `caller_phone`, `caller_role`) independientemente de si el modelo los suministró o no, facilitando auditorías de seguridad granulares (Zero-Trust).
+| Rama | Base de Datos | Frontend Deploy | Backend Deploy |
+|:---|:---|:---|:---|
+| `main` (producción) | Supabase Producción | Cloudflare Pages (auto-deploy) | Google Cloud Run (auto-deploy) |
+| `desarrollo` | Supabase Desarrollo | — | — |
 
-### Catálogo de Herramientas Implementadas
-Ubicadas en `app/modules/scheduling/tools.py`:
+> **⚠️ PENDIENTE DE VERIFICACIÓN:** La configuración exacta de los auto-deploys (build commands, env variables inyectadas, service accounts, regiones) y los esquemas/datos de ambas bases de datos (producción y desarrollo) requieren auditoría directa. Esta verificación se realizará cuando se conecten las herramientas MCP de Supabase y Google Cloud Run.
 
-* **`CheckAvailabilityTool`:** Llama a `SchedulingService.check_availability`. Devuelve los *slots* limpios extraídos de Google Calendar para las franjas horarias configuradas.
-* **`CheckMyAppointmentsTool`:** Llama a `SchedulingService.get_appointments`. Integra lógica RBAC evaluando el `caller_role`.
-* **`BookAppointmentTool` / `UpdateAppointmentTool` / `DeleteAppointmentTool`:** Orquestan I/O contra Google Calendar. En el caso de borrado (`DeleteAppointmentTool`), si el emisor no es staff, restringe forzosamente el `target_phone` al número del celular originador para asegurar inmutabilidad e imposibilidad de vandalismo por terceros en la base de datos de reservas.
-* **`EscalateHumanTool`:** Detiene la automatización modificando el flag `bot_active=False` a nivel de base de datos e invoca una alerta asíncrona del sistema.
+### Backend (Google Cloud Run)
 
-### Tolerancia a Fallos de Herramientas
-El registro captura excepciones profundas surgidas de la ejecución (ej. colapso de una API externa, error 500 de Google). Si una herramienta falla, el bloque `try/except` en el `ToolRegistry` interviene, neutralizando la traza de la pila y devolviendo forzosamente una respuesta JSON estandarizada de error (`{"status": "error", "message": "Internal execution error"}`). 
-El sistema inyecta este fallo como *Tool Observation* (Observación de Herramienta) para el LLM, apalancándose en el Prompt Fuerte para obligar al modelo a notificar al usuario sobre la avería en vez de alucinar un resultado afirmativo (Manejo de Alucinación por Complacencia).
+**Dockerfile** (multi-stage en `./Dockerfile` raíz + symlink en `Backend/deploy/Dockerfile`):
+1. **Builder:** `python:3.11-slim` → instala pip + venv en `/opt/venv` → `pip install .` desde pyproject.toml
+2. **Runner:** `python:3.11-slim` → usuario no-root `crmuser` → copia solo `/opt/venv` + `app/`
+3. **CMD:** `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log`
 
-## 7. Despliegue, Configuración y Operaciones
-
-El proyecto está diseñado para operar en entornos *serverless* altamente escalables y de cobro por uso (Google Cloud Run para el Backend y Cloudflare Pages para el Frontend). El determinismo en los despliegues está garantizado mediante Docker y validación estricta de variables de entorno mediante `pydantic-settings`.
-
-### Variables de Entorno (.env)
-El sistema requiere inyección explícita de secretos. En producción, estos deben inyectarse a través de un Secret Manager (GCP Secrets o similares) y no guardarse en el contenedor.
-
-#### Backend (FastAPI)
-```env
-# Operacionales
-ENVIRONMENT=development        # O 'production'. Determina el formateador de logs.
-LOG_LEVEL=DEBUG                # 'INFO', 'WARNING' o 'ERROR' en producción para ahorrar ciclos CPU.
-MOCK_LLM=False                 # 'True' anula llamadas a la API ahorrando cuota en dev.
-
-# Autenticación Meta
-WHATSAPP_VERIFY_TOKEN=abc123   # Token estático para validar la creación del webhook.
-
-# Inteligencia Artificial
-OPENAI_API_KEY=sk-proj-...
+Variables de entorno requeridas (inyectadas via GCP Secret Manager):
+```
+ENVIRONMENT=production
+WHATSAPP_VERIFY_TOKEN=<token>
+OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=AIza...
-
-# Base de Datos Administrativa (Bypassea RLS en el Backend)
-SUPABASE_URL=https://<tu-id>.supabase.co
+SUPABASE_URL=https://<id>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=ey...
+GOOGLE_SERVICE_ACCOUNT_JSON=<json>     # Credenciales de Google Calendar
+DISCORD_WEBHOOK_URL=<url>              # Opcional
+RESEND_API_KEY=<key>                   # Opcional
+SENTRY_DSN=<dsn>
+GOOGLE_OAUTH_CLIENT_ID=<id>           # Opcional, para OAuth Calendar
+GOOGLE_OAUTH_CLIENT_SECRET=<secret>    # Opcional
+GOOGLE_OAUTH_REDIRECT_URI=<uri>        # Opcional
 ```
 
-#### Frontend (Next.js)
-El prefijo `NEXT_PUBLIC_` es obligatorio para exponer estas variables al cliente en tiempo de compilación.
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://<tu-id>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=ey... # Llave anónima restringida por RLS.
-```
+### Frontend (Cloudflare Pages)
 
-### Contenedorización y Docker Build
-El Backend utiliza un *Build Multi-stage* (`deploy/Dockerfile`) para mantener la imagen final estéril, segura y con una huella de memoria reducida.
-1.  **Stage Builder:** Instala `poetry`, `uv` y compila las dependencias en un entorno virtual aislado (`/opt/venv`).
-2.  **Stage Runner:** Crea un usuario no-root (`crmuser`), copia exclusivamente el código fuente y el entorno virtual compilado. Descarta las herramientas de compilación para reducir vulnerabilidades.
+- Build output: configurado en `wrangler.toml` como `.vercel/output/static`
+- Variables de entorno compiladas (`NEXT_PUBLIC_*`):
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `NEXT_PUBLIC_SENTRY_DSN`
 
-Comando de despliegue local:
+### Desarrollo Local
+
 ```bash
-docker-compose -f deploy/docker-compose.yml up --build
-```
+# Backend
+cd Backend
+python -m venv venv && source venv/bin/activate  # o .\venv\Scripts\activate (Windows)
+pip install -e ".[dev]"
+cp .env.example .env  # configurar variables
+uvicorn app.main:app --reload --port 8000
 
-### Concurrencia Dinámica en Google Cloud Run
-El comando `CMD` del `Dockerfile` está diseñado elásticamente:
-```dockerfile
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --no-access-log"]
-```
-* **Asignación de Puertos:** Cloud Run inyecta la variable `$PORT` (usualmente 8080) de forma dinámica. El fallback `:-8000` asegura el funcionamiento local.
-* **Optimización de Memoria (Workers):** Si se despliega en un contenedor de bajo cómputo (ej. 1 vCPU), levantar múltiples *workers* genera *Context Switching*, colapsando la memoria RAM. El contenedor por defecto arranca con `1` worker, modificable inyectando la variable `WEB_CONCURRENCY` a nivel de orquestador (Fórmula sugerida: `2 x Nucleos + 1`).
-* **Supresión de Ruido I/O:** El flag `--no-access-log` evita que Uvicorn escriba en disco cada ping exitoso `200 OK` de Meta, ahorrando cuota de ingesta en Google Cloud Logging.
+# Frontend
+cd Frontend
+npm install
+cp .env.local.example .env.local  # configurar variables
+npm run dev  # localhost:3000
 
-### Sistema de Telemetría Asíncrona (`logger_service.py`)
-El módulo de logging evita los bloqueos de hilos (Thread-blocking) comunes en aplicaciones síncronas.
-* **Modo Development (`ENVIRONMENT=development`):** Imprime logs en consola mediante un `StreamHandler` con colores y tracebacks completos (`exc_info=True` propagado), esencial para depuración del ciclo de LLMs.
-* **Modo Producción (`ENVIRONMENT=production`):** Desvía los logs a un `logging.handlers.QueueHandler`, permitiendo que el Event Loop de FastAPI continúe de inmediato. Un hilo en segundo plano consume la cola, renderizando un formato JSON rígido a través de `orjson` nativo, garantizando su ingestión limpia en sistemas APM (Datadog, GCP Cloud Logging).
+# Docker (Backend)
+docker-compose -f Backend/deploy/docker-compose.yml up --build
+```
 
 ---
 
-## 8. Estado de Implementación y Roadmap
+## 5. Patrones de Diseño Implementados
 
-Esta matriz define el estado actual del proyecto de cara a su transformación en un SaaS multi-tenant comercial, diferenciando la deuda técnica superada de los requisitos operacionales pendientes.
+| Patrón | Implementación | Ubicación |
+|:---|:---|:---|
+| **Strategy** | `LLMFactory` instancia proveedores intercambiables por tenant (`OpenAIStrategy`, `GeminiStrategy`, `MockStrategy`) | `modules/intelligence/router.py` |
+| **Registry** | `ToolRegistry` registra herramientas al boot sin modificar use_cases | `modules/intelligence/tool_registry.py` |
+| **Pub/Sub** | `EventBus` con `asyncio.Queue` desacopla efectos secundarios (alertas, emails, Discord) del pipeline principal | `core/event_bus.py` |
+| **Singleton** | `SupabasePooler._instance`, `MetaGraphAPIClient._http_client`, `_GoogleServiceSingleton._service` | Respectivos módulos |
+| **Abstract Base** | `AITool(ABC)` y `LLMStrategy(ABC)` definen contratos de extensión | `tools/base.py`, `router.py` |
+| **Background Tasks** | FastAPI `BackgroundTasks` para responder 200 OK a Meta inmediatamente | `communication/routers.py` |
+| **Mutex Lock** | `is_processing_llm` en tabla contacts previene llamadas LLM concurrentes por contacto | `communication/use_cases.py` |
+| **RBAC** | `caller_role` inyectado en kwargs de tools regula visibilidad y permisos | `scheduling/tools.py` |
+| **Zero-Trust** | Delete appointment verifica phone match; escalation valida caller_phone | `scheduling/tools.py` |
+| **Inversion of Control** | TenantContext inyectado como parámetro, no global | `api/dependencies.py` |
 
-### A. Cumplido (Deuda Técnica Estructural)
-| Característica / Módulo | Estado | Descripción |
-| :--- | :--- | :--- |
-| **Screaming Architecture** | ✅ Completado | Separación estricta de dominios (Infraestructura vs Casos de Uso). Código legible y escalable. |
-| **Resolución de Body en Webhook** | ✅ Completado | Inyección `Body(...)` en FastAPI, previniendo colapsos asíncronos y garantizando concurrencia. |
-| **Protección I/O Bloqueante** | ✅ Completado | `asyncio.to_thread` envuelve operaciones de base de datos evitando la congelación del Event Loop. |
-| **Logging de Alto Rendimiento** | ✅ Completado | Logs estructurados JSON asíncronos para producción, logs legibles con traceback en local. |
-| **Connection Pooling (Meta)** | ✅ Completado | Cliente efímero para BD que erradica timeouts HTTP/2 y cliente estático para Meta Graph API. |
-| **Autenticación SSO Frontend** | ✅ Completado | Supabase Auth (Google Login) integrado en Next.js. El Dashboard valida sesiones. |
-| **Rate Limiting Defensivo** | ✅ Completado | Integración de `slowapi` restringiendo el webhook frente ataques/Spam. |
-| **Seguridad de Secretos (GCP)** | ✅ Completado | Llaves de LLMs, Meta y base64 de Google Calendar aisladas en Google Secret Manager. Eliminadas del entorno estático. |
+---
 
-### B. Backlog Crítico (Transición a SaaS - P0 y P1)
-| Característica / Requerimiento | Prioridad | Descripción y Plan de Acción |
-| :--- | :--- | :--- |
-| **Mocking UI Nivel Enterprise** | 🚨 **P0** (Bloqueante) | Implementar Layout estructurado (Sidebar, TopNav) con vistas simuladas para Dashboard principal, Agenda y Pacientes, aislando la interactividad real solo en 'Chats' y 'Configuración' para elevar el valor percibido del cliente. |
-| **Debouncing Mutex (Mensajes Múltiples)** | 🚨 **P0** (Bloqueante) | Implementar bandera de bloqueo (`is_processing_llm`) en Supabase. Consolidar ráfagas de mensajes del usuario en una sola llamada al LLM utilizando el patrón de Lock en `ProcessMessageUseCase` para optimizar tokens y UX. |
-| **Conciencia de Contexto (Inyección en Prompt)** | 🚨 **P0** (Bloqueante) | Extraer metadatos de la tabla `contacts` (estado, rol, nombre) e inyectarlos dinámicamente en la instrucción del sistema antes de invocar a `LLMFactory`. |
-| **Sistema de Alertas Real-time (Campana)** | ⚡ **P1** (Escalabilidad) | Finalizar reemplazo del contacto fantasma "Alertas Sistema" por la tabla `alerts`. Implementar suscripción WebSocket en el Navbar del Frontend para notificaciones accionables. |
-| **Caché en Memoria del TenantContext** | ⚡ **P1** (Escalabilidad) | Implementar librería `cachetools` en `dependencies.py` (TTL de 5 min) para evitar consultar Supabase en cada uno de los cientos de webhooks por minuto. |
+## 6. Problemas Conocidos y Deuda Técnica
 
-### C. Plataforma SuperAdmin y FinOps (Deuda Técnica - P2)
-*Actualmente pendiente de desarrollo robusto en backend para control comercial y rentabilidad.*
-| Característica / Requerimiento | Prioridad | Descripción y Plan de Acción |
-| :--- | :--- | :--- |
-| **Telemetría de Consumo LLM (FinOps)** | 💰 **P2** (Comercial) | Modificar el DTO `LLMResponse` para capturar `prompt_tokens` y `completion_tokens`. Emitir evento asíncrono para guardar en nueva tabla `tenant_billing_logs` calculando el costo en USD por petición y por cliente. |
-| **Panel de Control SuperAdmin** | 💰 **P2** (Comercial) | Vista maestra protegida por RLS estricto. Permite ver el margen de ganancia por clínica (Costo Tokens vs Suscripción Mensual) y activar un "Kill-Switch" (`is_active=False`) para clínicas morosas, cortando su webhook. |
-| **Políticas RLS Vinculantes (DB)** | 🔧 **P3** (Optimización) | Eliminar las políticas `Allow public...` actuales en la Base de Datos. Reescribir RLS utilizando la función `auth.uid()` acoplada a la tabla de privilegios `tenant_users`. |
+### Críticos (bloquean go-live)
+
+| # | Problema | Archivo(s) | Detalle |
+|:--|:---|:---|:---|
+| 1 | **CORS abierto a `*`** | `main.py:122` | Cualquier origen puede hacer requests al backend. Debe restringirse al dominio de CF Pages |
+| 2 | **Traceback completo en HTTP 500** | `main.py:302,321` | Stack trace expuesto a clientes. Información de paths, tablas, estructura interna |
+| 3 | **Endpoints sin autenticación** | `main.py:148-256` | `/api/simulate`, `/api/test-feedback`, `/api/calendar/*`, `/api/debug-*` accesibles públicamente |
+| 4 | **Frontend sin auth guard** | `(panel)/layout.tsx` | El panel monta `CrmProvider` sin verificar sesión. Accesible sin login y con cuentas no autorizadas |
+| 5 | **Logout no invalida sesión** | `Sidebar.tsx:17` | Hace `window.location.href = '/login'` sin llamar `supabase.auth.signOut()`. La sesión persiste |
+| 6 | **`TriageEvaluator` roto** | `evaluator.py:24` | Referencia `tenant.staff_notification_number` que no existe en `TenantContext` |
+
+### Arquitecturales
+
+| # | Problema | Detalle |
+|:--|:---|:---|
+| 7 | `main.py` tiene 6 endpoints inline (326 LOC) | Viola Screaming Architecture. Calendar y simulate deberían tener routers propios |
+| 8 | Tool results inyectados como `role: "user"` | OpenAI espera `role: "tool"` con `tool_call_id`. Puede confundir el modelo |
+| 9 | Solo 1 pasada de tool calling | Si el LLM necesita tool → response → tool (cadena), falla |
+| 10 | Calendar IDs hardcodeados en fallback | `google_client.py:67-70`. Todos los tenants sin config comparten calendarios |
+| 11 | `ProactiveWorker` es stub vacío | Loop con `pass` cada hora. Consume recursos sin utilidad |
+| 12 | `BaseRepository` no se usa | `repositories/base.py` define CRUD genérico pero nada lo importa |
+| 13 | Dashboard con datos hardcodeados | `DashboardView.tsx` muestra KPIs estáticos, no queries reales |
+| 14 | Reportes/FinOps son mocks | Datos estáticos, etiquetas "Próximamente" |
+| 15 | 3 instancias de Supabase client en frontend | Cada Context crea su propio `createClient()` con WebSocket independiente |
+| 16 | Next.js rewrites no aplican en Cloudflare | `next.config.js` define rewrites que solo funcionan en servidor Node.js, no static export |
+| 17 | `email_service.py` usa `os.getenv` directo | No pasa por `Settings` centralizado. Destinatarios hardcodeados |
+| 18 | EventBus loop infinito sin graceful shutdown | `start_processing()` no tiene mecanismo de cancelación limpia |
+
+---
+
+## 7. Archivos Innecesarios: Inventario y Justificación
+
+### Raíz del repositorio
+
+| Archivo | Razón para eliminar |
+|:---|:---|
+| `check_realtime.py` | Script de diagnóstico one-off. Ya está en `.gitignore` |
+| `debug_gpt5_tools.py` | Script de debugging puntual. Ya en `.gitignore` |
+| `extract.py`, `extracted_logs.txt` | Extractor de logs temporal |
+| `read_utf16_logs.py` | Utilidad de lectura de logs legacy |
+| `run_logs.bat` | Script Windows para correr logs |
+| `test_gpt5_tools_feed.py` | Test manual aislado |
+| `test_history.py`, `tmp_check_history.py` | Scripts de verificación one-off |
+| `error.log`, `error_ai.txt`, `error_all.txt`, `error_bg.txt`, `error_clean.txt`, `error_latest.txt` | Logs de debugging local. No deben estar en repo |
+| `curl_stderr.txt`, `curl_stdout.txt` | Output de curl guardado. Diagnóstico temporal |
+| `last_msg.json`, `logs.json`, `logs_clean.json`, `orch_logs.json`, `output_debug.json` | Dumps de diagnóstico JSON |
+| `schema.sql`, `schema_dev.sql` | Schemas locales probablemente desactualizados vs la BD real |
+| `prod_data.sql`, `prod_public.sql`, `prod_schema.sql` | **⚠️ RIESGO:** dumps de producción con datos reales. No rastreados pero presentes |
+| `implementation_plan.md`, `task.md` | Artefactos de sessiones de IA anteriores |
+| `setup_dev_env.py` | Script de setup ya en `.gitignore` |
+
+### Backend (`Backend/`)
+
+| Archivo | Razón para eliminar |
+|:---|:---|
+| `report.md` (155KB), `reporter.py` | Reporte generado automáticamente + script generador. Dev artifacts |
+| `latency_analysis.md` | Análisis de latencia puntual de una sesión pasada |
+| `payload.json`, `simpayload.json`, `temp_contacts.json` | Payloads de test hardcodeados |
+| `deploy_to_prod.sql` | Migration one-off ejecutada |
+| `temp_fix_rls.sql` | Fix temporal de RLS ya aplicado |
+| `tmp_clean_db.py` | Script de limpieza destructivo temporal |
+| `run_all_migrations.py` | Script que ejecuta migrations sueltas. Sin sistema formal |
+| `pytest.log` | Output de test runner |
+| `Procfile` | Artefacto de Heroku/Railway. **No se usa** — el deploy es via Dockerfile |
+| `.env.prod` | Variables de producción locales. No debería estar en filesystem |
+| `Backend/temp/` | Directorio con `.env.new`, credenciales duplicadas, base64 de Google creds |
+| `Backend/credentials/` | Archivo JSON de Google Service Account local. En prod se usa ENV var |
+| `Backend/scripts/maintenance/` | `delete_contacts.py`, `migrate_contacts.py` — scripts destructivos one-off |
+| `Backend/scripts/setup/` | `db_setup.py`, `enable_rt.py`, `fix_pub_pooler.py`, `fix_rls.py` — ejecutados y ya no relevantes |
+| `Backend/sql/` | `fix_rls_production.sql`, `recreate_feedback_table.sql` — migrations ejecutadas |
+| `Backend/app/infrastructure/database/repositories/base.py` | Código muerto: `BaseRepository` no es importado por ningún módulo |
+
+### Frontend (`Frontend/`)
+
+| Archivo | Razón para eliminar |
+|:---|:---|
+| `report.md` (274KB), `reporter.py` | Reporte generado + generador. Dev artifacts |
+| `Frontend/scripts/refactor_page.py` | Script de refactoring one-off |
+| `Frontend/.git/` | **⚠️ Directorio .git independiente dentro del frontend**. Indica que era un subrepo separado que se integró. Puede causar conflictos con el .git raíz |
+
+---
+
+## 8. Variables de Entorno
+
+### Backend (14 variables en `config.py`)
+
+| Variable | Requerida | Default | Uso |
+|:---|:---|:---|:---|
+| `ENVIRONMENT` | No | `"development"` | Controla formato de logs (JSON vs human) |
+| `LOG_LEVEL` | No | `"DEBUG"` | Nivel de logging |
+| `MOCK_LLM` | No | `False` | Bypasea LLM reales con MockStrategy |
+| `WHATSAPP_VERIFY_TOKEN` | **Sí** | — | Verificación del webhook de Meta |
+| `OPENAI_API_KEY` | **Sí** | — | Autenticación OpenAI |
+| `GEMINI_API_KEY` | **Sí** | — | Autenticación Gemini (requerida aunque adapter sea mock) |
+| `SUPABASE_URL` | **Sí** | — | URL del proyecto Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Sí** | — | Clave admin que bypassea RLS |
+| `DISCORD_WEBHOOK_URL` | No | `None` | URL para alertas Discord |
+| `RESEND_API_KEY` | No | `None` | API key para emails vía Resend |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | No | `None` | JSON string de credenciales de Google Calendar |
+| `GOOGLE_OAUTH_CLIENT_ID` | No | `None` | OAuth client para calendar multi-tenant |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | No | `None` | OAuth secret |
+| `GOOGLE_OAUTH_REDIRECT_URI` | No | `None` | URI de callback OAuth |
+| `PROACTIVE_INTERVAL` | No | `3600` | Intervalo del worker proactivo (segundos) |
+
+### Frontend (3 variables compiladas)
+
+| Variable | Uso |
+|:---|:---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL de Supabase para el browser client |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave anónima (restricta por RLS) |
+| `NEXT_PUBLIC_SENTRY_DSN` | DSN de Sentry para error tracking |
+
+---
+
+## 9. Backlog y Roadmap
+
+### ✅ Completado
+
+| Feature | Estado | Notas |
+|:---|:---|:---|
+| Screaming Architecture (DDD + Puertos/Adaptadores) | ✅ | Separación `modules/` vs `infrastructure/` |
+| Resolución de Body webhook (`Body(...)` en FastAPI) | ✅ | Evita consumo doble del stream |
+| Protección I/O bloqueante (`asyncio.to_thread`) | ✅ | Google Calendar sync calls envueltas |
+| Logging async (QueueHandler + JSON prod) | ✅ | Dual mode dev/prod |
+| Connection pooling Meta (httpx singleton) | ✅ | 50 keepalive / 100 max connections |
+| SSO Frontend (Google via Supabase Auth) | ✅ | Login page funcional |
+| Seguridad de secretos (GCP Secret Manager) | ✅ | Variables inyectadas desde secrets |
+| Multi-LLM dinámico (Strategy + Factory) | ✅ | OpenAI funcional. Gemini registrado pero mock |
+| Debouncing cognitivo (Mutex `is_processing_llm`) | ✅ | Lock en BD + sleep(3) para consolidar ráfagas |
+| Inyección dinámica de contexto (role, name, status) | ✅ | En system prompt antes de inferencia |
+| Sistema de alertas real-time (tabla `alerts`) | ✅ | Reemplazó al viejo "chat de sistema". Toasts + Web Notifications + sonido |
+| EventBus async (Pub/Sub in-memory) | ✅ | asyncio.Queue con fire-and-forget listeners |
+| Tool Registry extensible (7 tools) | ✅ | Register pattern con Zero-Trust en delete |
+| Google Calendar integration (FreeBusy + CRUD + Round-Robin) | ✅ | 2 boxes, slots 09:00-19:00 |
+| Google Calendar OAuth multi-tenant | ✅ | Flow completo con Fernet encryption |
+| Triaje clínico (keyword matching) | ✅ parcial | Funcional pero `TriageEvaluator` tiene bug (ver §6) |
+| Patient Scoring (CelluDetox) | ✅ | `UpdatePatientScoringTool` escribe en `metadata` jsonb |
+| Discord alertas (Webhooks) | ✅ | Embeds con traceback en errores |
+| Email alertas (Resend) | ✅ | Notificación al negocio en escalaciones |
+| Sentry (Backend + Frontend) | ✅ parcial | Inicializado pero frontend tiene instrumentation deshabilitada |
+| Vista Chats con realtime | ✅ | `ChatArea.tsx` funcional con WebSocket |
+| Vista Agenda con Google Calendar | ✅ | `AgendaView.tsx` lee/escribe eventos reales |
+| Vista Pacientes (CRM table) | ✅ | `PacientesView.tsx` con datos reales de Supabase |
+| Vista Configuración (LLM + prompt + OAuth) | ✅ | Funcional, persiste en tabla `tenants` |
+| Simulador de chat | ✅ | `TestChatArea.tsx` + contacto especial `56912345678` |
+| Docker multi-stage (non-root) | ✅ | Imagen limpia, usuario `crmuser` |
+
+### 🚨 P0 — Bloqueantes (necesarios para go-live)
+
+| Feature | Descripción |
+|:---|:---|
+| **Auth guard en frontend** | Verificar sesión en `(panel)/layout.tsx`. Sin sesión → redirect a login. Cuenta sin tenant → acceso denegado |
+| **Logout real** | `Sidebar.tsx` debe llamar `supabase.auth.signOut()` antes de redirigir |
+| **Restringir CORS** | Cambiar `allow_origins=["*"]` a `dash.tuasistentevirtual.cl`, `ohno.tuasistentevirtual.cl`, `localhost:3000` |
+| **Eliminar tracebacks de HTTP 500** | No exponer stack traces en producción |
+| **Autenticación de endpoints internos** | Proteger `/api/simulate`, `/api/calendar/*`, `/api/test-feedback`, `/api/debug-*` |
+| **Fix error de conexión Agenda** | Diagnosticar y resolver: proxy route, GCal credentials, o singleton init |
+| **Fix carga del Chat** | Diagnosticar si chat carga correctamente en producción |
+| **Monitoreo completo** | Sentry en frontend + backend → Discord. Cualquier error en cualquier pieza = notificación |
+
+### ⚡ P1 — Mejoras Arquitecturales (post go-live)
+
+| Feature | Descripción |
+|:---|:---|
+| Implementar Gemini adapter real | O desregistrarlo del factory. No urgente: solo usamos OpenAI para la primera clienta |
+| Fix TriageEvaluator | Agregar `staff_notification_number` a `TenantContext` o usar default |
+| Extraer endpoints de `main.py` a routers | Calendar, simulate, feedback → routers dedicados |
+| Tool observation format correcto | Enviar como `role: "tool"` con `tool_call_id` (spec OpenAI) |
+| Multi-turn tool calling | Loop recursivo hasta que el LLM no pida más tools |
+| Calendar IDs dinámicos por tenant | Columna `calendar_ids jsonb[]` en tabla `tenants` |
+| Singleton Supabase en frontend | Un solo `createClient()` compartido entre contexts |
+| TypeScript types | Interfaces para Contact, Message, Alert, Tenant (eliminar `any`) |
+| Caché TenantContext | `cachetools` TTL=5min en `dependencies.py` |
+
+### 💰 P2 — Plataforma Comercial (no urgente)
+
+| Feature | Descripción |
+|:---|:---|
+| Telemetría FinOps (consumo LLM) | Capturar `prompt_tokens` + `completion_tokens` por request. Tabla `tenant_billing_logs` |
+| Dashboard con datos reales | Queries a Supabase en vez de números hardcodeados. **Actualmente 100% hardcodeado** |
+| Reportes funcionales | Gráficos de conversación, conversión, tiempos de respuesta. **Actualmente mock "en construcción"** |
+| FinOps funcional | Métricas de costo. **Actualmente datos estáticos** |
+| Panel SuperAdmin | Vista maestra con márgenes por tenant y kill-switch de morosos |
+| RLS vinculante (eliminar políticas públicas) | Usar `auth.uid()` exclusivamente vía `get_user_tenant_ids()` |
+| CI/CD pipeline (GitHub Actions) | Lint + type-check + tests antes de merge a main. `.github/workflows/` está vacío |
+| Tests unitarios | ProcessMessageUseCase, ToolRegistry, SchedulingService. Test directory vacío |
+| Migraciones SQL formales | Sistema de versionamiento (Prisma, dbmate, o manual ordenado) |
+| ProactiveWorker real | Recordatorios -24h, follow-ups +24h, re-engagement 30 días |
+| Rotar credenciales | Las API keys están en texto plano en `.env` local. En `.gitignore` pero deben rotarse |
+
+---
+
+## 10. Dependencias
+
+### Backend (`pyproject.toml`)
+
+```
+fastapi>=0.110.0           uvicorn>=0.27.1
+supabase>=2.3.6            openai>=1.14.0
+google-generativeai>=0.4.1 pydantic>=2.6.4
+pydantic-settings>=2.2.1   httpx>=0.27.0
+python-dotenv>=1.0.1        orjson>=3.9.15
+pytz>=2024.1               google-api-python-client>=2.122.0
+google-auth-oauthlib>=1.2.0 sentry-sdk[fastapi]>=2.0.0
+cryptography>=42.0.0
+
+Dev: pytest>=8.0.0, pytest-asyncio>=0.23.5, coverage>=7.4.0
+```
+
+### Frontend (`package.json`)
+
+```
+next@14.1.4                react@^18.2.0
+@supabase/ssr@^0.1.0       @supabase/supabase-js@^2.98.0
+@sentry/nextjs@^10.47.0    lucide-react@^0.364.0
+date-fns@^4.1.0            recharts@^3.8.1
+radix-ui@^1.4.3            shadcn@^4.1.2
+class-variance-authority    clsx@^2.1.1
+tailwind-merge@^2.6.1      tailwindcss-animate@^1.0.7
+tw-animate-css@^1.4.0      pg@^8.20.0
+
+Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0
+```
