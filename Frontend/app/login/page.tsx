@@ -2,9 +2,13 @@
 
 import { createClient } from '@/lib/supabase'
 import { Bot } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function LoginPage() {
+function LoginForm() {
     const supabase = createClient()
+    const searchParams = useSearchParams()
+    const error = searchParams.get('error')
 
     const handleGoogleLogin = async () => {
         await supabase.auth.signInWithOAuth({
@@ -31,6 +35,12 @@ export default function LoginPage() {
 
             <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                            <p className="text-sm text-red-700 font-medium">Error de Autenticación</p>
+                            <p className="text-xs text-red-600 mt-1 break-all">{error}</p>
+                        </div>
+                    )}
                     <button
                         onClick={handleGoogleLogin}
                         className="w-full flex justify-center py-3 px-4 border border-slate-300 rounded-md shadow-sm text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors"
@@ -41,5 +51,17 @@ export default function LoginPage() {
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <p className="text-slate-500">Cargando...</p>
+            </div>
+        }>
+            <LoginForm />
+        </Suspense>
     )
 }
