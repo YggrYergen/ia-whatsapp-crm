@@ -507,17 +507,61 @@ Cloud Build trigger:                  Cloud Build trigger:
 
 **IAM roles requeridos (por docs):**
 ```bash
-# Service account del build necesita estos roles:
+**IAM roles aplicados (2026-04-08) a `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com`:**
+
+| Role | Por qué (según docs) |
+|:---|:---|
+| `roles/cloudbuild.builds.builder` | Ejecutar builds en Cloud Build |
+| `roles/run.admin` | Deployar revisiones a Cloud Run |
+| `roles/iam.serviceAccountUser` | Actuar como la service identity del servicio Cloud Run (**causa raíz del error `iam.serviceaccounts.actAs`**) |
+| `roles/storage.admin` | Escribir imágenes a Artifact Registry |
+| `roles/developerconnect.readTokenAccessor` | Leer código del repo GitHub vía Developer Connect |
+
+Comandos ejecutados:
+```bash
 gcloud projects add-iam-policy-binding saas-javiera \
-  --member=serviceAccount:BUILD_SA_EMAIL \
-  --role=roles/iam.serviceAccountUser
+  --member=serviceAccount:ia-calendar-bot@saas-javiera.iam.gserviceaccount.com \
+  --role=roles/cloudbuild.builds.builder --condition=None
 
 gcloud projects add-iam-policy-binding saas-javiera \
-  --member=serviceAccount:BUILD_SA_EMAIL \
-  --role=roles/run.builder
+  --member=serviceAccount:ia-calendar-bot@saas-javiera.iam.gserviceaccount.com \
+  --role=roles/run.admin --condition=None
+
+gcloud projects add-iam-policy-binding saas-javiera \
+  --member=serviceAccount:ia-calendar-bot@saas-javiera.iam.gserviceaccount.com \
+  --role=roles/iam.serviceAccountUser --condition=None
 ```
 
-#### Configuración actual
+#### Cloud Build Trigger — Configuración Exacta (verificada)
+
+**Trigger ID:** `7458b935-6cd5-48e2-b12b-b7115947e39d`
+**Nombre:** `cloudrun-ia-backend-prod-europe-west1-YggrYergen-ia-whatsapptny`
+**Región:** `europe-west1`
+**Service Account:** `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com`
+**Evento:** Push a branch `main`
+**Repo:** `YggrYergen/ia-whatsapp-crm` (vía Developer Connect)
+
+```yaml
+# Cloud Build trigger config (exportada con gcloud beta builds triggers export)
+build:
+  images:
+  - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
+  options:
+    logging: CLOUD_LOGGING_ONLY
+  steps:
+  - args:
+    - build
+    - -t
+    - europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ia-backend-prod:latest
+    - -f
+    - Backend/Dockerfile        # ← Dockerfile DENTRO de Backend/ (self-contained)
+    - Backend                   # ← Build context = Backend/ (NO raíz del repo)
+    name: gcr.io/cloud-builders/docker
+```
+
+> **⚠️ NO MODIFICAR** la configuración del trigger sin consultar [Continuous Deployment docs](https://cloud.google.com/run/docs/continuous-deployment). El `-f Backend/Dockerfile` y el contexto `Backend` son intencionales y siguen el patrón oficial.
+
+#### Configuración del Servicio Cloud Run
 
 **Dockerfile** (multi-stage en `Backend/Dockerfile`, self-contained):
 1. **Builder:** `python:3.11-slim` → instala pip + venv en `/opt/venv` → `pip install .` desde pyproject.toml
