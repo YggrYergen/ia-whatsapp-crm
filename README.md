@@ -474,14 +474,52 @@ Habilitado en tablas `contacts`, `messages` y `alerts`. El frontend suscribe tre
 ### Backend (Google Cloud Run)
 
 > **⚠️ DOCS FIRST — Cloud Run:** Antes de modificar CUALQUIER aspecto del deploy del backend (Dockerfile, Cloud Build, IAM, logging), consultar las docs oficiales vigentes:
-> - [Cloud Build → Cloud Run](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run)
-> - [Cloud Build IAM](https://cloud.google.com/build/docs/securing-builds/configure-access-control)
-> - [Cloud Run deploy](https://cloud.google.com/run/docs/deploying)
-> - [Cloud Logging](https://cloud.google.com/logging/docs)
+> - [FastAPI Quickstart (Cloud Run)](https://cloud.google.com/run/docs/quickstarts/build-and-deploy/deploy-python-fastapi-service) — estructura de proyecto oficial
+> - [Continuous Deployment from Git](https://cloud.google.com/run/docs/continuous-deployment) — configuración de trigger Cloud Build
+> - [Cloud Build IAM](https://cloud.google.com/build/docs/securing-builds/configure-access-control) — permisos requeridos
+> - [Cloud Logging](https://cloud.google.com/logging/docs) — retención y acceso a logs
 >
-> **El deploy DEBE producir logs visibles.** Si un deploy falla sin logs, el problema de logging se resuelve PRIMERO antes de intentar arreglar el deploy en sí.
+> **El deploy DEBE producir logs visibles.** Si un deploy falla sin logs, el problema de logging se resuelve PRIMERO.
 
-**Dockerfile** (multi-stage en `./Dockerfile` raíz + symlink en `Backend/deploy/Dockerfile`):
+#### Diagnóstico: Por qué falla el deploy (investigado 2026-04-08)
+
+**Root cause según docs oficiales:**
+
+1. **Error `iam.serviceaccounts.actAs`:** La cuenta de servicio del build NO tiene `roles/iam.serviceAccountUser`. Documentado explícitamente en [Continuous Deployment docs](https://cloud.google.com/run/docs/continuous-deployment): la service account que ejecuta el build necesita `roles/cloudbuild.builds.builder` + `roles/run.admin` + **`roles/iam.serviceAccountUser`**.
+
+2. **Sin logs:** El build probablemente falla durante el paso Docker antes de escribir logs. Esto puede deberse a la estructura incompatible del Dockerfile.
+
+3. **Estructura del Dockerfile incompatible con patrón oficial:** El [FastAPI Quickstart](https://cloud.google.com/run/docs/quickstarts/build-and-deploy/deploy-python-fastapi-service) espera un directorio flat con `main.py` + `requirements.txt` en la raíz del directorio fuente. Nuestro Dockerfile en la raíz del repo hace `COPY Backend/...` — esto NO es el patrón estándar.
+
+**Solución (respaldada por docs):** Restructurar `Backend/` para ser self-contained con su propio `Dockerfile`:
+
+```
+ANTES (no estándar):                  DESPUÉS (patrón oficial):
+/Dockerfile  (referencia Backend/)    /Backend/Dockerfile  (self-contained)
+  COPY Backend/pyproject.toml ...       COPY pyproject.toml ...
+  COPY Backend/ ./                      COPY . ./
+  COPY Backend/app/ ./app/              COPY app/ ./app/
+
+Cloud Build trigger:                  Cloud Build trigger:
+  Source: /Dockerfile                   Source: /Backend/Dockerfile
+  Context: /                            Context: /Backend/
+```
+
+**IAM roles requeridos (por docs):**
+```bash
+# Service account del build necesita estos roles:
+gcloud projects add-iam-policy-binding saas-javiera \
+  --member=serviceAccount:BUILD_SA_EMAIL \
+  --role=roles/iam.serviceAccountUser
+
+gcloud projects add-iam-policy-binding saas-javiera \
+  --member=serviceAccount:BUILD_SA_EMAIL \
+  --role=roles/run.builder
+```
+
+#### Configuración actual
+
+**Dockerfile** (multi-stage en `Backend/Dockerfile`, self-contained):
 1. **Builder:** `python:3.11-slim` → instala pip + venv en `/opt/venv` → `pip install .` desde pyproject.toml
 2. **Runner:** `python:3.11-slim` → usuario no-root `crmuser` → copia solo `/opt/venv` + `app/`
 3. **CMD:** `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log`
