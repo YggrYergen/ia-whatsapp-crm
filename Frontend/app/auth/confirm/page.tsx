@@ -4,85 +4,77 @@ import { createClient } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 
+/**
+ * Auth confirm page — handles the OAuth PKCE callback.
+ *
+ * How it works (per official Supabase docs):
+ * 1. signInWithOAuth stores the code_verifier in a cookie
+ * 2. After Google OAuth, Supabase redirects here with ?code=XXX
+ * 3. createBrowserClient (singleton) auto-detects ?code= in the URL
+ *    during its _initialize() and calls exchangeCodeForSession internally
+ * 4. On success, onAuthStateChange fires with SIGNED_IN
+ * 5. We listen for that event and redirect to /dashboard
+ *
+ * We do NOT call exchangeCodeForSession manually — that causes a race
+ * condition with the auto-initialization.
+ */
 function ConfirmAuth() {
     const router = useRouter()
     const searchParams = useSearchParams()
-    const [debugInfo, setDebugInfo] = useState<string>('')
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
-        const code = searchParams.get('code')
         const errorParam = searchParams.get('error')
         const errorDescription = searchParams.get('error_description')
-
-        // Collect debug info about storage state
-        const cookies = document.cookie
-        const cookieNames = cookies
-            ? cookies.split(';').map(c => c.trim().split('=')[0])
-            : []
-        const debugData = {
-            url: window.location.href,
-            hasCode: !!code,
-            cookieCount: cookieNames.length,
-            cookieNames,
-            hasPKCECookie: cookieNames.some(n =>
-                n.includes('code-verifier') || n.includes('pkce')
-            ),
-            localStorageKeys: Object.keys(localStorage).filter(k =>
-                k.includes('supabase') || k.includes('sb-') || k.includes('pkce') || k.includes('code')
-            ),
-        }
-        setDebugInfo(JSON.stringify(debugData, null, 2))
-        console.log('[auth/confirm] Debug:', debugData)
-        console.log('[auth/confirm] Raw cookies:', cookies)
 
         if (errorParam) {
             router.replace(`/login?error=${encodeURIComponent(errorDescription || errorParam)}`)
             return
         }
 
-        if (!code) {
-            router.replace('/login')
-            return
-        }
-
-        // Create a new browser client - this is the same singleton as in the login page.
-        // The browser client uses document.cookie for storage, so the code_verifier
-        // stored during signInWithOAuth should be available here.
+        // Create the browser client — this singleton auto-initializes and
+        // detects ?code= in window.location, performing the PKCE exchange.
         const supabase = createClient()
 
-        supabase.auth.exchangeCodeForSession(code)
-            .then(({ data, error: exchangeError }) => {
-                if (exchangeError) {
-                    console.error('[auth/confirm] Exchange error:', exchangeError.message)
-                    setError(exchangeError.message)
-                    // Don't redirect immediately - show debug info
-                } else {
-                    console.log('[auth/confirm] Exchange success! Redirecting to dashboard.')
-                    router.replace('/dashboard')
-                }
-            })
-            .catch((err) => {
-                console.error('[auth/confirm] Exchange crash:', err)
-                setError(err.message || 'Unknown error')
-            })
+        // Listen for the auth state change that fires after auto-exchange
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                router.replace('/dashboard')
+            }
+            if (event === 'TOKEN_REFRESHED' && session) {
+                router.replace('/dashboard')
+            }
+        })
+
+        // Also check if session already exists (e.g., auto-init already completed)
+        supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+            if (sessionError) {
+                console.error('[auth/confirm] Session error:', sessionError.message)
+                setError(sessionError.message)
+                return
+            }
+            if (session) {
+                router.replace('/dashboard')
+            }
+        })
+
+        // Timeout: if nothing happens in 10 seconds, show an error
+        const timeout = setTimeout(() => {
+            setError('La autenticación está tardando demasiado. Intenta de nuevo.')
+        }, 10000)
+
+        return () => {
+            subscription.unsubscribe()
+            clearTimeout(timeout)
+        }
     }, [searchParams, router])
 
-    // Show debug info on screen for diagnosis
     if (error) {
         return (
             <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-                <div className="bg-white p-6 rounded-lg shadow max-w-2xl w-full">
+                <div className="bg-white p-6 rounded-lg shadow max-w-md w-full text-center">
                     <p className="text-red-600 font-bold text-lg">Error de autenticación</p>
-                    <p className="text-sm text-red-500 mt-2 break-all">{error}</p>
-                    <details className="mt-4" open>
-                        <summary className="cursor-pointer text-sm text-slate-500 font-medium">
-                            Debug Info (cookies & storage)
-                        </summary>
-                        <pre className="mt-2 text-xs bg-slate-100 p-3 rounded overflow-auto max-h-64">
-                            {debugInfo}
-                        </pre>
-                    </details>
+                    <p className="text-sm text-red-500 mt-2">{error}</p>
                     <button
                         onClick={() => router.replace('/login')}
                         className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700"
