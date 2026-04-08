@@ -29,6 +29,8 @@ class _GoogleServiceSingleton:
                 try:
                     logger.info("✅ [GCal] Using Service Account from environment variable.")
                     creds_dict = json.loads(settings.GOOGLE_SERVICE_ACCOUNT_JSON)
+                    if "private_key" in creds_dict:
+                        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
                     cls._credentials = service_account.Credentials.from_service_account_info(
                         creds_dict, scopes=SCOPES
                     )
