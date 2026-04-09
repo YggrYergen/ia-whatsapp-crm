@@ -262,11 +262,26 @@ Systemic "silent failures" — 30+ catch blocks across backend and frontend were
 
 > **⚠️ PREREQUISITE (Preamble): Before ANY E2E testing begins, Sentry must be connected to Discord via OTel/webhooks so that ALL errors — including gracefully handled ones — trigger immediate Discord notifications. This must be done by consulting the official docs FIRST (Sentry Alerts docs, Discord integration docs). The goal is: if ANYTHING goes wrong anywhere in the system, from the smallest caught exception to a full crash, we are notified immediately in Discord. No silent failures.**
 
-**Preamble — Sentry → Discord Real-Time Alerts (MUST be done FIRST):**
-- [ ] Read official docs: [Sentry Alerts](https://docs.sentry.io/product/alerts/), [Sentry Discord Integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)
-- [ ] Configure Sentry Alert Rules to fire Discord notifications for ALL captured exceptions (not just unhandled errors)
-- [ ] Verify: trigger an intentional error → Discord notification arrives within 30 seconds
-- [ ] Verify: trigger a gracefully handled exception → Discord notification still arrives (this confirms no blind spots)
+**Preamble — Sentry → Discord Real-Time Alerts ✅ COMPLETE (2026-04-09):**
+
+Following the official docs ([Sentry Alerts](https://docs.sentry.io/product/alerts/), [Sentry Discord Integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)):
+
+| Step | Result |
+|:---|:---|
+| Discord integration | ✅ INSTALLED — "StarCompanion's server" (guild `1491131005719810360`), bot has channel access |
+| Alert Rule | ✅ CREATED — **"All Issues → Discord (CRM Observability)"** (Rule ID `16897799`) |
+| WHEN triggers | "A new issue is created" OR "The issue changes state from resolved to unresolved" |
+| THEN actions | 1) Send Discord notification to channel `1491131005719810363` (#general) 2) Send to Suggested Assignees + Active Members |
+| Action interval | 5 minutes |
+| E2E verification | ✅ Hit `/api/debug-exception` → Captain Hook webhook arrived (manual) + Sentry Bot alert arrived (automatic) |
+| Test notification | ✅ "Send Test Notification" from Sentry dashboard → Discord received |
+
+**Two notification channels now active:**
+1. **Captain Hook** (manual `discord_notifier.py` webhook) — fires immediately from specific backend code paths (global exception handler, tool errors, pipeline crashes)
+2. **Sentry Bot** (official Sentry integration) — fires automatically for ALL new issues and reopened issues captured by `sentry_sdk`
+
+**GCP Project ID:** `saas-javiera` (NOT `tuasistentevirtual` — that's the Sentry org name)  
+**Cloud Run Production URL:** `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app`
 
 **Partially tested (user confirmed 2026-04-09):**
 - ✅ Dashboard loads

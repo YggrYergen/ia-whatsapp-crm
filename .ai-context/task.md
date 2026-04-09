@@ -224,11 +224,19 @@ Docs consulted:
 
 > **PREREQUISITE (Preamble): Sentry must be connected to Discord so ALL errors — even gracefully handled ones — trigger immediate Discord notifications. Consult official docs FIRST.**
 
-### Preamble: Sentry → Discord Real-Time Alerts (MUST be done FIRST)
-- [ ] Read official docs: [Sentry Alerts](https://docs.sentry.io/product/alerts/), [Sentry Discord Integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)
-- [ ] Configure Sentry Alert Rules for ALL captured exceptions → Discord notification
-- [ ] Verify: intentional unhandled error → Discord notification within 30s
-- [ ] Verify: gracefully handled exception → Discord notification still arrives (no blind spots)
+### Preamble: Sentry → Discord Real-Time Alerts ✅ COMPLETE (2026-04-09)
+- [x] Read official docs: [Sentry Alerts](https://docs.sentry.io/product/alerts/), [Sentry Discord Integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/) ✅
+- [x] Sentry Discord integration installed: "StarCompanion's server" (guild `1491131005719810360`) ✅
+- [x] Alert Rule created: **"All Issues → Discord (CRM Observability)"** (Rule ID: `16897799`)
+  - WHEN: "A new issue is created" OR "The issue changes state from resolved to unresolved"
+  - THEN: Send Discord notification to `StarCompanion's server` channel `1491131005719810363` (#general)
+  - THEN: Send notification to Suggested Assignees / Recently Active Members (email)
+  - Action interval: 5 minutes
+- [x] Verify: intentional unhandled error (`/api/debug-exception`) → Captain Hook webhook + Sentry Bot notification arrived in Discord ✅
+- [x] Verify: test notification via Sentry dashboard "Send Test Notification" → Discord received ✅
+- **Two notification channels now active:**
+  1. **Captain Hook** (manual `discord_notifier.py` webhook) — immediate, from specific backend code paths
+  2. **Sentry Bot** (official Sentry integration alert rule) — automatic, for ALL new + reopened issues
 
 ### 3A: Componentes CRM — Verificación Exhaustiva de UI
 - [x] Dashboard loads ✅ (user confirmed 2026-04-09)

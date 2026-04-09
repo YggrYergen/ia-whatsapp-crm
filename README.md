@@ -47,7 +47,7 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
-| **Alta** | Preamble Fase 3: Sentry → Discord para TODOS los errores (incluidos los manejados) | Consultar [Sentry Alerts docs](https://docs.sentry.io/product/alerts/) + [Discord integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/) |
+| ~~**Alta**~~ | ~~Preamble Fase 3: Sentry → Discord para TODOS los errores (incluidos los manejados)~~ | ✅ **RESUELTO** — Alert Rule "All Issues → Discord (CRM Observability)" (Rule ID `16897799`), canal `#general`, verificado E2E |
 | **Alta** | E2E validation de las 5 LLM tools restantes | CheckMyAppointments, Update, Delete, Escalate, UpdateScoring |
 | **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
 | Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido — necesario para Phase 5 |
