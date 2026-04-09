@@ -6,46 +6,50 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-08 18:10 CLT)
+## 0. Estado Actual del Proyecto (2026-04-08 22:35 CLT)
 
-**Estado global:** 🟡 En estabilización — Fase 1C completada (auth PKCE ✅), pendiente backend deploy y E2E completo.
+**Estado global:** 🟡 En estabilización — Fases 0-1D completas, Fase 2 (Sentry) en progreso.
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
-| **Backend (Cloud Run)** | 🟡 Operativo (rev 00041), build falla | Servicio responde (`debug-ping` 200 OK). Cloud Build trigger falla sin logs. CORS `*` y tracebacks expuestos (fix commiteado, pendiente deploy) |
-| **Frontend (CF Pages)** | 🟢 Auth funcional | Auth guard ✅, logout real ✅, **login PKCE ✅** (ciclo completo login→dashboard→logout→re-login validado). Último deploy: `8cb46c2` |
-| **BD Producción** | 🟢 Funcional | RLS activo. Migraciones aplicadas: `alerts` RLS + `is_read` + GCal OAuth columns. Schema verificado vía MCP |
+| **Backend (Cloud Run)** | 🟢 Operativo + Observable | Rev `00052-7xc`, 100% tráfico. Sentry captura errores ✅, Discord alertas ✅, Cloud Logging JSON limpio ✅ |
+| **Frontend (CF Pages)** | 🟡 Next.js 15 upgrade | Upgradeado de 14.1.4 → 15.5.15 para habilitar Sentry SDK v10. Build OK, pendiente deploy + test |
+| **BD Producción** | 🟢 Funcional | RLS activo. Migraciones aplicadas: `alerts` RLS + `is_read` + GCal OAuth columns |
 | **BD Desarrollo** | 🟢 Sincronizada | `is_read` column aplicada. Schema funcional |
-| **Rama `main`** | 🟢 Limpia | Todos los cambios commiteados y pusheados. Último: `8cb46c2` |
+| **Rama `main`** | 🟡 Pendiente commit | Cambios de Phase 2 listos para commit |
 | **Rama `desarrollo`** | ⚪ Detrás de main | Se sincroniza DESPUÉS de estabilizar main |
-| **Monitoreo** | 🟡 Parcial | Sentry client-side funciona. Server-side requiere migración a OpenNext (ver backlog) |
+| **Monitoreo Backend** | 🟢 Completo | Sentry + Discord + Cloud Logging JSON — todo verificado |
+| **Monitoreo Frontend** | 🟡 En progreso | Next.js 15 upgrade done, `instrumentation-client.ts` creado, pendiente deploy + test |
 
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main 🔄 ──► FASE 2: Monitoreo ──► FASE 3: Separación entornos ──► FASE 4: Meta + Go-Live
+FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo 🔄 ──► FASE 3: E2E ──► FASE 4: Separación ──► FASE 5: Go-Live
 ```
 
 | Fase | Objetivo | Estado |
 |:---|:---|:---|
 | **Fase 0** | Limpiar working tree, inspeccionar diffs sospechosos, tag de restauración | ✅ Completada |
 | **Fase 1A** | Infraestructura: env vars, backend URLs, SQL migrations | ✅ Completada |
-| **Fase 1B** | Seguridad: auth guard, logout, CORS, traceback removal | ✅ Frontend desplegado, backend pendiente deploy |
+| **Fase 1B** | Seguridad: auth guard, logout, CORS, traceback removal | ✅ Completada |
 | **Fase 1C** | **Auth PKCE callback** | ✅ **Completada** — login/logout funcional (ver §0.1) |
-| **Fase 1D** | Backend deploy (Cloud Build trigger falla) | ❌ Bloqueado — error `iam.serviceaccounts.actAs` |
-| **Fase 1E** | Validación E2E completa (agenda, chat, notificaciones) | Pendiente |
-| **Fase 2** | Sentry completo + Discord alertas | Pendiente (Sentry server-side requiere migración a OpenNext) |
-| **Fase 3** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
-| **Fase 4** | Conectar webhook de Meta, test end-to-end, go-live | Pendiente |
+| **Fase 1D** | Backend deploy (Cloud Build) | ✅ **Completada** — 3 root causes resueltos (ver §4) |
+| **Fase 2A** | Sentry Backend (FastAPI) | ✅ **Completada** — errores capturados en Sentry + Discord (ver §0.2) |
+| **Fase 2B** | Sentry Frontend (Next.js) | 🔄 Upgrade Next.js 14→15 completado, pendiente deploy y test (ver §0.2) |
+| **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
+| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | Pendiente (después de Sentry completo) |
+| **Fase 4** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
+| **Fase 5** | Meta webhook, test end-to-end, go-live | Pendiente |
 
 ### Backlog Técnico
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
-| **Alta** | Resolver fallo de Cloud Build trigger para backend | Error `iam.serviceaccounts.actAs` denied + build sin logs. **Consultar [docs oficiales de Cloud Build](https://cloud.google.com/build/docs/deploying-builds/deploy-cloud-run) primero** |
+| **Alta** | Completar Sentry frontend (deploy + test después del upgrade a Next.js 15) | Ver §0.2 — `instrumentation-client.ts` ya creado |
+| **Alta** | E2E validation de las 7 LLM tools | `/api/simulate` para cada tool |
 | Media | Migrar `@cloudflare/next-on-pages` (deprecated) a **OpenNext** | [Doc: opennext.js.org/cloudflare](https://opennext.js.org/cloudflare) |
-| Media | Sentry server-side en CF Pages (requiere OpenNext + `nodejs_compat` flag) | [Doc: Sentry Next.js on Cloudflare](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/nextjs/) |
-| Baja | Actualizar Next.js 14.1.4 → parche de seguridad | [CVE: nextjs.org/blog/security-update-2025-12-11](https://nextjs.org/blog/security-update-2025-12-11) |
+| Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido detectado via Sentry |
+| Baja | Fix Google Calendar PEM credential loading | Error visible en Sentry |
 
 ---
 
@@ -114,6 +118,54 @@ El error `PKCE code verifier not found in storage` ocurría porque llamábamos `
 
 ---
 
+## 0.2. Frontend Sentry + Next.js 15 Upgrade — Solución Documentada (NO MODIFICAR sin leer esto)
+
+> **⚠️ CRÍTICO — NO HACER DOWNGRADE de Next.js por debajo de 15.x. Romperá la integración de Sentry en el frontend.**
+
+### Por qué se hizo el upgrade (Next.js 14.1.4 → 15.5.15)
+
+Sentry SDK v10 requiere que la inicialización del cliente se haga en `instrumentation-client.ts`, una **convención de archivo de Next.js 15+** que NO existe en Next.js 14. El archivo anterior `sentry.client.config.ts` está **DEPRECADO** por Sentry.
+
+Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **deshabilitaba silenciosamente toda la captura de errores del frontend**. Esta flag se puso originalmente para prevenir crashes de Edge runtime en Next.js 14.
+
+### Archivos involucrados
+
+| Archivo | Rol | Estado |
+|:---|:---|:---|
+| `instrumentation-client.ts` | **Inicialización de Sentry en el browser** — reemplaza al deprecado `sentry.client.config.ts` | ✅ NUEVO — NO ELIMINAR |
+| `app/global-error.tsx` | **Captura errores de render de React** — sin esto, errores de componentes no llegan a Sentry | ✅ NUEVO — NO ELIMINAR |
+| `next.config.js` | Config de Sentry — **SIN `disableClientInstrumentation`** | ✅ MODIFICADO |
+| `sentry.client.config.ts` | ❌ ELIMINADO — deprecado por Sentry SDK v10 | ❌ NO RE-CREAR |
+| `sentry.server.config.ts` | ❌ ELIMINADO — no aplica para static export en Cloudflare Pages | ❌ NO RE-CREAR |
+
+### Lo que NO se debe hacer (causa regresiones)
+
+1. **NO re-crear `sentry.client.config.ts`** — está deprecado. Sentry SDK v10 usa `instrumentation-client.ts`
+2. **NO agregar `disableClientInstrumentation: true`** a `next.config.js` — mata toda captura de errores
+3. **NO hacer downgrade de Next.js a 14.x** — `instrumentation-client.ts` no existe en 14
+4. **NO eliminar `app/global-error.tsx`** — necesario para capturar errores de render de React
+5. **NO eliminar la exportación `onRouterTransitionStart`** de `instrumentation-client.ts` — necesario para tracing de navegación
+
+### Docs de referencia
+
+- [Sentry Next.js Manual Setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/) — explica `instrumentation-client.ts`
+- [Next.js instrumentation-client.ts](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client) — convención de archivo
+- [Next.js 15 Upgrade Guide](https://nextjs.org/docs/app/building-your-application/upgrading/version-15) — breaking changes
+- [Sentry global-error.tsx](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/#capture-react-render-errors) — captura de render errors
+
+### Breaking changes manejados en el upgrade
+
+| Cambio | De | A | Por qué |
+|:---|:---|:---|:---|
+| Next.js | 14.1.4 | 15.5.15 | Habilitar `instrumentation-client.ts` para Sentry |
+| React | 18.x | 19.x | Requerido por Next.js 15 |
+| react-dom | 18.x | 19.x | Requerido por Next.js 15 |
+| @types/react | 18.x | 19.x | Tipos de React 19 |
+| @types/react-dom | 18.x | 19.x | Tipos de React 19 |
+| eslint-config-next | 14.1.4 | 15.5.15 | Debe coincidir con versión de Next.js |
+
+---
+
 ### Herramientas MCP Configuradas
 
 Para auditoría y gestión de infraestructura, se dispone de 4 MCP servers:
@@ -150,7 +202,7 @@ Tres componentes distribuidos:
 
 | Componente | Stack | Despliegue | Función |
 |:---|:---|:---|:---|
-| **Frontend** | Next.js 14.1.4 / React 18 / TailwindCSS 3.4 / shadcn/ui | Cloudflare Pages | Panel CRM administrativo con realtime |
+| **Frontend** | Next.js 15.5.15 / React 19 / TailwindCSS 3.4 / shadcn/ui | Cloudflare Pages | Panel CRM administrativo con realtime |
 | **Backend** | Python 3.11 / FastAPI 0.110+ / uvicorn | Google Cloud Run (Docker) | Procesamiento de webhooks, orquestación LLM, Function Calling |
 | **Base de Datos** | PostgreSQL (Supabase) con RLS + Realtime | Supabase Cloud | Persistencia multi-tenant, pub/sub WebSocket |
 
@@ -286,12 +338,13 @@ Backend/app/
 
 ### Frontend (`Frontend/`)
 
-Next.js 14 con App Router, shadcn/ui, TailwindCSS. Desplegado como **static export** en Cloudflare Pages.
+Next.js 15 con App Router, shadcn/ui, TailwindCSS. Desplegado como **static export** en Cloudflare Pages.
 
 ```
 Frontend/
 ├── app/
 │   ├── layout.tsx                       # Root: Inter font, metadata "AI CRM Enterprise"
+│   ├── global-error.tsx                 # ⚠️ NO ELIMINAR — captura render errors para Sentry
 │   ├── page.tsx                         # Redirect → /dashboard
 │   ├── globals.css                      # Tailwind directives + CSS vars (oklch) + scrollbar
 │   ├── login/page.tsx                   # Google SSO via Supabase Auth
@@ -348,9 +401,9 @@ Frontend/
 │   └── utils.ts                         # cn() = clsx + tailwind-merge
 │
 ├── next.config.js                       # Rewrites /api/* → Cloud Run URL + Sentry config
+│                                        # ⚠️ NO agregar disableClientInstrumentation: true
+├── instrumentation-client.ts            # ⚠️ NO ELIMINAR — Sentry client init (reemplaza sentry.client.config.ts)
 ├── wrangler.toml                        # Cloudflare Pages: output dir, compat flags
-├── sentry.client.config.ts              # DSN + tracesSampleRate=0.3
-├── sentry.server.config.ts              # Server-side Sentry init
 ├── tailwind.config.js                   # shadcn/ui theme con CSS variables
 ├── postcss.config.js                    # autoprefixer
 ├── tsconfig.json                        # paths: @/* → ./*
@@ -817,7 +870,8 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | Patient Scoring (CelluDetox) | ✅ | `UpdatePatientScoringTool` escribe en `metadata` jsonb |
 | Discord alertas (Webhooks) | ✅ | Embeds con traceback en errores |
 | Email alertas (Resend) | ✅ | Notificación al negocio en escalaciones |
-| Sentry (Backend + Frontend) | ✅ parcial | Inicializado pero frontend tiene instrumentation deshabilitada |
+| Sentry Backend | ✅ | `sentry_sdk.init()` en lifespan, `capture_exception` en handlers, context enrichment en pipeline. Verificado: issues visibles en Sentry dashboard |
+| Sentry Frontend | ✅ parcial | Upgrade a Next.js 15 + `instrumentation-client.ts` completado. Pendiente deploy + test en producción (ver §0.2) |
 | Vista Chats con realtime | ✅ | `ChatArea.tsx` funcional con WebSocket |
 | Vista Agenda con Google Calendar | ✅ | `AgendaView.tsx` lee/escribe eventos reales |
 | Vista Pacientes (CRM table) | ✅ | `PacientesView.tsx` con datos reales de Supabase |
@@ -890,7 +944,7 @@ Dev: pytest>=8.0.0, pytest-asyncio>=0.23.5, coverage>=7.4.0
 ### Frontend (`package.json`)
 
 ```
-next@14.1.4                react@^18.2.0
+next@15.5.15               react@^19.0.0      ← Upgraded from 14.1.4/18.x (ver §0.2)
 @supabase/ssr@^0.10.0      @supabase/supabase-js@^2.98.0
 @sentry/nextjs@^10.47.0    lucide-react@^0.364.0
 date-fns@^4.1.0            recharts@^3.8.1
@@ -899,5 +953,5 @@ class-variance-authority    clsx@^2.1.1
 tailwind-merge@^2.6.1      tailwindcss-animate@^1.0.7
 tw-animate-css@^1.4.0      pg@^8.20.0
 
-Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0
+Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0, eslint-config-next@15.5.15
 ```
