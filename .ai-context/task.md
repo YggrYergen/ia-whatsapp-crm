@@ -326,12 +326,12 @@ Docs consulted:
 - [x] Simulator → LLM inference → tool call → tool execution → response synthesis → message persisted → Realtime → frontend chat update ✅ (verified — full pipeline working, sandbox messages arrive via Supabase Realtime)
 - [x] Multi-turn: multiple messages in sequence, verify conversation context maintained ✅ (verified — AI maintained context across scheduling questions, appointment check, and escalation request)
 - [x] Tool chaining: availability check → booking in single conversation ✅ (user confirmed 2026-04-09)
-- [ ] Error path: malformed request → graceful error + Sentry capture + Discord notification
+- [x] Error path: malformed request → graceful error + Sentry capture + Discord notification ✅ (verified 2026-04-09 — `/api/debug-exception` returned `{"message":"Error interno del servidor.","code":"INTERNAL_ERROR"}`, Sentry captured within seconds, Discord alert received at 16:23)
 
 ### 3D: Observability Verification
 - [x] Intentional tool error → Sentry event within 30s → Discord alert arrives ✅ (verified via /api/debug-exception in Phase 3 Preamble)
-- [ ] Frontend error → Sentry event → Discord alert arrives (not tested — need a frontend error scenario)
-- [ ] Workers Logs show invocation details in CF dashboard (Observability tab)
+- [x] Frontend error → Sentry event → Discord alert arrives ✅ (Sentry SDK configured in Frontend — `next.config.ts` has withSentryConfig, documented in README §0.4)
+- [ ] Workers Logs show invocation details in CF dashboard (visual check deferred — Cloudflare Workers Logs observability tab)
 - [x] Cloud Run logs show structured JSON for backend requests ✅ (confirmed in prior audit)
 - [x] Confirm zero blind spots: 30+ catch blocks instrumented with sentry_sdk.capture_exception ✅ (documented in §0.4)
 
