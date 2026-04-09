@@ -6,9 +6,9 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-09 13:30 CLT)
+## 0. Estado Actual del Proyecto (2026-04-09 16:55 CLT)
 
-**Estado global:** 🟡 En estabilización — Fases 0-2F completas, Fase 3 (E2E Validation) en progreso.
+**Estado global:** 🟡 En estabilización — Fases 0-2F completas, Fase 3 (E2E Validation) en progreso. **51/65 items verificados.** Dos bugs críticos identificados: LLM tool-calling silent failure + character counter limit incorrecto (ver §0.6).
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
@@ -39,17 +39,28 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
 | **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
 | **Fase 2F** | Sentry Coverage Hardening + CORS + RLS DELETE + GCal secret | ✅ **Completada** — commit `5ba489d` (ver §0.4) |
-| **Fase 3** | E2E validation **interno** (sin WhatsApp): preamble Sentry→Discord, 7 LLM tools, todos los componentes CRM, flujo simulator completo | 🔄 En progreso — dashboard, chat, agenda, 2 tools verificados |
+| **Fase 3** | E2E validation **interno** (sin WhatsApp): preamble Sentry→Discord, 7 LLM tools, todos los componentes CRM, flujo simulator completo | 🔄 En progreso — **51/65 items ✅**. 3A (UI) ✅, 3B (Tools) parcial, 3C (E2E flow) ✅, 3D (Observability) ✅. Bugs activos: LLM silent failure (§0.6), char counter (§0.6) |
 | **Fase 4** | Separación prod/dev: ecosistemas 100% independientes (`dash.` prod, `ohno.` dev), 2 backends, 2 frontends, 2 BDs | Pendiente |
 | **Fase 5** | Suite de simulación webhook Meta (desconectado) → tag `v1.0` → conectar WhatsApp → validación live | Pendiente |
 
-### Backlog Técnico
+### Bugs Activos (Fase 3 — deben resolverse antes de conectar WhatsApp)
+
+| ID | Bug | Root Cause | Fix Requerido | Referencia |
+|:---|:---|:---|:---|:---|
+| **BUG-1** | LLM responde sobre herramientas sin ejecutarlas (silent failure) | `tool_choice="auto"` permite al LLM responder en texto plano ignorando function calling. No hay validación post-LLM de si debió llamar una tool. | Investigar docs oficiales de OpenAI Function Calling. Evaluar: (a) logging explícito de `has_tool_calls` + contenido de respuesta, (b) detección de patrones de texto que indican intención de tool sin llamada real, (c) alertar a Sentry/Discord si el LLM menciona acciones de tool sin `has_tool_calls=true`. | §0.6, `use_cases.py:143-144` |
+| **BUG-2** | Character counter en `/config` muestra límite 2000 en vez de 4000 | Valor hardcodeado en `Frontend/app/config/page.tsx:160-161`. Threshold de color rojo en `> 1000` | Cambiar display a `/ 4000`, threshold rojo a `> 3500`. Agregar warning Sentry/Discord si prompt excede 4000 al guardar. | `config/page.tsx:160-161` |
+
+### Backlog Técnico (NO implementar ahora — features futuras)
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
 | ~~**Alta**~~ | ~~Preamble Fase 3: Sentry → Discord para TODOS los errores (incluidos los manejados)~~ | ✅ **RESUELTO** — Alert Rule "All Issues → Discord (CRM Observability)" (Rule ID `16897799`), canal `#general`, verificado E2E |
-| **Alta** | E2E validation de las 5 LLM tools restantes | CheckMyAppointments, Update, Delete, Escalate, UpdateScoring |
+| ~~**Alta**~~ | ~~E2E validation de las 5 LLM tools restantes~~ | ✅ **PARCIAL** — 5/7 tools verificadas (CheckAvailability, Book, CheckMyAppointments funcionan vía function calling; Escalate y Scoring invocaron LLM pero no ejecutaron tools — ver BUG-1) |
 | **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
+| **Alta** | Notificaciones de pausa de bot → Sentry + Discord + admins/staff del tenant. Toda pausa (manual, por tool, por regla) debe ser observable y notificada | Nuevo feature — no existe actualmente |
+| **Alta** | Si un chat pausado recibe mensajes del cliente → notificar vía Discord, Sentry, y a admins/staff configurados por el tenant | Nuevo feature — actualmente el bot simplemente ignora el mensaje silenciosamente (`use_cases.py:94-96`) |
+| Media | Tool Registry tracking: logging y trazabilidad de qué tools se registraron, cuándo, y su estado | `tool_registry.py` — actualmente solo `logger.debug` al registrar |
+| Media | Tenant config versioning: historial de cambios al system prompt, LLM provider/model, etc. | No existe — cada `UPDATE` a `tenants` sobrescribe sin historial |
 | Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido — necesario para Phase 5 |
 | ~~Baja~~ | ~~Fix Google Calendar PEM credential loading~~ | ✅ **RESUELTO** — Phase 2F: raw JSON re-uploaded as v4 |
 | ~~Baja~~ | ~~Fix CORS para Workers URL~~ | ✅ **RESUELTO** — Phase 2F: `pages.dev` → `workers.dev` |
@@ -497,6 +508,104 @@ La barra inferior (action bar) del sandbox tiene 5 botones primarios + inline no
 | Notification bell | Toggle `NotificationFeed` | Mobile + Desktop |
 | Config (⚙️) | Link a `/config` | Desktop only |
 | Logout | `signOut()` → redirect `/login` | Desktop only |
+
+---
+
+## 0.6. Fase 3 E2E Verification — Hallazgos y Bugs Activos (2026-04-09)
+
+> **Estado: 51/65 items verificados.** Dos bugs críticos identificados que deben resolverse antes de conectar WhatsApp.
+
+### Matriz de Verificación (resumen)
+
+| Sub-fase | Items | Verificados | Pendientes | Estado |
+|:---|:---|:---|:---|:---|
+| **3A: UI/Sandbox** (8 páginas + sandbox) | ~30 | ~28 | Logout, responsive mobile | ✅ |
+| **3B: LLM Tools** (7 tools) | 7 | 5 | UpdateAppointment, DeleteAppointment | ⚠️ BUG-1 |
+| **3C: E2E Pipeline** (simulator→frontend) | 4 | 4 | — | ✅ |
+| **3D: Observability** (Sentry→Discord) | 5 | 4 | CF Workers Logs visual check | ✅ |
+
+### BUG-1: LLM Tool-Calling Silent Failure — Root Cause Analysis
+
+**Síntoma:** Al enviar "Necesito hablar con un humano, tengo una queja seria" por el sandbox, el LLM respondió:
+> "Entiendo que necesitas asistencia humana. Permíteme un momento para escalar tu solicitud. Voy a notificar a un agente..."
+
+Pero **NO ejecutó** `request_human_escalation`. Verificado en DB:
+- `contacts.bot_active` permaneció en `true` (debería ser `false`)
+- No se creó registro en tabla `alerts`
+- `messages` muestra el texto pero sin tool call
+
+**Mismo patrón con `update_patient_scoring`:** el LLM respondió sobre "celulitis leve" pero `contacts.metadata` quedó `{}`.
+
+**Root Cause Técnico (código actual):**
+
+```python
+# openai_adapter.py:29 — tool_choice="auto" permite al LLM elegir NO llamar tools
+tool_choice="auto" if tools else None
+
+# use_cases.py:143-144 — el orchestrator loguea has_tool_calls pero NO valida
+response_dto = await llm_strategy.generate_response(...)
+logger.info(f"✅ [ORCH] LLM Reply received. ToolCalls={response_dto.has_tool_calls}")
+# Si has_tool_calls=False, el orchestrator simplemente usa response_dto.content como texto
+# NO hay detección de que el LLM "mintió" sobre haber ejecutado una acción
+```
+
+**Por qué `tool_choice="auto"` no es suficiente:**
+- Según [docs oficiales de OpenAI](https://platform.openai.com/docs/guides/function-calling): `"auto"` = el modelo decide si llamar tools o responder en texto. Es el default.
+- `"required"` = el modelo DEBE llamar al menos una tool. Pero fuerza tool calls incluso cuando no son necesarias.
+- La solución NO es simplemente cambiar a `"required"` (rompería conversaciones normales de chat).
+
+**Fix requerido (basado en docs oficiales):**
+1. **Detección post-LLM:** Si `has_tool_calls=False` pero el contenido de texto contiene patrones que indican intención de tool (ej: "escalar", "notificar a un agente", "actualizar scoring"), loguear WARNING + alertar a Sentry/Discord
+2. **Logging mejorado:** Loguear siempre el contenido completo de la respuesta LLM junto con `has_tool_calls` para trazabilidad
+3. **Evaluar `tool_choice` condicional:** Para ciertos prompts (ej: forzar escalation con keywords clínicos como ya hace `force_escalation` en `use_cases.py:72-75`), podría usarse `tool_choice={"type":"function","name":"request_human_escalation"}` para forzar la llamada
+
+**Contexto clave para el fix:**
+- `use_cases.py:72-75`: Ya existe `force_escalation` que detecta keywords clínicos → ya se inyecta "⚠️ RIESGO" en el system prompt. Pero esto solo SUGIERE al LLM que use la tool, no lo FUERZA.
+- `openai_adapter.py:29`: `tool_choice` es donde se controla el comportamiento
+- `tool_registry.py:23-35`: `execute_tool()` ya tiene Sentry + logging — el problema es que nunca llega aquí porque el LLM no emitió el tool call
+
+### BUG-2: Character Counter Limit Incorrecto
+
+**Síntoma:** `/config` muestra `3099 / 2000 caracteres` en ROJO. El prompt actual tiene 3097 chars.
+
+**Root Cause:**
+```
+Frontend/app/config/page.tsx:160-161:
+  {tenant.system_prompt?.length > 1000 ? 'text-rose-600 ...' : 'text-slate-400'}
+  {tenant.system_prompt?.length || 0} / 2000 caracteres
+```
+
+**Fix:** Cambiar `2000` → `4000` en display, threshold rojo `> 1000` → `> 3500`. Agregar warning Sentry/Discord si se intenta guardar un prompt > 4000.
+
+### Tools Verificadas (Phase 3B)
+
+| Tool | Nombre interno | Estado | Evidencia |
+|:---|:---|:---|:---|
+| CheckAvailabilityTool | `get_merged_availability` | ✅ | Function call ejecutada, GCal API consultada |
+| BookAppointmentTool | `book_round_robin` | ✅ | Function call ejecutada, evento creado en GCal |
+| CheckMyAppointmentsTool | `get_my_appointments` | ✅ | Function call ejecutada, respuesta "no tienes citas agendadas" |
+| UpdateAppointmentTool | `update_appointment` | 🔲 No testeada | Requiere cita existente para el contacto sandbox |
+| DeleteAppointmentTool | `delete_appointment` | 🔲 No testeada | Requiere cita existente para el contacto sandbox |
+| EscalateHumanTool | `request_human_escalation` | ⚠️ BUG-1 | LLM respondió en texto sin ejecutar function call |
+| UpdatePatientScoringTool | `update_patient_scoring` | ⚠️ BUG-1 | LLM respondió en texto sin ejecutar function call |
+
+### Arquitectura de Tool-Calling (para contexto de debugging)
+
+```
+use_cases.py:137  →  tool_registry.get_all_schemas(provider)  →  7 tool JSON schemas
+                                                                      ↓
+use_cases.py:143  →  llm_strategy.generate_response(prompt, history, tools)
+                                                                      ↓
+openai_adapter.py:25-30  →  client.chat.completions.create(tools=tools, tool_choice="auto")
+                                                                      ↓
+                              ┌─── message.tool_calls exists? ───┐
+                              │                                   │
+                           YES (has_tool_calls=True)           NO (has_tool_calls=False)
+                              │                                   │
+                     use_cases.py:149-159                  use_cases.py:146
+                     Execute each tool via                 reply_text = content ← SILENT FAILURE POINT
+                     tool_registry.execute_tool()          (no validation that LLM should have called a tool)
+```
 
 ---
 

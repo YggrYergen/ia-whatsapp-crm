@@ -316,11 +316,11 @@ Docs consulted:
 - [x] BookAppointmentTool (book_round_robin) — ✅ user confirmed working (2026-04-09)
 - [ ] UpdateAppointmentTool (update_appointment) — requires existing appointment to test (untested — need real scenario)
 - [ ] DeleteAppointmentTool (delete_appointment) — requires existing appointment to test (untested — need real scenario)
-- [x] EscalateHumanTool (request_human_escalation) — ⚠️ PARTIAL: AI responded "Voy a notificar a un agente" but DID NOT call the tool function (bot_active stayed true, no alert created). Tool infrastructure works (confirmed with prior alerts in DB), but LLM decided to respond naturally vs function-calling. This is LLM-dependent behavior, not a code bug.
-- [x] UpdatePatientScoringTool (update_patient_scoring) — ⚠️ PARTIAL: AI responded contextually about celulitis leve but DID NOT call the tool function (metadata stayed {}). Same LLM decision pattern.
+- [!] EscalateHumanTool (request_human_escalation) -- **BUG-1**: LLM responded "Voy a notificar a un agente" but DID NOT call the tool function. bot_active stayed true, no alert created. This is a SILENT FAILURE: the system told the user it would escalate but didn't.
+- [!] UpdatePatientScoringTool (update_patient_scoring) -- **BUG-1**: LLM responded about celulitis leve but DID NOT call the tool function. metadata stayed {}. Same silent failure pattern.
 - [ ] Each tool failure must appear in Sentry with full traceback + tool context
 
-> **NOTE:** Tools 1-3 (Calendar tools) are confirmed working via function calling. Tools 4-5 (Update/Delete appointment) require specific existing appointments. Tools 6-7 (Escalate/Scoring) were tested but the LLM chose natural responses over function calling in the sandbox context. The tool infrastructure and `tool_registry.execute_tool()` pipeline is verified working — what varies is the LLM's decision to invoke them.
+> **ROOT CAUSE (BUG-1):** `tool_choice="auto"` in `openai_adapter.py:29` allows the LLM to choose text response over function calling. No post-LLM validation exists in `use_cases.py:144-146` to detect when the LLM SHOULD have called a tool but didn't. This IS a code-level gap (not just LLM behavior) because the system has no guardrail against the LLM lying about tool usage. Fix required per official OpenAI Function Calling docs. See README section 0.6.
 
 ### 3C: Flujo E2E Interno — Simulator-Driven (NO WhatsApp)
 - [x] Simulator → LLM inference → tool call → tool execution → response synthesis → message persisted → Realtime → frontend chat update ✅ (verified — full pipeline working, sandbox messages arrive via Supabase Realtime)
@@ -334,6 +334,34 @@ Docs consulted:
 - [ ] Workers Logs show invocation details in CF dashboard (visual check deferred — Cloudflare Workers Logs observability tab)
 - [x] Cloud Run logs show structured JSON for backend requests ✅ (confirmed in prior audit)
 - [x] Confirm zero blind spots: 30+ catch blocks instrumented with sentry_sdk.capture_exception ✅ (documented in §0.4)
+
+### 3E: Critical Bug Fixes (MUST resolve before Phase 4/5)
+
+- [ ] **BUG-1: LLM Tool-Calling Silent Failure**
+  - [ ] Research official OpenAI Function Calling docs for tool_choice strategies
+  - [ ] Implement post-LLM validation: detect when LLM text implies tool action but has_tool_calls=False
+  - [ ] Add Sentry/Discord alert for detected silent failures
+  - [ ] Add enhanced logging of full LLM response content + has_tool_calls flag
+  - [ ] Evaluate conditional tool_choice for force_escalation scenarios
+  - [ ] Re-test EscalateHumanTool and UpdatePatientScoringTool after fix
+  - [ ] Verify bot_active flips to false on escalation, metadata updates on scoring
+
+- [ ] **BUG-2: Character Counter Limit**
+  - [ ] Change Frontend/app/config/page.tsx display from `/ 2000` to `/ 4000`
+  - [ ] Change red threshold from `> 1000` to `> 3500`
+  - [ ] Add Sentry/Discord warning if prompt > 4000 on save
+  - [ ] Test: save prompt with 3500+ chars, verify counter shows correctly
+
+---
+
+## Backlog (Future Features -- NOT for current phase)
+
+> Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
+
+- [ ] **Bot Pause Notifications:** Every time bot is paused (by human hand, by EscalateHumanTool, by any system rule) must generate Sentry event + Discord notification + in-app notification to admins/staff as configured by tenant
+- [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
+- [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
+- [ ] **Tenant Config Versioning:** Audit trail for all changes to system_prompt, llm_provider, llm_model. Currently each UPDATE to tenants table overwrites without history
 
 ---
 

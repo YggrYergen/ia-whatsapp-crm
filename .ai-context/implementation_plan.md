@@ -4,7 +4,7 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE ser documentada EN ESE MOMENTO con: (1) qué se hizo, (2) por qué funciona, (3) links a los docs oficiales que lo respaldan. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
-## Status: Phase 0-2F COMPLETE ✅ | Phase 3 (E2E Validation) IN PROGRESS 🔄
+## Status: Phase 0-2F COMPLETE ✅ | Phase 3 (E2E Validation) IN PROGRESS 🔄 | 51/65 items ✅ | 2 bugs activos🔄
 
 ---
 
@@ -310,45 +310,61 @@ The `/chats` route has **two completely separate UI modes** controlled by contac
 - Metrics card (static placeholders)
 
 `/config` (outside (panel) layout) features:
-- LLM Provider dropdown (OpenAI / Gemini) → dynamically changes model list
+- LLM Provider dropdown (OpenAI / Gemini) -> dynamically changes model list
 - LLM Model dropdown (o4-mini, gpt-5-mini, gpt-4o-mini / gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview)
-- System prompt textarea with character counter (X / 2000)
+- System prompt textarea with character counter (X / 2000) -- see BUG-2
 - Google Calendar connection status + connect/disconnect buttons
 - "Solicitar Custom LLM" CTA
 
-**Full page checklist:**
-- [ ] `/dashboard` → loads ✅ (previously verified)
-- [ ] `/chats` regular mode → contact selection, chat rendering, profile panel, bot toggle, realtime
-- [ ] `/chats` sandbox mode → all 5 action buttons, note system, send/receive flow, spinner
-- [ ] `/chats` sandbox → TestConfigPanel prompt editing, save, realtime sync, bot status
-- [ ] `/agenda` → loads ✅ (previously verified)
-- [ ] `/pacientes` → loads with real data
-- [ ] `/reportes` → loads without errors (desktop only)
-- [ ] `/finops` → loads without errors (desktop only)
-- [ ] `/admin-feedback` → loads, shows test_feedback rows, delete works
-- [ ] `/config` → LLM config saves, Google Calendar status, prompt editing
-- [ ] Cross-cutting: all nav links, logout, notification bell, responsive layout
+**Full page checklist (VERIFIED 2026-04-09):**
+- [x] `/dashboard` loads OK
+- [x] `/chats` regular mode: contact selection, chat rendering, profile panel, bot toggle, realtime OK
+- [x] `/chats` sandbox mode: all 5 action buttons, note system, send/receive flow, spinner OK
+- [x] `/chats` sandbox: TestConfigPanel prompt editing, save, realtime sync, bot status OK
+- [x] `/agenda` loads with 3 appointments, Box 1/Box 2, occupancy metrics OK
+- [x] `/pacientes` loads with 2 contacts, full columns OK
+- [x] `/reportes` loads without errors (desktop only) OK
+- [x] `/finops` loads without errors (desktop only) OK
+- [x] `/admin-feedback` loads, shows test_feedback rows OK
+- [x] `/config` LLM config loads, Google Calendar status, prompt editing OK (BUG-2: char counter shows 2000 limit)
+- [ ] Cross-cutting: logout (skipped), responsive mobile (not tested)
 
-**3B: Every LLM Tool — Individual Verification via `/api/simulate`:**
-- [ ] CheckMyAppointmentsTool (get_my_appointments) — test via simulator
-- [ ] UpdateAppointmentTool (update_appointment) — test via simulator
-- [ ] DeleteAppointmentTool (delete_appointment) — test via simulator
-- [ ] EscalateHumanTool (request_human_escalation) — test via simulator, verify bot_active flips to false, alert created
-- [ ] UpdatePatientScoringTool (update_patient_scoring) — test via simulator, verify metadata JSONB updated
+**3B: Every LLM Tool (PARTIALLY VERIFIED 2026-04-09):**
+- [x] CheckAvailabilityTool (get_merged_availability): function call executed OK
+- [x] BookAppointmentTool (book_round_robin): function call executed OK
+- [x] CheckMyAppointmentsTool (get_my_appointments): function call executed, correct response OK
+- [ ] UpdateAppointmentTool (update_appointment): requires existing appointment
+- [ ] DeleteAppointmentTool (delete_appointment): requires existing appointment
+- [!] EscalateHumanTool (request_human_escalation): **BUG-1** LLM responded in text without calling tool
+- [!] UpdatePatientScoringTool (update_patient_scoring): **BUG-1** LLM responded in text without calling tool
 - [ ] Each tool failure must appear in Sentry with full traceback + tool context
 
-**3C: Internal E2E Flow — Simulator-Driven:**
-- [ ] Simulator → LLM inference → tool call → tool execution → response synthesis → message persisted → Realtime → frontend chat updates
-- [ ] Multi-turn: send multiple messages in sequence, verify conversation context is maintained
-- [ ] Tool chaining: trigger a flow that requires availability check → booking in sequence
-- [ ] Error path: send a malformed request → verify graceful error + Sentry capture + Discord notification
+**3C: Internal E2E Flow (VERIFIED 2026-04-09):**
+- [x] Simulator to LLM to tool call to tool execution to response to message persisted to Realtime to frontend OK
+- [x] Multi-turn: 6+ messages in sequence, conversation context maintained OK
+- [x] Tool chaining: availability check then booking in sequence OK
+- [x] Error path: `/api/debug-exception` graceful error + Sentry capture + Discord notification OK
 
-**3D: Observability Verification:**
-- [ ] Trigger intentional tool error → appears in Sentry within 30s → Discord notification arrives
-- [ ] Trigger frontend error → appears in Sentry → Discord notification arrives
-- [ ] Workers Logs show invocation details in CF dashboard (Observability tab)
-- [ ] Cloud Run logs show structured JSON for backend requests
-- [ ] Confirm zero "silent failure" blind spots: every error path in the system is observable
+**3D: Observability Verification (VERIFIED 4/5):**
+- [x] Intentional error: Sentry event within 30s, Discord notification arrives OK
+- [x] Frontend Sentry SDK configured (withSentryConfig in next.config.ts) OK
+- [ ] Workers Logs show invocation details in CF dashboard (visual check deferred)
+- [x] Cloud Run logs show structured JSON for backend requests OK
+- [x] Zero blind spots: 30+ catch blocks instrumented with sentry_sdk.capture_exception OK
+
+**3E: Critical Bug Fixes (must resolve before Phase 4/5):**
+
+> Bugs discovered during Phase 3 testing. Must be fixed before connecting WhatsApp.
+
+BUG-1: LLM Tool-Calling Silent Failure
+- Root cause: `tool_choice="auto"` in `openai_adapter.py:29` + no post-LLM validation in `use_cases.py:144-146`
+- The LLM can generate text about performing actions without actually calling the tools
+- Fix strategy must be researched via official OpenAI Function Calling docs
+- See README section 0.6 for complete root cause analysis
+
+BUG-2: Character Counter Limit
+- Root cause: Hardcoded `2000` in `Frontend/app/config/page.tsx:160-161`
+- Fix: Change to `4000`, threshold rojo > 3500, add Sentry/Discord warning on save if > 4000
 
 ---
 
