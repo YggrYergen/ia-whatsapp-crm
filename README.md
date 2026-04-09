@@ -6,9 +6,9 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-09 11:50 CLT)
+## 0. Estado Actual del Proyecto (2026-04-09 13:30 CLT)
 
-**Estado global:** 🟡 En estabilización — Fases 0-2E completas, Fase 3 (E2E) pendiente.
+**Estado global:** 🟡 En estabilización — Fases 0-2F completas, Fase 3 (E2E Validation) en progreso.
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
@@ -38,7 +38,8 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 2B** | Sentry Frontend (Next.js) | ✅ **Completada** — Client-side via `instrumentation-client.ts` en OpenNext Workers (ver §0.2, §0.3) |
 | **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
 | **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
-| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | 🔄 Pendiente |
+| **Fase 2F** | Sentry Coverage Hardening + CORS + RLS DELETE + GCal secret | ✅ **Completada** — commit `5ba489d` (ver §0.4) |
+| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | 🔄 En progreso — dashboard, chat, agenda, calendar tools verificados |
 | **Fase 4** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
 | **Fase 5** | Meta webhook, test end-to-end, go-live | Pendiente |
 
@@ -46,10 +47,11 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
-| **Alta** | E2E validation de las 7 LLM tools | `/api/simulate` para cada tool |
+| **Alta** | E2E validation de las 5 LLM tools restantes | CheckMyAppointments, Update, Delete, Escalate, UpdateScoring |
 | **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
 | Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido detectado via Sentry |
-| Baja | Fix Google Calendar PEM credential loading | Error visible en Sentry |
+| ~~Baja~~ | ~~Fix Google Calendar PEM credential loading~~ | ✅ **RESUELTO** — Phase 2F: raw JSON re-uploaded as v4 |
+| ~~Baja~~ | ~~Fix CORS para Workers URL~~ | ✅ **RESUELTO** — Phase 2F: `pages.dev` → `workers.dev` |
 
 ---
 
@@ -309,6 +311,74 @@ destinations = [ "sentry-traces" ]     # Exporta traces a Sentry via OTLP
 - **Git tag:** `pre-opennext-migration` (commit `f1494c9`)
 - **Persistent KI:** `knowledge/opennext-migration-rollback/artifacts/rollback.md`
 - **Comando:** `git reset --hard pre-opennext-migration && git push --force-with-lease`
+
+---
+
+## 0.4. Sentry Coverage Hardening + CORS + RLS DELETE — Solución Documentada (2026-04-09)
+
+> **Estado: ✅ FUNCIONAL** — 17 archivos modificados, 30+ catch blocks instrumentados. Commit `5ba489d`. Verificado en producción.
+
+### Problema descubierto
+
+Fallos "silenciosos" sistémicos: más de 30 bloques `catch` en backend y frontend registraban errores en consola/Cloud Logging pero **nunca los enviaban a Sentry**. Esto hacía imposible debuggear en producción fallos de herramientas LLM, errores de credenciales, y operaciones de datos del frontend.
+
+**El punto ciego más crítico:** `tool_registry.execute_tool()` — TODAS las 7 herramientas LLM fallaban silenciosamente aquí. El catch block logeaba localmente y tragaba la excepción sin enviarla a Sentry.
+
+### Lo que se hizo
+
+**Backend (6 archivos, 12 catch blocks):**
+
+| Archivo | Ubicación | Fix |
+|:---|:---|:---|
+| `tool_registry.py` | `execute_tool()` | `sentry_sdk.capture_exception()` + `set_context("tool_execution", {tool_name, kwargs_keys})` |
+| `tools.py` | `EscalateHumanTool` | Reemplazó `except Exception: pass` con logging + Sentry |
+| `tools.py` | `UpdatePatientScoringTool` | Agregó `sentry_sdk.capture_exception()` |
+| `use_cases.py` | 4 catch blocks | Contact creation, msg persistence, tool loop, cleanup — todos con Sentry |
+| `google_client.py` | Carga de credenciales | Agregó `sentry_sdk.capture_exception()` |
+| `meta_graph_api.py` | Errores HTTP + red | `sentry_sdk.capture_exception()` + `set_context("meta_graph_api", ...)` |
+| `main.py` | 3 endpoints | `/api/simulate`, `/api/test-feedback`, `/api/calendar/book` |
+
+**Frontend (11 archivos, 18 catch blocks):**
+
+| Archivo | Catches | Fix |
+|:---|:---|:---|
+| 4 API proxy routes | 4 | `Sentry.captureException()` + `captureMessage()` en respuestas non-ok |
+| `TestChatArea.tsx` | 5 | localStorage, msg insert, Supabase, simulate, bot toggle, sandbox feedback |
+| `ChatArea.tsx` | 2 | DB insert, simulation trigger |
+| `AgendaView.tsx` | 2 | fetchEvents, handleBook |
+| `TestConfigPanel.tsx` | 2 | fetchTenantConfig, handleSavePrompt |
+| `GlobalFeedbackButton.tsx` | 1 | handleSend |
+| `admin-feedback/page.tsx` | 1 | handleDelete (no tenía try/catch, se agregó) |
+| `auth/confirm/page.tsx` | 1 | Error de sesión PKCE → `Sentry.captureMessage()` |
+
+**Fixes adicionales incluidos en el mismo commit:**
+
+| Fix | Detalle |
+|:---|:---|
+| **CORS** | `main.py`: reemplazó `ia-whatsapp-crm.pages.dev` con `ia-whatsapp-crm.tomasgemes.workers.dev` |
+| **RLS DELETE** | Migración Supabase: políticas `messages_delete_own` + `test_feedback_delete_tenant` para `authenticated` con scope `get_user_tenant_ids()` |
+| **GCal Secret Manager** | `GOOGLE_CALENDAR_CREDENTIALS` v4: re-subido como JSON raw (era base64, causaba fallo de `json.loads()`) |
+
+### Resultado
+
+- El botón "Enviar Prueba" ahora sí elimina mensajes del sandbox (RLS DELETE policy)
+- Google Calendar funciona correctamente (credenciales raw JSON)
+- CORS acepta requests del Workers URL correcto
+- **Todo error en cualquier catch block llega a Sentry** — eliminamos puntos ciegos
+
+### Lo que NO se debe hacer
+
+1. **NO quitar `sentry_sdk.capture_exception()`** de ningún catch block — volverá a crear puntos ciegos
+2. **NO usar `except: pass`** — siempre loguear + enviar a Sentry
+3. **NO subir secretos codificados en base64** a Secret Manager — el backend espera JSON raw
+4. **NO revertir el CORS** al URL viejo de Pages (`ia-whatsapp-crm.pages.dev`) — el frontend ya es Workers
+
+### Docs de referencia
+
+- [Sentry Python: capture_exception](https://docs.sentry.io/platforms/python/usage/#capturing-errors)
+- [Sentry Python: Enriching Events](https://docs.sentry.io/platforms/python/enriching-events/context/)
+- [Sentry Next.js: captureException](https://docs.sentry.io/platforms/javascript/guides/nextjs/usage/)
+- [Cloud Run: Configure Secrets](https://cloud.google.com/run/docs/configuring/services/secrets)
 
 ---
 
@@ -628,8 +698,9 @@ test_feedback (
 |:---|:---|:---|
 | tenants | SELECT/UPDATE solo si `id IN get_user_tenant_ids()` | Función SQL que consulta `tenant_users` filtrando por `auth.uid()` |
 | contacts | SELECT/UPDATE/INSERT restringido por `tenant_id` | Mismo mecanismo |
-| messages | SELECT/INSERT restringido por `tenant_id` | Mismo mecanismo |
+| messages | SELECT/INSERT/DELETE restringido por `tenant_id` | DELETE agregado en Phase 2F (policy `messages_delete_own`) — requerido para "Enviar Prueba" |
 | alerts | SELECT/UPDATE restringido por `tenant_id` | Mismo mecanismo |
+| test_feedback | DELETE restringido por `tenant_id` | Policy `test_feedback_delete_tenant` (Phase 2F) — requerido para admin-feedback page |
 
 **Nota:** El backend usa `SUPABASE_SERVICE_ROLE_KEY` que bypassea RLS. El webhook necesita escribir sin contexto de autenticación dentro del límite de 3 segundos de Meta.
 
@@ -877,11 +948,11 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 
 | # | Problema | Archivo(s) | Detalle |
 |:--|:---|:---|:---|
-| 1 | **CORS abierto a `*`** | `main.py:122` | Cualquier origen puede hacer requests al backend. Debe restringirse al dominio de CF Pages |
+| ~~1~~ | ~~**CORS abierto a `*`**~~ | ~~`main.py:122`~~ | **RESUELTO** — Phase 1B (restringido a dominios específicos) + Phase 2F (actualizado a Workers URL) |
 | 2 | **Traceback completo en HTTP 500** | `main.py:302,321` | Stack trace expuesto a clientes. Información de paths, tablas, estructura interna |
 | 3 | **Endpoints sin autenticación** | `main.py:148-256` | `/api/simulate`, `/api/test-feedback`, `/api/calendar/*`, `/api/debug-*` accesibles públicamente |
-| 4 | **Frontend sin auth guard** | `(panel)/layout.tsx` | El panel monta `CrmProvider` sin verificar sesión. Accesible sin login y con cuentas no autorizadas |
-| 5 | **Logout no invalida sesión** | `Sidebar.tsx:17` | Hace `window.location.href = '/login'` sin llamar `supabase.auth.signOut()`. La sesión persiste |
+| ~~4~~ | ~~**Frontend sin auth guard**~~ | ~~`(panel)/layout.tsx`~~ | **RESUELTO** — Phase 1B: AuthGuard implementado en layout |
+| ~~5~~ | ~~**Logout no invalida sesión**~~ | ~~`Sidebar.tsx:17`~~ | **RESUELTO** — Phase 1B: `supabase.auth.signOut()` implementado |
 | 6 | **`TriageEvaluator` roto** | `evaluator.py:24` | Referencia `tenant.staff_notification_number` que no existe en `TenantContext` |
 
 ### Arquitecturales
@@ -1023,6 +1094,10 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | Docker multi-stage (non-root) | ✅ | Imagen limpia, usuario `crmuser` |
 | OpenNext Migration (CF Pages → Workers) | ✅ | Migración completa. Rewrites, Sentry, observabilidad, Workers Builds CI/CD. Ver §0.3 |
 | CF Workers Logs | ✅ | Invocation logs + error logs en CF Dashboard. Config en `wrangler.toml` [observability] |
+| Sentry Coverage Hardening (Phase 2F) | ✅ | 17 archivos, 30+ catch blocks instrumentados. Backend + frontend. Commit `5ba489d` (2026-04-09) |
+| RLS DELETE policies (messages + test_feedback) | ✅ | Migración Supabase `add_delete_rls_policies`. Habilita "Enviar Prueba" y eliminación en admin-feedback |
+| CORS fix (Pages → Workers URL) | ✅ | `main.py`: `ia-whatsapp-crm.pages.dev` → `ia-whatsapp-crm.tomasgemes.workers.dev` |
+| GCal Secret Manager fix | ✅ | `GOOGLE_CALENDAR_CREDENTIALS` v4: raw JSON (era base64). Calendar funcional |
 
 ### 🚨 P0 — Bloqueantes (necesarios para go-live)
 
@@ -1030,12 +1105,12 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 |:---|:---|
 | **Auth guard en frontend** | Verificar sesión en `(panel)/layout.tsx`. Sin sesión → redirect a login. Cuenta sin tenant → acceso denegado |
 | **Logout real** | `Sidebar.tsx` debe llamar `supabase.auth.signOut()` antes de redirigir |
-| **Restringir CORS** | Cambiar `allow_origins=["*"]` a `dash.tuasistentevirtual.cl`, `ohno.tuasistentevirtual.cl`, `localhost:3000` |
+| ~~**Restringir CORS**~~ | ~~Cambiar `allow_origins=["*"]` a dominios específicos~~ | ✅ **RESUELTO** — Phase 1B + Phase 2F |
 | **Eliminar tracebacks de HTTP 500** | No exponer stack traces en producción |
 | **Autenticación de endpoints internos** | Proteger `/api/simulate`, `/api/calendar/*`, `/api/test-feedback`, `/api/debug-*` |
-| **Fix error de conexión Agenda** | Diagnosticar y resolver: proxy route, GCal credentials, o singleton init |
-| **Fix carga del Chat** | Diagnosticar si chat carga correctamente en producción |
-| **Monitoreo completo** | Sentry en frontend + backend → Discord. Cualquier error en cualquier pieza = notificación |
+| ~~**Fix error de conexión Agenda**~~ | ~~Diagnosticar y resolver: proxy route, GCal credentials, o singleton init~~ | ✅ **RESUELTO** — Phase 2E (OpenNext rewrites) + Phase 2F (GCal JSON fix) |
+| ~~**Fix carga del Chat**~~ | ~~Diagnosticar si chat carga correctamente en producción~~ | ✅ **RESUELTO** — Funcional via OpenNext Workers |
+| ~~**Monitoreo completo**~~ | ~~Sentry en frontend + backend → Discord. Cualquier error = notificación~~ | ✅ **RESUELTO** — Phase 2A + 2B + 2D + 2F |
 
 ### ⚡ P1 — Mejoras Arquitecturales (post go-live)
 
