@@ -239,18 +239,75 @@ Docs consulted:
   2. **Sentry Bot** (official Sentry integration alert rule) — automatic, for ALL new + reopened issues
 
 ### 3A: Componentes CRM — Verificación Exhaustiva de UI
+
+**Pages (8 total) — organized by nav order:**
+
+#### `/dashboard` (Panel) ✅
 - [x] Dashboard loads ✅ (user confirmed 2026-04-09)
-- [x] Chat loads and shows contacts ✅ (user confirmed 2026-04-09)
-- [x] Agenda loads and shows calendar events ✅ (user confirmed 2026-04-09)
-- [ ] Contactos/Pacientes loads with real data
-- [ ] Configuración loads, LLM provider/model persists, system prompt saves
-- [ ] "Enviar Prueba" flow: sandbox msgs → saved to `test_feedback` → msgs deleted from `messages` → admin-feedback page shows results
-- [ ] Admin Feedback page loads, shows test_feedback rows, delete button works
-- [ ] Global Feedback button sends feedback correctly
-- [ ] All navigation between pages works (Sidebar links, back navigation)
+
+#### `/chats` (Chats) — Regular Chat Mode
+- [x] Chat loads and shows contacts in ContactList ✅ (user confirmed 2026-04-09)
+- [ ] Selecting a regular contact → ChatArea loads, messages display
+- [ ] ClientProfilePanel shows contact info when toggled (⋮ button or desktop panel)
+- [ ] Bot toggle (Pause/Resume) works for regular contact
 - [ ] Real-time: new message from simulator appears in chat without manual refresh
-- [ ] Real-time: alert toast appears when system generates an alert
-- [ ] Responsive layout: check mobile and desktop views
+
+#### `/chats` (Chats) — **Test Chat Sandbox Mode** (phone `56912345678`)
+> When the test contact (`56912345678`) is selected, the UI switches from `ChatArea` → `TestChatArea` and `ClientProfilePanel` → `TestConfigPanel`.
+
+**TestChatArea buttons (bottom action bar):**
+- [ ] Send message → message persists in Supabase `messages` → LLM simulation triggers via `/api/simulate` → AI response arrives via Realtime
+- [ ] "IA Generando..." spinner appears during LLM processing, auto-clears after response or 30s timeout
+- [ ] 🗑️ **DESCARTAR PRUEBA** button → confirm dialog → clears messages state
+- [ ] ✉️ **ENVIAR PRUEBA (FINALIZAR)** button → sends test_feedback to backend `/api/test-feedback` → clears messages + sandbox notes → toast "Prueba enviada y sandbox reseteado ✅"
+- [ ] ✨ **CAMBIAR MODELO** button → (placeholder, verify no crash)
+- [ ] ⚙️ **CONFIGURACIÓN** button → opens TestConfigPanel
+- [ ] ⋯ **MÁS OPCIONES** button → (placeholder, verify no crash)
+- [ ] Clicking an AI message → opens inline note editor (textarea) → "Guardar Nota" saves to localStorage + shows yellow dot indicator
+- [ ] Floating role badge ("CLIENTE") displays at top center
+- [ ] Pause/Resume IA toggle in header works
+
+**TestConfigPanel (right panel):**
+- [ ] "CONFIG AGENTE" header renders with close (×) button
+- [ ] Bot status badge shows "EJECUTANDO" or "EN PAUSA" (matches bot_active state)
+- [ ] System prompt textarea loads from `tenants.system_prompt` (Supabase)
+- [ ] Edit prompt → click "GUARDAR CAMBIOS" → saves to `tenants` table → toast confirmation
+- [ ] Realtime subscription updates prompt if changed externally
+- [ ] Metrics card renders (Contexto 95%, Acierto A+) — static/placeholder OK
+- [ ] Warning banner about prompt impact renders
+
+#### `/agenda` (Agenda)
+- [x] Agenda loads and shows calendar events ✅ (user confirmed 2026-04-09)
+
+#### `/pacientes` (CRM / Pacientes)
+- [ ] Pacientes page loads with real contact data from Supabase
+- [ ] Contact list renders with names, phones, last interaction
+
+#### `/reportes` (Reportes) — desktop only
+- [ ] Reportes page loads without errors
+
+#### `/finops` (FinOps) — desktop only
+- [ ] FinOps page loads without errors
+
+#### `/admin-feedback` (Auditoría Dev) — admin only
+- [ ] Admin Feedback page loads and fetches `test_feedback` rows from Supabase
+- [ ] Rows display with history, notes, tester_email
+- [ ] Delete button removes row from `test_feedback` table
+
+#### `/config` (Configuración Global)
+- [ ] Config page loads with tenant data (llm_provider, llm_model, system_prompt)
+- [ ] LLM Provider dropdown: switch between "OpenAI" and "Gemini" → model list updates dynamically
+- [ ] LLM Model dropdown: models change based on provider (o4-mini, gpt-5-mini, gpt-4o-mini for OpenAI; gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview for Gemini)
+- [ ] System prompt textarea: edit and save → persists to `tenants` table
+- [ ] Character counter updates (X / 2000)
+- [ ] Google Calendar section: shows "Conectado" or "Desconectado" with correct email
+- [ ] "Solicitar Custom LLM" CTA renders
+
+#### Cross-cutting
+- [ ] All sidebar links navigate correctly (7 items + config + notifications + logout)
+- [ ] Logout button → redirects to `/login`
+- [ ] Notification bell (desktop + mobile) → toggles notification feed
+- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport
 
 ### 3B: Herramientas LLM (TODAS las 7 tools) — Individual via `/api/simulate`
 - [x] Inventariar todas las tools ✅ (7 tools confirmed in tool_registry)

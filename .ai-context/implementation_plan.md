@@ -290,16 +290,44 @@ Following the official docs ([Sentry Alerts](https://docs.sentry.io/product/aler
 - ✅ CheckAvailabilityTool (get_merged_availability) works correctly
 - ✅ BookAppointmentTool (book_round_robin) works correctly
 
-**3A: Every CRM Component — Exhaustive UI Verification:**
-- [ ] Contactos/Pacientes page loads with real data
-- [ ] Configuración page loads, LLM provider/model selection persists, system prompt saves
-- [ ] "Enviar Prueba" flow: sandbox messages → saved to `test_feedback` → messages deleted from `messages` → admin-feedback page shows results
-- [ ] Admin Feedback page loads, shows test_feedback rows, delete button works
-- [ ] Global Feedback button sends feedback correctly
-- [ ] All navigation between pages works (Sidebar links, back navigation)
-- [ ] Real-time: new message from simulator appears in chat without manual refresh
-- [ ] Real-time: alert toast appears when system generates an alert
-- [ ] Responsive layout: check mobile and desktop views
+**3A: Every CRM Component — Exhaustive UI Verification (8 pages + 2 chat sub-modes):**
+
+The `/chats` route has **two completely separate UI modes** controlled by contact phone:
+- **Regular mode** (any contact) → `ChatArea` + `ClientProfilePanel`
+- **Test Sandbox mode** (phone `56912345678`) → `TestChatArea` + `TestConfigPanel`
+
+`TestChatArea` features dedicated **action buttons**:
+- 🗑️ DESCARTAR PRUEBA — confirm dialog → clears message state
+- ✉️ ENVIAR PRUEBA (FINALIZAR) — POST to `/api/test-feedback` → saves chat + notes → clears sandbox → toast
+- ✨ CAMBIAR MODELO — placeholder button
+- ⚙️ CONFIGURACIÓN — opens `TestConfigPanel`
+- ⋯ MÁS OPCIONES — placeholder button
+- Inline note system: click AI msg → textarea → "Guardar Nota" → localStorage persistence + yellow dot indicator
+
+`TestConfigPanel` features:
+- Realtime-subscribed system prompt editor (loads from `tenants.system_prompt`, saves on "GUARDAR CAMBIOS")
+- Bot status badge (EJECUTANDO / EN PAUSA)
+- Metrics card (static placeholders)
+
+`/config` (outside (panel) layout) features:
+- LLM Provider dropdown (OpenAI / Gemini) → dynamically changes model list
+- LLM Model dropdown (o4-mini, gpt-5-mini, gpt-4o-mini / gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview)
+- System prompt textarea with character counter (X / 2000)
+- Google Calendar connection status + connect/disconnect buttons
+- "Solicitar Custom LLM" CTA
+
+**Full page checklist:**
+- [ ] `/dashboard` → loads ✅ (previously verified)
+- [ ] `/chats` regular mode → contact selection, chat rendering, profile panel, bot toggle, realtime
+- [ ] `/chats` sandbox mode → all 5 action buttons, note system, send/receive flow, spinner
+- [ ] `/chats` sandbox → TestConfigPanel prompt editing, save, realtime sync, bot status
+- [ ] `/agenda` → loads ✅ (previously verified)
+- [ ] `/pacientes` → loads with real data
+- [ ] `/reportes` → loads without errors (desktop only)
+- [ ] `/finops` → loads without errors (desktop only)
+- [ ] `/admin-feedback` → loads, shows test_feedback rows, delete works
+- [ ] `/config` → LLM config saves, Google Calendar status, prompt editing
+- [ ] Cross-cutting: all nav links, logout, notification bell, responsive layout
 
 **3B: Every LLM Tool — Individual Verification via `/api/simulate`:**
 - [ ] CheckMyAppointmentsTool (get_my_appointments) — test via simulator

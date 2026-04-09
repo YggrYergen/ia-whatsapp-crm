@@ -413,6 +413,93 @@ Config en: `~/.gemini/antigravity/mcp_config.json`
 
 ---
 
+## 0.5. Frontend Routes, Pages & Test Chat Sandbox — Mapa Completo
+
+> **El sistema tiene 8 rutas de panel (layout compartido) + 3 rutas standalone (login, config, auth).**
+
+### Rutas del Panel (`/(panel)/layout.tsx` — requiere auth)
+
+| Ruta | Sidebar Label | Componente Principal | Tipo |
+|:---|:---|:---|:---|
+| `/dashboard` | Panel | Dashboard con métricas, actividad reciente | Todos |
+| `/chats` | Chats | **Dual-mode:** Regular vs Test Sandbox (ver abajo) | Todos |
+| `/agenda` | Agenda | `AgendaView` — Google Calendar con acciones de booking | Todos |
+| `/pacientes` | CRM | Lista de contactos con datos de Supabase | Todos |
+| `/reportes` | Reportes | Reportes y métricas (desktop only en sidebar) | Desktop |
+| `/finops` | FinOps | Operaciones financieras (desktop only en sidebar) | Desktop |
+| `/admin-feedback` | Auditoría Dev | Tabla `test_feedback` — resultados de pruebas de sandbox | Admin only¹ |
+| `/config` | ⚙️ (standalone) | **Configuración Global**: LLM provider/model, system prompt, Google Calendar | Todos |
+
+¹ Visible solo para: `tomasgemes@gmail.com`, `alejandra.tamar.rojas@gmail.com`, `instagramelectrimax@gmail.com`
+
+### `/chats` — Sistema Dual-Mode (CRÍTICO entender esto)
+
+La ruta `/chats` tiene **dos modos completamente distintos** que se activan según el contacto seleccionado:
+
+```
+ContactList (izquierda)
+     │
+     ├── Contacto regular → ChatArea.tsx + ClientProfilePanel.tsx
+     │     └── Chat estándar: enviar/recibir mensajes, pausar bot, ver perfil
+     │
+     └── Contacto test (phone === '56912345678') → TestChatArea.tsx + TestConfigPanel.tsx
+           └── Sandbox Auditoría: simular conversaciones, agregar notas, enviar feedback
+```
+
+### `TestChatArea.tsx` — Botones de Acción del Sandbox
+
+La barra inferior (action bar) del sandbox tiene 5 botones primarios + inline note system:
+
+| Botón | Acción | Backend Route | Efecto |
+|:---|:---|:---|:---|
+| 🗑️ **DESCARTAR PRUEBA** | `confirm()` → limpia state `messages` | — | Solo limpia frontend, no borra de DB |
+| ✉️ **ENVIAR PRUEBA (FINALIZAR)** | POST history + notes al backend, luego DELETE mensajes del contacto en DB, reset notas en localStorage | `/api/test-feedback` | Guarda en tabla `test_feedback`, limpia sandbox completamente |
+| ✨ **CAMBIAR MODELO** | Placeholder (no conectado) | — | Solo renderiza, sin acción |
+| ⚙️ **CONFIGURACIÓN** | `setShowDesktopInfo(true)` | — | Abre `TestConfigPanel` |
+| ⋯ **MÁS OPCIONES** | Placeholder (no conectado) | — | Solo renderiza, sin acción |
+
+**Inline Note System:** Al clickear un mensaje de IA, se abre un `textarea` inline. "Guardar Nota" persiste en `localStorage('sandbox_notes')` y muestra un indicador visual (dot amarillo) sobre el mensaje.
+
+### `TestConfigPanel.tsx` — Panel Config del Agente
+
+| Sección | Función | Persistencia |
+|:---|:---|:---|
+| Status card (gradient indigo/violet) | Muestra nombre del tenant + estado del bot (EJECUTANDO/EN PAUSA) | Realtime Supabase |
+| System Prompt textarea | Editar instrucciones de la IA para el tenant. Botón "GUARDAR CAMBIOS" | Supabase `tenants.system_prompt` |
+| Warning banner | Advertencia sobre impacto de cambios en el prompt | — |
+| Metrics card | Contexto 95%, Acierto A+ | Estático/placeholder |
+
+**Realtime subscription**: El panel se suscribe a `postgres_changes` en la tabla `tenants` (filtro `id=eq.{tenant_id}`) para actualizar el prompt si se modifica externamente (ej: desde `/config`).
+
+### `/config` — Configuración Global del Tenant
+
+| Sección | Campos | Persistencia |
+|:---|:---|:---|
+| Cerebro del Asistente | LLM Provider (OpenAI/Gemini), LLM Model (dinámico por provider), System Prompt (con character counter) | `tenants.llm_provider`, `tenants.llm_model`, `tenants.system_prompt` |
+| Google Calendar | Estado de conexión (Conectado/Desconectado), email, botones Connect/Disconnect | `tenants.google_calendar_status`, `tenants.google_calendar_email` |
+| Custom LLM CTA | "Solicitar Custom LLM" | — (marketing) |
+
+**Modelos disponibles por provider:**
+- OpenAI: `o4-mini`, `gpt-5-mini`, `gpt-4o-mini` (legacy)
+- Gemini: `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`
+
+### `/admin-feedback` — Tabla de Resultados de Auditoría
+
+- Fetch: `SELECT * FROM test_feedback WHERE tenant_id = {user_tenant}`
+- Muestra: `history` (JSON conversación), `notes` (observaciones del tester), `tester_email`, `created_at`
+- Acciones: botón DELETE para limpiar rows
+
+### Sidebar Navigation (`components/Layout/Sidebar.tsx`)
+
+| Elemento | Tipo | Visibilidad |
+|:---|:---|:---|
+| 7 nav items (Panel, Chats, Agenda, CRM, Reportes, FinOps, Dev) | Links | Algunos desktop-only |
+| Notification bell | Toggle `NotificationFeed` | Mobile + Desktop |
+| Config (⚙️) | Link a `/config` | Desktop only |
+| Logout | `signOut()` → redirect `/login` | Desktop only |
+
+---
+
 ## 1. Arquitectura del Sistema
 
 Tres componentes distribuidos:
