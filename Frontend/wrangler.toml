@@ -5,11 +5,20 @@
 #   - "Build variables and secrets" in Workers Builds (for build-time inlining)
 #   - "Environment variables" in Workers dashboard (for runtime access)
 # See: https://opennext.js.org/cloudflare/howtos/env-vars#production
+#
+# ⚠️ compatibility_date >= 2025-08-16 is REQUIRED for Sentry SDK to work.
+#   It introduces https.request to the Workers runtime, which @sentry/nextjs
+#   needs to send data to Sentry from server-side code.
+#   Ref: https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/nextjs/
+#
+# ⚠️ upload_source_maps enables readable stack traces in Sentry.
+#   Ref: https://docs.sentry.io/platforms/javascript/guides/cloudflare/#step-3-add-readable-stack-traces-with-source-maps-optional
 
 name = "ia-whatsapp-crm"
 main = ".open-next/worker.js"
-compatibility_date = "2024-12-30"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+compatibility_date = "2025-08-16"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
 
 [assets]
 directory = ".open-next/assets"
