@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { usePathname } from 'next/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { useCrm } from '@/contexts/CrmContext'
+import * as Sentry from '@sentry/nextjs'
 
 export default function GlobalFeedbackButton() {
     const pathname = usePathname()
@@ -43,6 +44,7 @@ export default function GlobalFeedbackButton() {
             setFeedback("")
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: 'Feedback global enviado correctamente 🚀' } }])
         } catch (err) {
+            Sentry.captureException(err as Error)
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: `Error enviando feedback: ${(err as Error).message}` } }])
         } finally {
             setIsCapturing(false)

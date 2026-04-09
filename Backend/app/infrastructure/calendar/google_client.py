@@ -36,6 +36,7 @@ class _GoogleServiceSingleton:
                     )
                 except Exception as e:
                     logger.error(f"❌ [GCal] Failed to load credentials from ENV: {e}")
+                    sentry_sdk.capture_exception(e)
             
             if cls._credentials is None:
                 # Fallback to local file only if not in production or for testing

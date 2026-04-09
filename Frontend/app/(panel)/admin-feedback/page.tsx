@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from '@/lib/supabase'
 import { useCrm } from '@/contexts/CrmContext'
+import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
 
@@ -43,8 +44,13 @@ export default function AdminFeedbackPage() {
     }
 
     const handleDelete = async (id: string) => {
-        await supabase.from('test_feedback').delete().eq('id', id)
-        fetchFeedback()
+        try {
+            await supabase.from('test_feedback').delete().eq('id', id)
+            fetchFeedback()
+        } catch (err) {
+            console.error('Error deleting feedback:', err)
+            Sentry.captureException(err as Error)
+        }
     }
 
     return (

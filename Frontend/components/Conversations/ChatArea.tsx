@@ -5,6 +5,7 @@ import { ArrowLeft, User, Pause, Play, MoreVertical, Sparkles, Send, MessageCirc
 import { Badge } from '@/components/ui/badge'
 import { useCrm } from '@/contexts/CrmContext'
 import { createClient } from '@/lib/supabase'
+import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
 
@@ -73,6 +74,7 @@ export default function ChatArea() {
 
         if (dbErr) {
             console.error("Error saving message:", dbErr)
+            Sentry.captureMessage(`Error saving message to DB: ${JSON.stringify(dbErr)}`, 'error')
             return
         }
 
@@ -93,6 +95,7 @@ export default function ChatArea() {
                 if (!res.ok) throw new Error("Simulation failed")
             } catch (err) {
                 console.error("Simulation trigger failed:", err)
+                Sentry.captureException(err as Error)
                 setIsIAProcessing(false)
             }
         }

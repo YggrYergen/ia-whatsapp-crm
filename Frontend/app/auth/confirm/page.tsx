@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
+import * as Sentry from '@sentry/nextjs'
 
 /**
  * Auth confirm page — handles the OAuth PKCE callback.
@@ -50,6 +51,7 @@ function ConfirmAuth() {
         supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
             if (sessionError) {
                 console.error('[auth/confirm] Session error:', sessionError.message)
+                Sentry.captureMessage(`Auth PKCE session error: ${sessionError.message}`, 'error')
                 setError(sessionError.message)
                 return
             }

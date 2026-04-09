@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useCrm } from '@/contexts/CrmContext'
+import * as Sentry from '@sentry/nextjs'
 
 type ViewMode = 'day' | 'week' | 'month'
 
@@ -54,6 +55,7 @@ export default function AgendaView() {
             }
         } catch (err) {
             console.error("Fetch calendar err", err)
+            Sentry.captureException(err as Error)
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: "Error de conexión cargando agenda" } }])
         } finally {
             setLoading(false)
@@ -131,6 +133,7 @@ export default function AgendaView() {
                 throw new Error(data.message)
             }
         } catch (err: any) {
+            Sentry.captureException(err)
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: err.message || "Error al agendar" } }])
         } finally {
             setIsSubmitting(false)

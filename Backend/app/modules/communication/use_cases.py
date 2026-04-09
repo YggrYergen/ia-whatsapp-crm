@@ -67,6 +67,7 @@ class ProcessMessageUseCase:
                         logger.info(f"✅ [ORCH] New contact created: {contact_id}")
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Failed creating contact: {e}")
+                    sentry_sdk.capture_exception(e)
             
             clinical_keywords = ["dolor", "fibrosis", "sangrado", "emergencia", "urgencia", "infectado"]
             force_escalation = any(kw in text_body for kw in clinical_keywords)
@@ -85,6 +86,7 @@ class ProcessMessageUseCase:
                     }).execute()
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Msg persistence err: {e}")
+                    sentry_sdk.capture_exception(e)
 
             # ============================================================
             # STEP 2: Logic routing (Bot Active check)
@@ -153,6 +155,7 @@ class ProcessMessageUseCase:
                         results.append(f"Tool {t['name']} result: {res}")
                     except Exception as e: 
                         results.append(f"Tool {t['name']} failed: {e}")
+                        sentry_sdk.capture_exception(e)
                         await send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e)
                 
                 history.append({"role": "user", "content": f"[Resultados]: {results}"})
@@ -201,4 +204,5 @@ class ProcessMessageUseCase:
             if contact_id:
                 try: 
                     await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                except: pass
+                except Exception as cleanup_err:
+                    sentry_sdk.capture_exception(cleanup_err)

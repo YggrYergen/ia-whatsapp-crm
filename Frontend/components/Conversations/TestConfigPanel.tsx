@@ -6,6 +6,7 @@ import { useCrm } from '@/contexts/CrmContext'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from '@/lib/supabase'
+import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
 
@@ -52,6 +53,7 @@ export default function TestConfigPanel() {
             if (data) setPrompt(data.system_prompt)
         } catch (err) {
             console.error(err)
+            Sentry.captureException(err as Error)
         } finally {
             setIsLoading(false)
         }
@@ -70,6 +72,7 @@ export default function TestConfigPanel() {
             }
         } catch (err) {
             console.error(err)
+            Sentry.captureException(err as Error)
         } finally {
             setIsSaving(false)
         }

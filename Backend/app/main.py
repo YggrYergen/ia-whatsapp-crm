@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
 
     allowed_origins = [
         "https://dash.tuasistentevirtual.cl",
-        "https://ia-whatsapp-crm.pages.dev",
+        "https://ia-whatsapp-crm.tomasgemes.workers.dev",
         os.getenv("FRONTEND_URL", ""),
     ]
     # Filter out empty strings
@@ -251,6 +251,7 @@ def create_app() -> FastAPI:
             return {"status": "success", "detail": "Simulation queued"}
         except Exception as e:
             logger.error(f"🔥 [SIM] Crash: {str(e)}", exc_info=True)
+            sentry_sdk.capture_exception(e)
             return {"status": "error", "message": str(e)}
 
     @app.post("/api/test-feedback")
@@ -272,7 +273,7 @@ def create_app() -> FastAPI:
             return {"status": "success", "data": res.data}
         except Exception as e:
             logger.error(f"❌ [FEEDBACK] Failed to save: {str(e)}")
-            # If table still not found, we log it clearly
+            sentry_sdk.capture_exception(e)
             # If table still not found, we log it clearly
             return ORJSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
@@ -304,15 +305,20 @@ def create_app() -> FastAPI:
         from app.core.models import TenantContext
         tenant = TenantContext(**tenant_res.data[0])
         from app.infrastructure.calendar.google_client import GoogleCalendarClient
-        result = await GoogleCalendarClient.book_round_robin(
-            tenant,
-            date_str=payload.get("date_str"),
-            time_str=payload.get("time_str"),
-            duration_minutes=payload.get("duration", 30),
-            user_name=payload.get("patient_name", "Reserva Manual UI"),
-            phone=payload.get("phone", "+5600000000")
-        )
-        return result
+        try:
+            result = await GoogleCalendarClient.book_round_robin(
+                tenant,
+                date_str=payload.get("date_str"),
+                time_str=payload.get("time_str"),
+                duration_minutes=payload.get("duration", 30),
+                user_name=payload.get("patient_name", "Reserva Manual UI"),
+                phone=payload.get("phone", "+5600000000")
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Calendar book error: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)
+            return ORJSONResponse(status_code=500, content={"status": "error", "message": "Error interno al agendar cita."})
 
     @app.exception_handler(AppBaseException)
     async def app_exception_handler(request: Request, exc: AppBaseException):

@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+import sentry_sdk
 from app.modules.intelligence.tools.base import AITool
 from app.infrastructure.telemetry.logger_service import logger
 
@@ -28,8 +29,10 @@ class ToolRegistry:
         try:
             return await self._tools[name].execute(**kwargs)
         except Exception as e:
-            logger.error(f"Tool '{name}' execution raised an exception: {str(e)}")
-            return f'{{"status": "error", "message": "Internal execution error"}}'
+            logger.exception(f"Tool '{name}' execution raised an exception: {str(e)}")
+            sentry_sdk.set_context("tool_execution", {"tool_name": name, "kwargs_keys": list(kwargs.keys())})
+            sentry_sdk.capture_exception(e)
+            return f'{{"status": "error", "message": "Internal execution error: {str(e)}"}}'
 
 # Global registry instance where tools are registered at boot
 tool_registry = ToolRegistry()

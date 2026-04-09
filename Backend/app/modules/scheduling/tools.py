@@ -1,7 +1,9 @@
 from typing import Dict, Any
 import json
 import asyncio
+import sentry_sdk
 from app.modules.intelligence.tools.base import AITool
+from app.infrastructure.telemetry.logger_service import logger
 from app.modules.scheduling.services import SchedulingService
 
 class CheckAvailabilityTool(AITool):
@@ -171,8 +173,9 @@ class EscalateHumanTool(AITool):
                 db = await SupabasePooler.get_client()
                 # Use caller_phone to ensure we mute the correct person
                 await db.table("contacts").update({"bot_active": False}).eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"[EscalateTool] Failed to mute bot for {patient_phone}: {e}")
+                sentry_sdk.capture_exception(e)
                 
         res = await SchedulingService.request_human_escalation(tenant, patient_phone, reason)
         return json.dumps(res)
@@ -219,4 +222,6 @@ class UpdatePatientScoringTool(AITool):
             }).eq("phone_number", phone).eq("tenant_id", tenant.id).execute()
             return json.dumps({"status": "success", "message": f"Score {score} actualizado para {phone}"})
         except Exception as e:
+            logger.error(f"[ScoringTool] Failed to update score for {phone}: {e}")
+            sentry_sdk.capture_exception(e)
             return json.dumps({"status": "error", "message": str(e)})

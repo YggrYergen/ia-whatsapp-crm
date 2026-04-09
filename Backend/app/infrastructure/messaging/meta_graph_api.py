@@ -1,4 +1,5 @@
 import httpx
+import sentry_sdk
 from app.infrastructure.telemetry.logger_service import logger
 
 class MetaGraphAPIClient:
@@ -37,7 +38,10 @@ class MetaGraphAPIClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(f"Meta Graph Connection HTTP issue: {e.response.text}")
+            sentry_sdk.set_context("meta_graph_api", {"phone_number_id": phone_number_id, "to": to, "status_code": e.response.status_code, "response_body": e.response.text[:500]})
+            sentry_sdk.capture_exception(e)
             raise
         except Exception as e:
             logger.error(f"Hardware/Network HTTP layer error: {str(e)}")
+            sentry_sdk.capture_exception(e)
             raise

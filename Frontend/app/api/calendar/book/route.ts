@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 
 
 export async function POST(req: Request) {
@@ -14,6 +15,7 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
         const text = await response.text();
+        Sentry.captureMessage(`Calendar book proxy error: ${response.status} - ${text}`, 'error')
         return NextResponse.json({ status: 'error', message: text }, { status: response.status })
     }
 
@@ -21,6 +23,7 @@ export async function POST(req: Request) {
     return NextResponse.json(data)
   } catch (error: any) {
     console.error('Proxy Calendar Book Error:', error)
+    Sentry.captureException(error)
     return NextResponse.json({ status: 'error', message: `Fetch failed: ${error.message}` }, { status: 500 })
   }
 }

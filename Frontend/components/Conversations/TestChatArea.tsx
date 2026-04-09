@@ -7,6 +7,7 @@ import { useCrm } from '@/contexts/CrmContext'
 import { createClient } from '@/lib/supabase'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
+import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
 
@@ -31,6 +32,7 @@ export default function TestChatArea() {
                 setLocalNotes(JSON.parse(saved))
             } catch (e) {
                 console.error("Error parsing saved notes", e)
+                Sentry.captureException(e)
             }
         }
     }, [])
@@ -67,9 +69,13 @@ export default function TestChatArea() {
                 content: text,
                 sender_role: 'user'
             })
-            if (error) console.error("Error inserting message:", error)
+            if (error) {
+                console.error("Error inserting message:", error)
+                Sentry.captureMessage(`Error inserting sandbox message: ${JSON.stringify(error)}`, 'error')
+            }
         } catch (err) {
             console.error("Supabase error:", err)
+            Sentry.captureException(err as Error)
         }
 
         // Trigger Simulation
@@ -92,6 +98,7 @@ export default function TestChatArea() {
             })
         } catch (err) {
             console.error(err)
+            Sentry.captureException(err as Error)
             setIsIAProcessing(false)
         } finally {
             clearTimeout(timeout)
@@ -107,6 +114,7 @@ export default function TestChatArea() {
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: newState ? 'Asistente reanudado ▶️' : 'Asistente pausado ⏸️' } }])
         } else {
             console.error("Error toggling bot:", error)
+            Sentry.captureMessage(`Error toggling bot: ${JSON.stringify(error)}`, 'error')
         }
     }
 
@@ -151,6 +159,7 @@ export default function TestChatArea() {
             setToasts(prev => [...prev, { id: Date.now(), payload: { content: 'Prueba enviada y sandbox reseteado ✅' } }])
         } catch (err) {
             console.error("[Sandbox] Hubo un error procesando el feedback:", err);
+            Sentry.captureException(err as Error);
             const msg = (err as Error).message;
             if (msg.includes('relation "public.test_feedback" does not exist') || msg.includes('test_feedback')) {
                  setToasts(prev => [...prev, { id: Date.now(), payload: { content: '❌ Falla crítica: La tabla test_feedback no existe en la BD. Debes ejecutar el script SQL.' } }]);
