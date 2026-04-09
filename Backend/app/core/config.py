@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     DISCORD_WEBHOOK_URL: str | None = None
     RESEND_API_KEY: str | None = None
     
+    # Sentry DSN — https://docs.sentry.io/platforms/python/integrations/fastapi/
+    # Configured as env var in Cloud Run. Falls back to None which disables Sentry.
+    SENTRY_DSN: str | None = None
+    
     GOOGLE_SERVICE_ACCOUNT_JSON: str | None = None
     GOOGLE_OAUTH_CLIENT_ID: str | None = None
     GOOGLE_OAUTH_CLIENT_SECRET: str | None = None

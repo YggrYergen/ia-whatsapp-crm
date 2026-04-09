@@ -188,6 +188,14 @@ class ProcessMessageUseCase:
 
         except Exception as e:
             logger.error(f"💥 [ORCH] FATAL: {e}", exc_info=True)
+            # Enrich Sentry with pipeline context for easier debugging
+            # Ref: https://docs.sentry.io/platforms/python/enriching-events/context/
+            sentry_sdk.set_context("pipeline", {
+                "tenant_id": str(tenant.id) if tenant else "unknown",
+                "contact_id": str(contact_id) if contact_id else "unknown",
+                "is_simulation": payload.get("is_simulation", False),
+                "step": "orchestration_pipeline",
+            })
             sentry_sdk.capture_exception(e)
             await send_discord_alert(title="AI Orchestration Fatal Crash", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error")
             if contact_id:

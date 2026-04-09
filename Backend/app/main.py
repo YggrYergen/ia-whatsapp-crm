@@ -114,12 +114,28 @@ async def lifespan(app_ctx: FastAPI):
 
 
 def create_app() -> FastAPI:
-    # Configuración inteligente de Sentry tal cual su instructivo
+    # ============================================================
+    # Sentry SDK Init — Per official docs:
+    # https://docs.sentry.io/platforms/python/integrations/fastapi/
+    #
+    # FastAPI integration auto-enables when sentry-sdk is installed.
+    # No need to manually add FastApiIntegration unless customizing options.
+    # ============================================================
+    _sentry_dsn = settings.SENTRY_DSN or "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"
     sentry_sdk.init(
-        dsn=getattr(settings, "SENTRY_DSN", "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"),
+        dsn=_sentry_dsn,
+        # Per docs: send_default_pii=True to attach request headers, IP, etc.
         send_default_pii=True,
+        # traces_sample_rate=1.0 captures 100% of transactions for tracing.
+        # Keep at 1.0 during stabilization, reduce in production later.
+        # Ref: https://docs.sentry.io/platforms/python/configuration/options/#traces-sample-rate
+        traces_sample_rate=1.0,
+        # Enable structured logs sent to Sentry (new feature)
         enable_logs=True,
+        # Environment tag for filtering events in Sentry dashboard
+        environment=settings.ENVIRONMENT,
     )
+    logger.info(f"Sentry initialized | DSN={'configured' if settings.SENTRY_DSN else 'fallback'} | env={settings.ENVIRONMENT}")
     
     # Notice ORJSONResponse globally set
     app = FastAPI(
@@ -310,7 +326,9 @@ def create_app() -> FastAPI:
         full_trace = traceback.format_exc()
         logger.error(f"{err_msg}\n{full_trace}")
         
-
+        # Sentry: capture explicitly since our custom handler intercepts before auto-capture
+        # Ref: https://docs.sentry.io/platforms/python/integrations/fastapi/#issue-reporting
+        sentry_sdk.capture_exception(exc)
             
         # Send to Discord for devs
         from app.infrastructure.telemetry.discord_notifier import send_discord_alert
@@ -329,7 +347,9 @@ def create_app() -> FastAPI:
         full_trace = traceback.format_exc()
         logger.error(f"FATAL UNHANDLED EXCEPTION: {str(exc)}\n{full_trace}")
         
-
+        # Sentry: capture explicitly since our custom handler intercepts before auto-capture
+        # Ref: https://docs.sentry.io/platforms/python/integrations/fastapi/#issue-reporting
+        sentry_sdk.capture_exception(exc)
             
         # Send to Discord for devs
         from app.infrastructure.telemetry.discord_notifier import send_discord_alert
