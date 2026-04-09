@@ -1,5 +1,5 @@
 // ================================================================================
-// Next.js Configuration — with Sentry integration
+// Next.js Configuration — with Sentry + OpenNext integration
 //
 // ⚠️ DO NOT add `disableClientInstrumentation: true` — it KILLS all client-side
 //    Sentry error capture silently. This was the root cause of broken frontend
@@ -9,7 +9,11 @@
 //    `instrumentation-client.ts` which is a Next.js 15+ file convention.
 //    See: .ai-context/implementation_plan.md for full rationale.
 //
+// ⚠️ DO NOT downgrade `lucide-react` below ^1.7.0 — older versions have
+//    React 19 peer dep conflicts that fail the build.
+//
 // Sentry docs: https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
+// OpenNext docs: https://opennext.js.org/cloudflare/get-started#12-develop-locally
 // Next.js 15 upgrade: https://nextjs.org/docs/app/building-your-application/upgrading/version-15
 // ================================================================================
 const { withSentryConfig } = require("@sentry/nextjs");
@@ -17,12 +21,8 @@ const { withSentryConfig } = require("@sentry/nextjs");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Static export for Cloudflare Pages
-  // Rewrites below do NOT work in static export mode — they only work with a
-  // Node.js server. The frontend uses direct fetch calls to the backend URL
-  // configured via NEXT_PUBLIC_ env vars instead. Keeping rewrites here as
-  // documentation of the intended proxy pattern for future migration to
-  // server-rendered deployment (e.g., OpenNext).
+  // With OpenNext, rewrites WORK (no longer static export).
+  // These proxy frontend /api/* calls to the backend Cloud Run service.
   async rewrites() {
     return [
       {
@@ -50,8 +50,7 @@ module.exports = withSentryConfig(nextConfig, {
   hideSourceMaps: true,
 });
 
-// Suppress the "missing instrumentation.ts" warning — we are a static export
-// on Cloudflare Pages with no Node.js server runtime, so server-side Sentry
-// instrumentation is not applicable.
-// Ref: https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
-process.env.SENTRY_SUPPRESS_INSTRUMENTATION_FILE_WARNING = "1";
+// OpenNext: enable Cloudflare bindings during local development
+// Per docs: https://opennext.js.org/cloudflare/get-started#12-develop-locally
+const { initOpenNextCloudflareForDev } = require("@opennextjs/cloudflare");
+initOpenNextCloudflareForDev();

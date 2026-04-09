@@ -4,7 +4,7 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE ser documentada EN ESE MOMENTO con: (1) qué se hizo, (2) por qué funciona, (3) links a los docs oficiales que lo respaldan. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
-## Status: Phase 2A, 2D COMPLETE ✅ | Phase 2B IN PROGRESS (blocked on Next.js upgrade)
+## Status: Phase 2A, 2D COMPLETE ✅ | Phase 2B BLOCKED (adapter) | Phase 2E (OpenNext Migration) IN PROGRESS 🔄
 
 ---
 
@@ -101,9 +101,9 @@
 
 ---
 
-## Phase 2B: Sentry Frontend Client-Side — IN PROGRESS 🔄
+## Phase 2B: Sentry Frontend Client-Side — BLOCKED (adapter limitation confirmed)
 
-### BLOCKER: Next.js 14.1.4 incompatible with Sentry SDK v10
+### History: Next.js 14→15 Upgrade (COMPLETED)
 
 > **⚠️ CRITICAL — DO NOT SKIP THIS SECTION. READ BEFORE TOUCHING FRONTEND SENTRY.**
 
@@ -116,40 +116,92 @@
 | **`instrumentation-client.ts` requires Next.js 15+** | This is a [Next.js file convention](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client) not available in 14.x |
 | **Next.js 14.1.4 is EOL** | 2 major versions behind, known CVEs, no longer receiving security patches |
 
-#### Decision: Upgrade Next.js 14.1.4 → 15.5.15 (APPROVED)
+#### Decision: Upgrade Next.js 14.1.4 → 15.5.15 (COMPLETED ✅)
 
 > **⚠️ DO NOT DOWNGRADE Next.js back to 14.x — it will BREAK Sentry frontend integration.**
 > The `instrumentation-client.ts` file ONLY works on Next.js 15+.
 > The old `sentry.client.config.ts` file is DEPRECATED and should NOT be re-created.
-
-**Why 15.5.15 (not 16.x):**
-- 15.x has 6+ months of production hardening
-- 16.x is brand new (weeks old), higher regression risk
-- Fewer breaking changes from 14→15 than 14→16
-- Full Sentry SDK v10 + `instrumentation-client.ts` support
+> **⚠️ DO NOT DOWNGRADE `lucide-react` below ^1.7.0** — older versions have React 19 peer dep conflicts that fail the build.
 
 **Docs consulted:**
 - [Next.js 15 upgrade guide](https://nextjs.org/docs/app/building-your-application/upgrading/version-15)
 - [Sentry Next.js manual setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/) — specifies `instrumentation-client.ts`
 - [instrumentation-client.ts convention](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client)
 
-**Breaking changes to handle:**
-1. React 18 → React 19 (required by Next.js 15)
-2. `sentry.client.config.ts` → `instrumentation-client.ts`
-3. Remove `disableClientInstrumentation: true` from `next.config.js`
-4. Add `global-error.tsx` for React render error capture (per Sentry docs)
-5. `eslint-config-next` must match Next.js version
-6. `@types/react` and `@types/react-dom` bump to v19
+**Status:** Upgrade completed ✅, deployed ✅, BUT **Sentry still NOT capturing client errors** ❌
 
-**Status:** Approved, execution pending.
+### Root Cause: `@cloudflare/next-on-pages` adapter doesn't support `instrumentation-client.ts`
+
+After deploying and testing (2026-04-09):
+- Build succeeds and Sentry SDK IS bundled in the client JS
+- But `instrumentation-client.ts` is NOT being executed at runtime
+- The `@cloudflare/next-on-pages` adapter (deprecated) does not process Next.js 15 instrumentation file conventions
+- Supabase API calls work fine (200/201), so the issue is specifically the adapter not initializing Sentry
+- **Diagnosis confirmed:** The adapter, being edge-runtime-only and deprecated, strips/ignores the instrumentation hooks
+
+**Resolution:** Migrate to OpenNext → Phase 2E
 
 ---
 
-## Phase 2C: Sentry Frontend Server-Side — DEFERRED
+## Phase 2C: Sentry Frontend Server-Side — DEFERRED → BECOMES AVAILABLE WITH OPENNEXT
 
-- N/A for static export (Cloudflare Pages has no Node.js server runtime)
-- `sentry.server.config.ts` and `instrumentation.ts` are not relevant for our deployment
-- If we migrate to OpenNext in the future, this becomes relevant
+- Previously N/A for static export (Cloudflare Pages has no Node.js server runtime)
+- With OpenNext migration (Phase 2E), server-side Sentry becomes possible via `instrumentation.ts`
+- Will be evaluated AFTER Phase 2E is complete
+
+---
+
+## Phase 2E: OpenNext Migration (Cloudflare Pages → Workers) — IN PROGRESS 🔄
+
+### Official Docs Consulted
+
+| Doc | URL | Key Finding |
+|:---|:---|:---|
+| OpenNext Get Started | [link](https://opennext.js.org/cloudflare/get-started#existing-nextjs-apps) | 13-step guide for existing apps; `@cloudflare/next-on-pages` removal documented |
+| OpenNext Env Vars | [link](https://opennext.js.org/cloudflare/howtos/env-vars) | Production vars via Cloudflare dashboard, `.env` files for dev, `NEXTJS_ENV` for environment selection |
+| OpenNext Dev & Deploy | [link](https://opennext.js.org/cloudflare/howtos/dev-deploy) | Workers Builds for CI/CD, `opennextjs-cloudflare build && deploy` commands |
+
+### Why This Is Needed
+
+- `@cloudflare/next-on-pages` is **deprecated** by Cloudflare
+- It does NOT support `instrumentation-client.ts` (Next.js 15+ convention)
+- OpenNext is the **officially recommended** replacement
+- It enables: full Node.js runtime, SSR, middleware, instrumentation hooks, rewrites
+
+### Rollback Plan
+
+- **Git tag:** `pre-opennext-migration` (commit `f1494c9`)
+- **Pushed to remote:** ✅
+- **Rollback:** `git reset --hard pre-opennext-migration && git push --force-with-lease`
+- **Persistent KI:** `knowledge/opennext-migration-rollback/artifacts/rollback.md`
+
+### Migration Steps (per docs, steps 1-13)
+
+1. Install `@opennextjs/cloudflare@latest` (dep)
+2. Install `wrangler@latest` (devDep)
+3. Replace `wrangler.toml` — Pages format → Workers format (`main = ".open-next/worker.js"`, `assets`, `services`)
+4. Create `open-next.config.ts`
+5. Create `.dev.vars` with `NEXTJS_ENV=development`
+6. Update `package.json` scripts (`preview`, `deploy`, `upload`, `cf-typegen`)
+7. Create `public/_headers` for static asset caching
+8. R2 caching — skip for now (can add later)
+9. Remove `export const runtime = "edge"` — none found ✅
+10. Add `.open-next` to `.gitignore`
+11. Remove `@cloudflare/next-on-pages` references — not a dep, only a comment ✅
+12. Update `next.config.js` — add `initOpenNextCloudflareForDev()`
+13. Deploy to Cloudflare Workers
+
+### Post-Migration: Cloudflare Dashboard Setup Required
+
+- Create Workers Builds connection to GitHub (replaces Pages auto-deploy)
+- Add env vars in Workers dashboard: `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `BACKEND_URL`
+- For Workers Builds: add same vars as "Build variables and secrets" (for `NEXT_PUBLIC_*` inlining)
+
+### Worker Size Estimate
+
+- Server JS (uncompressed): 4.1 MB
+- Estimated gzipped: ~1.23 MB
+- Free tier limit: 3 MB gzipped → **fits comfortably** ✅
 
 ---
 

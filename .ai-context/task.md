@@ -73,7 +73,7 @@ Docs consulted:
 - [x] **TESTED:** Cloud Logging shows clean structured JSON
 - [x] Active revision: `ia-backend-prod-00052-7xc` serving 100% traffic
 
-### 2B: Sentry Frontend Client-Side ← CURRENT (upgrade done, pending deploy + test)
+### 2B: Sentry Frontend Client-Side — BLOCKED (adapter limitation) → resolved by Phase 2E
 Docs consulted:
 - [Sentry Next.js Manual Setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/)
 - [Next.js instrumentation-client.ts](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client)
@@ -83,6 +83,7 @@ Docs consulted:
 > The `instrumentation-client.ts` file ONLY works on Next.js 15+.
 > The old `sentry.client.config.ts` is DEPRECATED by Sentry and should NOT be re-created.
 > The `disableClientInstrumentation: true` flag was KILLING all client-side error capture.
+> **⚠️ DO NOT DOWNGRADE `lucide-react` below ^1.7.0** — React 19 peer dep conflict breaks build.
 
 - [x] Read Sentry Next.js docs — confirmed `instrumentation-client.ts` is the new standard
 - [x] Read Next.js 15 upgrade guide — confirmed breaking changes (React 19, etc.)
@@ -97,18 +98,52 @@ Docs consulted:
 - [x] `npm run build` — **SUCCESS** ✅ (14 pages compiled, no errors)
 - [x] Added `onRouterTransitionStart` export per Sentry build requirement
 - [x] Updated README §0.2 with full upgrade documentation + DO NOT DOWNGRADE warnings
-- [ ] Deploy to Cloudflare Pages (commit + push to main)
-- [ ] **TEST:** Trigger frontend error → verify it appears in Sentry dashboard
-- [ ] **TEST:** Verify no regressions in existing UI (login, dashboard, chat, agenda)
+- [x] Hardcoded Sentry DSN in `instrumentation-client.ts` (wrangler `[vars]` are runtime not build-time)
+- [x] Upgraded `lucide-react` ^0.364.0 → ^1.7.0 (React 19 peer dep fix)
+- [x] Deploy to Cloudflare Pages (commit + push to main) ✅
+- [x] **TESTED:** Sentry SDK IS bundled in client JS (verified in browser DevTools)
+- [x] **TESTED:** Sentry is **NOT** capturing client-side errors ❌
+- [x] **DIAGNOSED:** `@cloudflare/next-on-pages` adapter does NOT process `instrumentation-client.ts` — it strips/ignores the Next.js 15 instrumentation hooks
+- [ ] **RESOLUTION:** Migrate to OpenNext (Phase 2E) to unblock client-side Sentry
 
-### 2C: Sentry Frontend Server-Side — DEFERRED (N/A for static export)
-- [x] Evaluated: Not needed for Cloudflare Pages static export (no Node.js server runtime)
-- [x] `sentry.server.config.ts` and `instrumentation.ts` are not relevant for our deployment
+### 2C: Sentry Frontend Server-Side — DEFERRED → BECOMES AVAILABLE WITH OPENNEXT
+- [x] Evaluated: Previously N/A for Cloudflare Pages static export (no Node.js server runtime)
+- [ ] Re-evaluate AFTER Phase 2E completes (OpenNext enables server-side Sentry via `instrumentation.ts`)
 
 ### 2D: Alertas ✅ COMPLETE
 - [x] Discord webhook configured ("Captain Hook" in StarCompanion's #general)
 - [x] `discord_notifier.py` sends embeds with severity + traceback
 - [x] **TESTED:** Fatal error from `/api/debug-exception` → Discord embed received
+
+### 2E: OpenNext Migration (Cloudflare Pages → Workers) ← CURRENT 🔄
+Docs consulted:
+- [OpenNext Get Started (existing apps)](https://opennext.js.org/cloudflare/get-started#existing-nextjs-apps)
+- [OpenNext Env Vars](https://opennext.js.org/cloudflare/howtos/env-vars)
+- [OpenNext Dev & Deploy](https://opennext.js.org/cloudflare/howtos/dev-deploy)
+
+> **Rollback:** Git tag `pre-opennext-migration` at commit `f1494c9`. Persistent KI in `knowledge/opennext-migration-rollback/`.
+
+- [x] Read all 3 official OpenNext docs (get-started, env-vars, dev-deploy)
+- [x] Verified Worker size fits free tier (~1.23 MB gzipped < 3 MB limit)
+- [x] Created rollback tag `pre-opennext-migration` and pushed to remote
+- [x] Created persistent rollback KI artifact
+- [ ] Step 1: Install `@opennextjs/cloudflare@latest`
+- [ ] Step 2: Install `wrangler@latest` as devDep
+- [ ] Step 3: Replace `wrangler.toml` (Pages → Workers format)
+- [ ] Step 4: Create `open-next.config.ts`
+- [ ] Step 5: Create `.dev.vars`
+- [ ] Step 6: Update `package.json` scripts
+- [ ] Step 7: Create `public/_headers` for static asset caching
+- [ ] Step 9: Remove `export const runtime = "edge"` (none found ✅)
+- [ ] Step 10: Add `.open-next` to `.gitignore`
+- [ ] Step 11: Remove `@cloudflare/next-on-pages` references
+- [ ] Step 12: Update `next.config.js` — add `initOpenNextCloudflareForDev()`
+- [ ] Step 13: Commit, push, deploy to Cloudflare Workers
+- [ ] Set up Workers Builds in Cloudflare dashboard
+- [ ] Add env vars in Workers dashboard
+- [ ] **TEST:** Trigger frontend error → verify it appears in Sentry dashboard
+- [ ] **TEST:** Verify no regressions in existing UI (login, dashboard, chat, agenda)
+- [ ] Update README with OpenNext documentation
 
 ---
 
