@@ -6,25 +6,25 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-08 22:35 CLT)
+## 0. Estado Actual del Proyecto (2026-04-09 11:50 CLT)
 
-**Estado global:** 🟡 En estabilización — Fases 0-1D completas, Fase 2 (Sentry) en progreso.
+**Estado global:** 🟡 En estabilización — Fases 0-2E completas, Fase 3 (E2E) pendiente.
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
-| **Backend (Cloud Run)** | 🟢 Operativo + Observable | Rev `00052-7xc`, 100% tráfico. Sentry captura errores ✅, Discord alertas ✅, Cloud Logging JSON limpio ✅ |
-| **Frontend (CF Pages)** | 🟡 Next.js 15 upgrade | Upgradeado de 14.1.4 → 15.5.15 para habilitar Sentry SDK v10. Build OK, pendiente deploy + test |
+| **Backend (Cloud Run)** | 🟢 Operativo + Observable | Rev `00052-7xc`, 100% tráfico. Sentry ✅, Discord alertas ✅, Cloud Logging JSON ✅ |
+| **Frontend (CF Workers)** | 🟢 Operativo + Observable | OpenNext (Workers). Sentry SDK captura errores ✅. CF Workers Logs ✅. Deploy auto via Workers Builds |
 | **BD Producción** | 🟢 Funcional | RLS activo. Migraciones aplicadas: `alerts` RLS + `is_read` + GCal OAuth columns |
 | **BD Desarrollo** | 🟢 Sincronizada | `is_read` column aplicada. Schema funcional |
-| **Rama `main`** | 🟡 Pendiente commit | Cambios de Phase 2 listos para commit |
+| **Rama `main`** | 🟢 Al día | Auto-deploy backend (Cloud Build) + frontend (Workers Builds) |
 | **Rama `desarrollo`** | ⚪ Detrás de main | Se sincroniza DESPUÉS de estabilizar main |
 | **Monitoreo Backend** | 🟢 Completo | Sentry + Discord + Cloud Logging JSON — todo verificado |
-| **Monitoreo Frontend** | 🟡 En progreso | Next.js 15 upgrade done, `instrumentation-client.ts` creado, pendiente deploy + test |
+| **Monitoreo Frontend** | 🟢 Completo | Sentry SDK (client errors) ✅ + CF Workers Logs (server/routing) ✅ |
 
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo 🔄 ──► FASE 3: E2E ──► FASE 4: Separación ──► FASE 5: Go-Live
+FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E 🔄 ──► FASE 4: Separación ──► FASE 5: Go-Live
 ```
 
 | Fase | Objetivo | Estado |
@@ -35,9 +35,10 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 1C** | **Auth PKCE callback** | ✅ **Completada** — login/logout funcional (ver §0.1) |
 | **Fase 1D** | Backend deploy (Cloud Build) | ✅ **Completada** — 3 root causes resueltos (ver §4) |
 | **Fase 2A** | Sentry Backend (FastAPI) | ✅ **Completada** — errores capturados en Sentry + Discord (ver §0.2) |
-| **Fase 2B** | Sentry Frontend (Next.js) | 🔄 Upgrade Next.js 14→15 completado, pendiente deploy y test (ver §0.2) |
+| **Fase 2B** | Sentry Frontend (Next.js) | ✅ **Completada** — Client-side via `instrumentation-client.ts` en OpenNext Workers (ver §0.2, §0.3) |
 | **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
-| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | Pendiente (después de Sentry completo) |
+| **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
+| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | 🔄 Pendiente |
 | **Fase 4** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
 | **Fase 5** | Meta webhook, test end-to-end, go-live | Pendiente |
 
@@ -45,9 +46,8 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
-| **Alta** | Completar Sentry frontend (deploy + test después del upgrade a Next.js 15) | Ver §0.2 — `instrumentation-client.ts` ya creado |
 | **Alta** | E2E validation de las 7 LLM tools | `/api/simulate` para cada tool |
-| Media | Migrar `@cloudflare/next-on-pages` (deprecated) a **OpenNext** | [Doc: opennext.js.org/cloudflare](https://opennext.js.org/cloudflare) |
+| **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
 | Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido detectado via Sentry |
 | Baja | Fix Google Calendar PEM credential loading | Error visible en Sentry |
 
@@ -122,11 +122,15 @@ El error `PKCE code verifier not found in storage` ocurría porque llamábamos `
 
 > **⚠️ CRÍTICO — NO HACER DOWNGRADE de Next.js por debajo de 15.x. Romperá la integración de Sentry en el frontend.**
 
+> **Estado: ✅ FUNCIONAL** — Sentry captura errores del frontend en producción (confirmado 2026-04-09).
+
 ### Por qué se hizo el upgrade (Next.js 14.1.4 → 15.5.15)
 
 Sentry SDK v10 requiere que la inicialización del cliente se haga en `instrumentation-client.ts`, una **convención de archivo de Next.js 15+** que NO existe en Next.js 14. El archivo anterior `sentry.client.config.ts` está **DEPRECADO** por Sentry.
 
 Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **deshabilitaba silenciosamente toda la captura de errores del frontend**. Esta flag se puso originalmente para prevenir crashes de Edge runtime en Next.js 14.
+
+**Nota histórica:** Después del upgrade, Sentry seguía SIN capturar errores debido a que `@cloudflare/next-on-pages` (el viejo adapter) no procesaba `instrumentation-client.ts`. El problema se resolvió migrando a OpenNext (§0.3).
 
 ### Archivos involucrados
 
@@ -136,7 +140,7 @@ Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **des
 | `app/global-error.tsx` | **Captura errores de render de React** — sin esto, errores de componentes no llegan a Sentry | ✅ NUEVO — NO ELIMINAR |
 | `next.config.js` | Config de Sentry — **SIN `disableClientInstrumentation`** | ✅ MODIFICADO |
 | `sentry.client.config.ts` | ❌ ELIMINADO — deprecado por Sentry SDK v10 | ❌ NO RE-CREAR |
-| `sentry.server.config.ts` | ❌ ELIMINADO — no aplica para static export en Cloudflare Pages | ❌ NO RE-CREAR |
+| `sentry.server.config.ts` | ❌ ELIMINADO — server-side Sentry ahora funciona via OpenNext Workers runtime | ❌ NO RE-CREAR |
 
 ### Lo que NO se debe hacer (causa regresiones)
 
@@ -145,10 +149,12 @@ Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **des
 3. **NO hacer downgrade de Next.js a 14.x** — `instrumentation-client.ts` no existe en 14
 4. **NO eliminar `app/global-error.tsx`** — necesario para capturar errores de render de React
 5. **NO eliminar la exportación `onRouterTransitionStart`** de `instrumentation-client.ts` — necesario para tracing de navegación
+6. **NO revertir a `@cloudflare/next-on-pages`** — deprecated, no soporta `instrumentation-client.ts`. Usar OpenNext.
 
 ### Docs de referencia
 
 - [Sentry Next.js Manual Setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/) — explica `instrumentation-client.ts`
+- [Sentry Next.js on Cloudflare](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/nextjs/) — requisitos de Cloudflare Workers
 - [Next.js instrumentation-client.ts](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client) — convención de archivo
 - [Next.js 15 Upgrade Guide](https://nextjs.org/docs/app/building-your-application/upgrading/version-15) — breaking changes
 - [Sentry global-error.tsx](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/#capture-react-render-errors) — captura de render errors
@@ -167,6 +173,145 @@ Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **des
 
 ---
 
+## 0.3. OpenNext Migration (Cloudflare Pages → Workers) — Solución Documentada (NO MODIFICAR sin leer esto)
+
+> **⚠️ CRÍTICO — NO revertir a `@cloudflare/next-on-pages`. Está DEPRECATED y NO soporta `instrumentation-client.ts` (required by Sentry SDK v10).**
+
+> **Estado: ✅ FUNCIONAL** — Frontend desplegado como Cloudflare Worker via OpenNext. Sentry ✅, Workers Logs ✅, API rewrites ✅, custom domain ✅.
+
+### Por qué se migró
+
+| Problema con `@cloudflare/next-on-pages` | Solución con OpenNext |
+|:---|:---|
+| **DEPRECATED** por Cloudflare | OpenNext es el [reemplazo oficialmente recomendado](https://opennext.js.org/cloudflare/get-started) |
+| NO soporta `instrumentation-client.ts` | OpenNext procesa TODOS los file conventions de Next.js 15 |
+| Static export only (sin SSR, sin rewrites server-side) | Full Node.js-compatible runtime en Workers (SSR, rewrites, middleware) |
+| No server-side Sentry | Server-side Sentry funciona via `@sentry/nextjs` + `compatibility_date >= 2025-08-16` |
+
+### Arquitectura actual del frontend
+
+```
+GitHub Push (main)
+       │
+       ▼
+Workers Builds (CI/CD automático en Cloudflare)
+  ├─ Build: npx opennextjs-cloudflare build
+  │    └─ Lee "Variables de compilación" para incrustar NEXT_PUBLIC_* y BACKEND_URL
+  └─ Deploy: npx wrangler deploy --keep-vars
+       └─ Despliega .open-next/worker.js como Cloudflare Worker
+       └─ Preserva "Variables de ejecución" del dashboard (--keep-vars)
+
+Cloudflare Worker (ia-whatsapp-crm)
+  ├─ Sirve Next.js via OpenNext adapter
+  ├─ Variables de entorno via process.env (nodejs_compat)
+  ├─ API /api/* → rewrites a Cloud Run backend (compilados en routes-manifest.json)
+  ├─ Sentry cliente via instrumentation-client.ts
+  ├─ Sentry servidor via @sentry/nextjs (requiere compatibility_date >= 2025-08-16)
+  └─ Observabilidad:
+       ├─ Workers Logs → CF Dashboard (console.log + invocación) — 3 días retención free tier
+       ├─ OTel Traces → Sentry (via destino "sentry-traces") [pendiente configurar destinos]
+       └─ OTel Logs → Sentry (via destino "sentry-logs") [pendiente configurar destinos]
+```
+
+### Archivos clave del frontend (OpenNext)
+
+| Archivo | Rol | ⚠️ Regla |
+|:---|:---|:---|
+| `wrangler.toml` | Config del Worker: nombre, assets, compat date, observabilidad | NO cambiar `compatibility_date` a < 2025-08-16 (rompe Sentry) |
+| `open-next.config.ts` | Config de OpenNext (mínima, usa defaults) | No se necesita modificar normalmente |
+| `next.config.js` | Rewrites `/api/*` → backend + Sentry build config + `initOpenNextCloudflareForDev()` | NO agregar `disableClientInstrumentation: true` |
+| `.env.local` | **SOLO para desarrollo local** (`BACKEND_URL=http://localhost:8000`) | **EN .gitignore** — si se comitea, el build de producción redirige API calls a localhost y CRASHEA |
+| `.dev.vars` | Variables de Cloudflare para desarrollo local (`NEXTJS_ENV=development`) | EN .gitignore |
+| `instrumentation-client.ts` | Sentry SDK init en el browser | NO ELIMINAR |
+| `app/global-error.tsx` | Captura React render errors para Sentry | NO ELIMINAR |
+
+### Variables de entorno — Estrategia (CRÍTICO entender esto)
+
+> **Doc oficial:** [OpenNext Env Vars](https://opennext.js.org/cloudflare/howtos/env-vars#production)
+
+Hay **DOS tipos** de variables que se configuran en **DOS lugares diferentes** del dashboard de Cloudflare:
+
+| Tipo | Dónde se configura | Cuándo se lee | Variables |
+|:---|:---|:---|:---|
+| **Build variables** | Configuración → Compilaciones → Variables y secretos | Durante `next build` (incrustadas en JS) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `BACKEND_URL` |
+| **Runtime variables** | Configuración → Variables y secretos | Cuando el Worker procesa requests | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN` |
+
+> **⚠️ `BACKEND_URL` es SOLO build variable.** Se usa en `next.config.js` para compilar los rewrites de `/api/*` en el `routes-manifest.json`. Si no se configura, el fallback (`https://ia-backend-prod-ftyhfnvyla-ew.a.run.app`) se usa. Si `.env.local` existe con `BACKEND_URL=http://localhost:8000` y se comitea a git, **CRASHEA el Worker entero** con `TypeError: Expected "8000" to be a string` (bug descubierto 2026-04-09).
+
+> **⚠️ `--keep-vars` en el deploy command es CRÍTICO.** Sin él, `wrangler deploy` borra las runtime variables del dashboard. [Doc oficial](https://opennext.js.org/cloudflare/howtos/env-vars#runtime-variables).
+
+### Configuración de `wrangler.toml` — Explicación campo por campo
+
+```toml
+name = "ia-whatsapp-crm"              # Nombre del Worker en CF dashboard
+main = ".open-next/worker.js"          # Output de opennextjs-cloudflare build
+compatibility_date = "2025-08-16"      # >= 2025-08-16 REQUERIDO para Sentry (https.request)
+compatibility_flags = ["nodejs_compat"] # Habilita process.env, Buffer, etc.
+upload_source_maps = true              # Stack traces legibles en Sentry
+
+[assets]
+directory = ".open-next/assets"        # Static assets (JS, CSS, images)
+binding = "ASSETS"                     # Binding name para el Worker
+
+[[services]]
+binding = "WORKER_SELF_REFERENCE"      # Self-reference para OpenNext routing
+service = "ia-whatsapp-crm"
+
+[observability]                        # CF Workers Logs + OTel export
+enabled = true
+head_sampling_rate = 1                 # 100% → captura TODAS las requests
+
+[observability.logs]
+enabled = true
+invocation_logs = true                 # Log de cada request con URL, method, status
+destinations = [ "sentry-logs" ]       # Exporta a Sentry via OTLP (nombre debe coincidir con CF dashboard)
+
+[observability.traces]
+enabled = true
+destinations = [ "sentry-traces" ]     # Exporta traces a Sentry via OTLP
+```
+
+**Docs de referencia para wrangler.toml:**
+- [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
+- [Export to Sentry via OTel](https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/sentry/)
+- [Sentry Cloudflare compatibility_date](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/nextjs/)
+- [Sentry source maps](https://docs.sentry.io/platforms/javascript/guides/cloudflare/#step-3-add-readable-stack-traces-with-source-maps-optional)
+
+### Observabilidad — 3 capas
+
+| Capa | Qué captura | Estado | Doc |
+|:---|:---|:---|:---|
+| **Sentry SDK** (`@sentry/nextjs`) | Errores JS en browser + server, React render crashes, navigation traces | ✅ Funcional | [Sentry Next.js](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/) |
+| **CF Workers Logs** | `console.log`, invocación logs (URL, status, duration) en CF dashboard | ✅ Funcional | [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) |
+| **OTel Export → Sentry** | Traces/logs nativos de CF exportados a Sentry via OTLP | ⚠️ Pendiente crear destinos en CF dashboard | [Export to Sentry](https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/sentry/) |
+
+### Lo que NO se debe hacer (causa regresiones)
+
+1. **NO revertir a `@cloudflare/next-on-pages`** — deprecated, no soporta `instrumentation-client.ts`
+2. **NO bajar `compatibility_date`** por debajo de `2025-08-16` — rompe Sentry SDK (`https.request` no disponible)
+3. **NO quitar `upload_source_maps = true`** — sin esto, stack traces en Sentry son ilegibles
+4. **NO quitar `--keep-vars`** del deploy command — borra variables de entorno del dashboard
+5. **NO comitear `.env.local`** a git — contiene `BACKEND_URL=http://localhost:8000` que crashea producción
+6. **NO poner `NEXT_PUBLIC_*` en `[vars]` de `wrangler.toml`** — deben ir en el dashboard (build + runtime)
+7. **NO quitar `nodejs_compat`** — requerido por Next.js 15 y Sentry SDK para `process.env`, `Buffer`, etc.
+8. **NO quitar `initOpenNextCloudflareForDev()`** de `next.config.js` — necesario para dev local
+
+### Docs de referencia (OpenNext migration)
+
+- [OpenNext Get Started (existing apps)](https://opennext.js.org/cloudflare/get-started#existing-nextjs-apps)
+- [OpenNext Env Vars](https://opennext.js.org/cloudflare/howtos/env-vars)
+- [OpenNext Dev & Deploy](https://opennext.js.org/cloudflare/howtos/dev-deploy)
+- [Workers Builds Configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+- [CF Workers Env Vars](https://developers.cloudflare.com/workers/configuration/environment-variables/)
+
+### Rollback
+
+- **Git tag:** `pre-opennext-migration` (commit `f1494c9`)
+- **Persistent KI:** `knowledge/opennext-migration-rollback/artifacts/rollback.md`
+- **Comando:** `git reset --hard pre-opennext-migration && git push --force-with-lease`
+
+---
+
 ### Herramientas MCP Configuradas
 
 Para auditoría y gestión de infraestructura, se dispone de 4 MCP servers:
@@ -176,7 +321,7 @@ Para auditoría y gestión de infraestructura, se dispone de 4 MCP servers:
 | Google Cloud Run | `cloudrun` | CLI (`npx @google-cloud/cloud-run-mcp`) | Servicios, env vars, logs, deploys del backend |
 | Supabase Producción | `supabase-prod` | HTTP (`mcp.supabase.com`, ref: `nemrjlimrnrusodivtoa`) | Schema, RLS, datos, realtime de BD producción |
 | Supabase Desarrollo | `supabase-dev` | HTTP (`mcp.supabase.com`, ref: `nzsksjczswndjjbctasu`) | Schema, datos de BD desarrollo |
-| Cloudflare | `cloudflare` | CLI (`npx mcp-remote → bindings.mcp.cloudflare.com`) | Config de Cloudflare Pages, dominios, bindings |
+| Cloudflare | `cloudflare` | CLI (`npx mcp-remote → bindings.mcp.cloudflare.com`) | Config de Cloudflare Workers, dominios, bindings |
 
 Config en: `~/.gemini/antigravity/mcp_config.json`
 
@@ -184,16 +329,16 @@ Config en: `~/.gemini/antigravity/mcp_config.json`
 
 | Recurso | Identificador | Notas |
 |:---|:---|:---|
-| Cloud Run service URL | `ia-backend-prod-645489345350.europe-west1.run.app` | Hardcodeada en `next.config.js` como fallback |
-| GCP project number | `645489345350` | Implícito en la URL de Cloud Run |
+| Cloud Run service URL | `ia-backend-prod-ftyhfnvyla-ew.a.run.app` | Hardcodeada en `next.config.js` como fallback |
 | GCP project ID | `saas-javiera` | Para Cloud Build, IAM, etc. |
 | Supabase prod project | `nemrjlimrnrusodivtoa` | `nemrjlimrnrusodivtoa.supabase.co` |
 | Supabase dev project | `nzsksjczswndjjbctasu` | `nzsksjczswndjjbctasu.supabase.co` |
-| Cloudflare Pages project | `ia-whatsapp-crm` | En `wrangler.toml` |
-| Frontend dominio prod | `dash.tuasistentevirtual.cl` | Custom domain en CF Pages |
+| Cloudflare Worker | `ia-whatsapp-crm` | En `wrangler.toml`. **Worker, NO Pages** |
+| CF Workers URL | `ia-whatsapp-crm.tomasgemes.workers.dev` | URL directa del Worker |
+| Frontend dominio prod | `dash.tuasistentevirtual.cl` | Custom domain en CF Workers |
 | Frontend dominio dev | `ohno.tuasistentevirtual.cl` | Pendiente de configurar |
-| GitHub repo | `YggrYergen/ia-whatsapp-crm` | Auto-deploys desde rama `main` |
-| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | **Hardcodeado en `instrumentation-client.ts`** (no via env var — ver §0.2) |
+| GitHub repo | `YggrYergen/ia-whatsapp-crm` | Auto-deploys: backend (Cloud Build) + frontend (Workers Builds) |
+| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | Hardcodeado en `instrumentation-client.ts` + como build/runtime var en CF dashboard |
 
 ---
 
@@ -203,7 +348,7 @@ Tres componentes distribuidos:
 
 | Componente | Stack | Despliegue | Función |
 |:---|:---|:---|:---|
-| **Frontend** | Next.js 15.5.15 / React 19 / TailwindCSS 3.4 / shadcn/ui | Cloudflare Pages | Panel CRM administrativo con realtime |
+| **Frontend** | Next.js 15.5.15 / React 19 / TailwindCSS 3.4 / shadcn/ui | Cloudflare Workers (OpenNext) | Panel CRM administrativo con realtime |
 | **Backend** | Python 3.11 / FastAPI 0.110+ / uvicorn | Google Cloud Run (Docker) | Procesamiento de webhooks, orquestación LLM, Function Calling |
 | **Base de Datos** | PostgreSQL (Supabase) con RLS + Realtime | Supabase Cloud | Persistencia multi-tenant, pub/sub WebSocket |
 
@@ -234,8 +379,8 @@ Tres componentes distribuidos:
 │                                        │                               │
 │                               Supabase Realtime                        │
 │                                        │                               │
-│                          Frontend (Cloudflare Pages)                    │
-│                          Dashboard / Chats / Agenda                     │
+│                          Frontend (Cloudflare Workers / OpenNext)
+                          Dashboard / Chats / Agenda                     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -339,7 +484,7 @@ Backend/app/
 
 ### Frontend (`Frontend/`)
 
-Next.js 15 con App Router, shadcn/ui, TailwindCSS. Desplegado como **static export** en Cloudflare Pages.
+Next.js 15 con App Router, shadcn/ui, TailwindCSS. Desplegado como **Cloudflare Worker via OpenNext** (ver §0.3).
 
 ```
 Frontend/
@@ -349,10 +494,10 @@ Frontend/
 │   ├── page.tsx                         # Redirect → /dashboard
 │   ├── globals.css                      # Tailwind directives + CSS vars (oklch) + scrollbar
 │   ├── login/page.tsx                   # Google SSO via Supabase Auth
-│   ├── auth/callback/                   # OAuth redirect handler
+│   ├── auth/callback/                   # OAuth redirect handler (client-side, ver §0.1)
 │   ├── config/page.tsx                  # Configuración: LLM provider/model selector,
 │   │                                    # system prompt editor, Google Calendar OAuth connect
-│   ├── api/                             # Next.js API routes (proxy al backend)
+│   ├── api/                             # Next.js API routes (proxy al backend via rewrites)
 │   │   ├── calendar/events/route.ts     # Proxy → Backend /api/calendar/events
 │   │   ├── calendar/book/route.ts       # Proxy → Backend /api/calendar/book
 │   │   ├── simulate/route.ts           # Proxy → Backend /api/simulate
@@ -367,28 +512,7 @@ Frontend/
 │       ├── finops/page.tsx              # ⚠️ MOCK: métricas de costos con datos estáticos
 │       └── admin-feedback/page.tsx      # Panel dev para revisar test_feedback (admin-only)
 │
-├── components/
-│   ├── Layout/
-│   │   ├── Sidebar.tsx                  # Navegación lateral responsive (desktop/mobile)
-│   │   ├── GlobalNotifications.tsx      # Toast overlay para alertas realtime
-│   │   ├── NotificationFeed.tsx         # Panel de historial de alertas con mark-as-read
-│   │   └── GlobalFeedbackButton.tsx     # Widget flotante para feedback de QA
-│   ├── CRM/
-│   │   ├── AgendaView.tsx               # Calendario semanal con drag & book (29KB)
-│   │   ├── PacientesView.tsx            # Tabla de contactos con filtros y estado (12KB)
-│   │   └── FinopsView.tsx               # Métricas de costos LLM (9KB, datos mock)
-│   ├── Conversations/
-│   │   ├── ContactList.tsx              # Lista de conversaciones con last_message preview
-│   │   ├── ChatArea.tsx                 # Chat real con envío de mensajes (human_agent)
-│   │   ├── TestChatArea.tsx             # Chat simulación (phone 56912345678)
-│   │   ├── ClientProfilePanel.tsx       # Panel lateral con datos del contacto
-│   │   └── TestConfigPanel.tsx          # Config de simulación (prompt, provider)
-│   ├── Dashboard/
-│   │   └── DashboardView.tsx            # 4 bloques: PAZ MENTAL, LEADS, INTERVENCIÓN,
-│   │                                    # DESEMPEÑO (⚠️ TODOS con datos hardcodeados)
-│   └── ui/                              # 9 primitivas shadcn/ui:
-│                                        # badge, button, card, dialog, dropdown-menu,
-│                                        # input, select, skeleton, tooltip
+├── components/                          # (same structure as before — ver §2)
 │
 ├── contexts/
 │   ├── AuthContext.tsx                  # Supabase session + dashboardRole (admin|staff)
@@ -401,15 +525,19 @@ Frontend/
 │   ├── supabase.ts                      # createBrowserClient (Supabase SSR)
 │   └── utils.ts                         # cn() = clsx + tailwind-merge
 │
-├── next.config.js                       # Rewrites /api/* → Cloud Run URL + Sentry config
+├── next.config.js                       # Rewrites /api/* → Cloud Run + Sentry + initOpenNextCloudflareForDev()
 │                                        # ⚠️ NO agregar disableClientInstrumentation: true
-├── instrumentation-client.ts            # ⚠️ NO ELIMINAR — Sentry client init (reemplaza sentry.client.config.ts)
-├── wrangler.toml                        # Cloudflare Pages: output dir, compat flags
+│                                        # ⚠️ BACKEND_URL must be set as build var (ver §0.3)
+├── instrumentation-client.ts            # ⚠️ NO ELIMINAR — Sentry client init (ver §0.2)
+├── wrangler.toml                        # CF Worker config: name, assets, compat, observability (ver §0.3)
+├── open-next.config.ts                  # OpenNext config (minimal, uses defaults)
+├── .env.local                           # ⚠️ SOLO dev local — EN .gitignore — NO COMITEAR
+├── .dev.vars                            # Cloudflare dev vars — EN .gitignore
 ├── tailwind.config.js                   # shadcn/ui theme con CSS variables
 ├── postcss.config.js                    # autoprefixer
 ├── tsconfig.json                        # paths: @/* → ./*
 ├── components.json                      # shadcn/ui config (rsc:false, style:default)
-└── package.json                         # 15 deps runtime + 8 devDeps
+└── package.json                         # 16 deps runtime + 9 devDeps
 ```
 
 ---
@@ -520,7 +648,7 @@ Habilitado en tablas `contacts`, `messages` y `alerts`. El frontend suscribe tre
 
 | Rama | Base de Datos | Frontend Deploy | Backend Deploy |
 |:---|:---|:---|:---|
-| `main` (producción) | Supabase Producción | Cloudflare Pages (auto-deploy) | Google Cloud Run (auto-deploy) |
+| `main` (producción) | Supabase Producción | Cloudflare Workers via OpenNext (Workers Builds auto-deploy) | Google Cloud Run (Cloud Build auto-deploy) |
 | `desarrollo` | Supabase Desarrollo | — | — |
 
 > **⚠️ PENDIENTE DE VERIFICACIÓN:** La configuración exacta de los auto-deploys (build commands, env variables inyectadas, service accounts, regiones) y los esquemas/datos de ambas bases de datos (producción y desarrollo) requieren auditoría directa. Esta verificación se realizará cuando se conecten las herramientas MCP de Supabase y Google Cloud Run.
@@ -681,10 +809,23 @@ GOOGLE_OAUTH_REDIRECT_URI=<uri>         # Opcional
 
 > **⚠️ IMPORTANTE:** Los secretos se resuelven al momento de startup (no de build). Si se agrega un secreto nuevo, se debe: (1) crearlo en Secret Manager, (2) dar acceso a `ia-calendar-bot@` con `roles/secretmanager.secretAccessor`, (3) ejecutar `--update-secrets` en el servicio.
 
-### Frontend (Cloudflare Pages)
+### Frontend (Cloudflare Workers — OpenNext)
 
-- Build output: configurado en `wrangler.toml` como `.vercel/output/static`
-- Variables de entorno compiladas (`NEXT_PUBLIC_*`):
+> **Ver §0.3 para documentación completa de la arquitectura, variables de entorno, y observabilidad.**
+
+- **Adapter:** OpenNext (`@opennextjs/cloudflare`)
+- **Build:** `npx opennextjs-cloudflare build` → genera `.open-next/worker.js` + `.open-next/assets/`
+- **Deploy:** `npx wrangler deploy --keep-vars` (auto via Workers Builds en push a `main`)
+- **Workers Builds config:**
+  - Directorio raíz: `Frontend`
+  - Build command: `npx opennextjs-cloudflare build`
+  - Deploy command: `npx wrangler deploy --keep-vars`
+- **Variables de compilación** (se incrustan en JS durante build):
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `NEXT_PUBLIC_SENTRY_DSN`
+  - `BACKEND_URL` — usado para compilar rewrites en routes-manifest.json
+- **Variables de ejecución** (disponibles via `process.env` en el Worker):
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `NEXT_PUBLIC_SENTRY_DSN`
@@ -699,11 +840,11 @@ pip install -e ".[dev]"
 cp .env.example .env  # configurar variables
 uvicorn app.main:app --reload --port 8000
 
-# Frontend
+# Frontend (con OpenNext + Wrangler dev)
 cd Frontend
 npm install
-cp .env.local.example .env.local  # configurar variables
-npm run dev  # localhost:3000
+# .env.local ya tiene BACKEND_URL=http://localhost:8000 para dev
+npm run dev  # localhost:3000 (Next.js dev con bindings de Cloudflare)
 
 # Docker (Backend)
 docker-compose -f Backend/deploy/docker-compose.yml up --build
@@ -756,7 +897,7 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | 13 | Dashboard con datos hardcodeados | `DashboardView.tsx` muestra KPIs estáticos, no queries reales |
 | 14 | Reportes/FinOps son mocks | Datos estáticos, etiquetas "Próximamente" |
 | 15 | 3 instancias de Supabase client en frontend | Cada Context crea su propio `createClient()` con WebSocket independiente |
-| 16 | Next.js rewrites no aplican en Cloudflare | `next.config.js` define rewrites que solo funcionan en servidor Node.js, no static export |
+| ~~16~~ | ~~Next.js rewrites no aplican en Cloudflare~~ | **RESUELTO** — OpenNext habilita rewrites server-side en Workers (ver §0.3) |
 | 17 | `email_service.py` usa `os.getenv` directo | No pasa por `Settings` centralizado. Destinatarios hardcodeados |
 | 18 | EventBus loop infinito sin graceful shutdown | `start_processing()` no tiene mecanismo de cancelación limpia |
 
@@ -836,13 +977,14 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | `GOOGLE_OAUTH_REDIRECT_URI` | No | `None` | URI de callback OAuth |
 | `PROACTIVE_INTERVAL` | No | `3600` | Intervalo del worker proactivo (segundos) |
 
-### Frontend (3 variables compiladas)
+### Frontend (4 variables — ver §0.3 para estrategia completa)
 
-| Variable | Uso |
-|:---|:---|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL de Supabase para el browser client |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave anónima (restricta por RLS) |
-| `NEXT_PUBLIC_SENTRY_DSN` | DSN de Sentry para error tracking |
+| Variable | Tipo | Uso |
+|:---|:---|:---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Build + Runtime | URL de Supabase para el browser client |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Build + Runtime | Clave anónima (restricta por RLS) |
+| `NEXT_PUBLIC_SENTRY_DSN` | Build + Runtime | DSN de Sentry para error tracking |
+| `BACKEND_URL` | **Build only** | URL del backend Cloud Run para compilar rewrites de `/api/*` |
 
 ---
 
@@ -872,13 +1014,15 @@ docker-compose -f Backend/deploy/docker-compose.yml up --build
 | Discord alertas (Webhooks) | ✅ | Embeds con traceback en errores |
 | Email alertas (Resend) | ✅ | Notificación al negocio en escalaciones |
 | Sentry Backend | ✅ | `sentry_sdk.init()` en lifespan, `capture_exception` en handlers, context enrichment en pipeline. Verificado: issues visibles en Sentry dashboard |
-| Sentry Frontend | ✅ parcial | Upgrade a Next.js 15 + `instrumentation-client.ts` completado. Pendiente deploy + test en producción (ver §0.2) |
+| Sentry Frontend | ✅ | `instrumentation-client.ts` + `global-error.tsx`. Funciona via OpenNext Workers (ver §0.2, §0.3). Confirmado 2026-04-09 |
 | Vista Chats con realtime | ✅ | `ChatArea.tsx` funcional con WebSocket |
 | Vista Agenda con Google Calendar | ✅ | `AgendaView.tsx` lee/escribe eventos reales |
 | Vista Pacientes (CRM table) | ✅ | `PacientesView.tsx` con datos reales de Supabase |
 | Vista Configuración (LLM + prompt + OAuth) | ✅ | Funcional, persiste en tabla `tenants` |
 | Simulador de chat | ✅ | `TestChatArea.tsx` + contacto especial `56912345678` |
 | Docker multi-stage (non-root) | ✅ | Imagen limpia, usuario `crmuser` |
+| OpenNext Migration (CF Pages → Workers) | ✅ | Migración completa. Rewrites, Sentry, observabilidad, Workers Builds CI/CD. Ver §0.3 |
+| CF Workers Logs | ✅ | Invocation logs + error logs en CF Dashboard. Config en `wrangler.toml` [observability] |
 
 ### 🚨 P0 — Bloqueantes (necesarios para go-live)
 
