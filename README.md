@@ -24,7 +24,7 @@
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E 🔄 ──► FASE 4: Separación ──► FASE 5: Go-Live
+FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E Interno 🔄 ──► FASE 4: Separación Prod/Dev ──► FASE 5: WhatsApp + Go-Live
 ```
 
 | Fase | Objetivo | Estado |
@@ -39,17 +39,18 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
 | **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
 | **Fase 2F** | Sentry Coverage Hardening + CORS + RLS DELETE + GCal secret | ✅ **Completada** — commit `5ba489d` (ver §0.4) |
-| **Fase 3** | E2E validation (7 LLM tools + componentes CRM) | 🔄 En progreso — dashboard, chat, agenda, calendar tools verificados |
-| **Fase 4** | Separar `main`→prod y `desarrollo`→dev | Pendiente |
-| **Fase 5** | Meta webhook, test end-to-end, go-live | Pendiente |
+| **Fase 3** | E2E validation **interno** (sin WhatsApp): preamble Sentry→Discord, 7 LLM tools, todos los componentes CRM, flujo simulator completo | 🔄 En progreso — dashboard, chat, agenda, 2 tools verificados |
+| **Fase 4** | Separación prod/dev: ecosistemas 100% independientes (`dash.` prod, `ohno.` dev), 2 backends, 2 frontends, 2 BDs | Pendiente |
+| **Fase 5** | Suite de simulación webhook Meta (desconectado) → tag `v1.0` → conectar WhatsApp → validación live | Pendiente |
 
 ### Backlog Técnico
 
 | Prioridad | Tarea | Referencia |
 |:---|:---|:---|
+| **Alta** | Preamble Fase 3: Sentry → Discord para TODOS los errores (incluidos los manejados) | Consultar [Sentry Alerts docs](https://docs.sentry.io/product/alerts/) + [Discord integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/) |
 | **Alta** | E2E validation de las 5 LLM tools restantes | CheckMyAppointments, Update, Delete, Escalate, UpdateScoring |
 | **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
-| Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido detectado via Sentry |
+| Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido — necesario para Phase 5 |
 | ~~Baja~~ | ~~Fix Google Calendar PEM credential loading~~ | ✅ **RESUELTO** — Phase 2F: raw JSON re-uploaded as v4 |
 | ~~Baja~~ | ~~Fix CORS para Workers URL~~ | ✅ **RESUELTO** — Phase 2F: `pages.dev` → `workers.dev` |
 

@@ -218,49 +218,148 @@ Docs consulted:
 
 ---
 
-## Phase 3: E2E Validation — EXHAUSTIVA ← CURRENT 🔄
+## Phase 3: Internal E2E Validation ← CURRENT 🔄
 
-> **PREREQUISITE:** Sentry exhaustive coverage confirmed on BOTH front and back (Phase 2F). All errors will now appear in Sentry.
+> **SCOPE: INTERNAL ONLY. No WhatsApp/Meta connection. Tested via simulator, frontend UI, and direct API calls. WhatsApp happens in Phase 5.**
 
-### 3A: Componentes CRM
+> **PREREQUISITE (Preamble): Sentry must be connected to Discord so ALL errors — even gracefully handled ones — trigger immediate Discord notifications. Consult official docs FIRST.**
+
+### Preamble: Sentry → Discord Real-Time Alerts (MUST be done FIRST)
+- [ ] Read official docs: [Sentry Alerts](https://docs.sentry.io/product/alerts/), [Sentry Discord Integration](https://docs.sentry.io/organization/integrations/notification-incidents/discord/)
+- [ ] Configure Sentry Alert Rules for ALL captured exceptions → Discord notification
+- [ ] Verify: intentional unhandled error → Discord notification within 30s
+- [ ] Verify: gracefully handled exception → Discord notification still arrives (no blind spots)
+
+### 3A: Componentes CRM — Verificación Exhaustiva de UI
 - [x] Dashboard loads ✅ (user confirmed 2026-04-09)
 - [x] Chat loads and shows contacts ✅ (user confirmed 2026-04-09)
 - [x] Agenda loads and shows calendar events ✅ (user confirmed 2026-04-09)
-- [ ] Contactos/Pacientes loads
-- [ ] Configuración loads and saves
-- [ ] Send Test Chat button works ("Enviar Prueba" with DELETE RLS fix)
-- [ ] Admin Feedback page loads and delete works
-- [ ] All buttons that are supposed to work actually work
+- [ ] Contactos/Pacientes loads with real data
+- [ ] Configuración loads, LLM provider/model persists, system prompt saves
+- [ ] "Enviar Prueba" flow: sandbox msgs → saved to `test_feedback` → msgs deleted from `messages` → admin-feedback page shows results
+- [ ] Admin Feedback page loads, shows test_feedback rows, delete button works
+- [ ] Global Feedback button sends feedback correctly
+- [ ] All navigation between pages works (Sidebar links, back navigation)
+- [ ] Real-time: new message from simulator appears in chat without manual refresh
+- [ ] Real-time: alert toast appears when system generates an alert
+- [ ] Responsive layout: check mobile and desktop views
 
-### 3B: Herramientas LLM (TODAS las 7 tools)
+### 3B: Herramientas LLM (TODAS las 7 tools) — Individual via `/api/simulate`
 - [x] Inventariar todas las tools ✅ (7 tools confirmed in tool_registry)
 - [x] CheckAvailabilityTool (get_merged_availability) — ✅ user confirmed working (2026-04-09)
-- [ ] CheckMyAppointmentsTool (get_my_appointments) — test via `/api/simulate`
+- [ ] CheckMyAppointmentsTool (get_my_appointments) — test via simulator
 - [x] BookAppointmentTool (book_round_robin) — ✅ user confirmed working (2026-04-09)
-- [ ] UpdateAppointmentTool (update_appointment) — test via `/api/simulate`
-- [ ] DeleteAppointmentTool (delete_appointment) — test via `/api/simulate`
-- [ ] EscalateHumanTool (request_human_escalation) — test via `/api/simulate`
-- [ ] UpdatePatientScoringTool (update_patient_scoring) — test via `/api/simulate`
-- [ ] Each tool failure must appear in Sentry with full traceback
+- [ ] UpdateAppointmentTool (update_appointment) — test via simulator
+- [ ] DeleteAppointmentTool (delete_appointment) — test via simulator
+- [ ] EscalateHumanTool (request_human_escalation) — verify bot_active flips to false, alert created
+- [ ] UpdatePatientScoringTool (update_patient_scoring) — verify metadata JSONB updated
+- [ ] Each tool failure must appear in Sentry with full traceback + tool context
 
-### 3C: Flujo E2E Completo
-- [ ] Simulator → LLM → tool → response → Realtime → frontend chat update
-- [ ] WhatsApp webhook → LLM → tool → response → Meta API → frontend (requires Meta token refresh)
-- [ ] Note: Meta API token is expired/invalid (401), will need fixing before WhatsApp E2E works
+### 3C: Flujo E2E Interno — Simulator-Driven (NO WhatsApp)
+- [ ] Simulator → LLM inference → tool call → tool execution → response synthesis → message persisted → Realtime → frontend chat update
+- [ ] Multi-turn: multiple messages in sequence, verify conversation context maintained
+- [ ] Tool chaining: availability check → booking in single conversation
+- [ ] Error path: malformed request → graceful error + Sentry capture + Discord notification
 
 ### 3D: Observability Verification
-- [ ] Trigger intentional tool error → appears in Sentry within 30s
-- [ ] Trigger frontend error → appears in Sentry
-- [ ] Discord alert fires for backend errors
-- [ ] Workers Logs show invocation details in CF dashboard
+- [ ] Intentional tool error → Sentry event within 30s → Discord alert arrives
+- [ ] Frontend error → Sentry event → Discord alert arrives
+- [ ] Workers Logs show invocation details in CF dashboard (Observability tab)
+- [ ] Cloud Run logs show structured JSON for backend requests
+- [ ] Confirm zero blind spots: every error path in the system is observable
 
 ---
 
-## Phase 4: Environment Separation
-- [ ] `desarrollo` branch auto-deploy
+## Phase 4: Production / Development Environment Separation
 
-## Phase 5: Go-Live
-- [ ] Meta webhook token refresh
-- [ ] E2E real with WhatsApp
-- [ ] Sentry production validation
-- [ ] Launch
+> **CRITICAL: Before ANY changes, audit how ALL systems currently work and where they deploy. Goal = TWO completely independent ecosystems. We must be able to be wild and break stuff in dev without affecting the live user experience in production AT ALL.**
+
+> **Infrastructure to respect (must not be broken):**
+> - Database: 2 separate Supabase projects — prod (`nemrjlimrnrusodivtoa`) and dev (`nzsksjczswndjjbctasu`)
+> - Backend: Cloud Run `ia-backend-prod`, `europe-west1`, auto-deploys from `main` via Cloud Build
+> - Frontend: Cloudflare Worker `ia-whatsapp-crm`, auto-deploys from `main` via Workers Builds
+
+### 4A: Audit Current State
+- [ ] Verify exactly which triggers exist (Cloud Build, Workers Builds)
+- [ ] Verify what branches they listen to
+- [ ] Verify what env vars each system uses
+- [ ] Document current state before making ANY changes
+
+### 4B: Dev Backend Setup
+- [ ] Create or configure dev Cloud Run service (`ia-backend-dev`) pointing to dev Supabase DB
+- [ ] Create Cloud Build trigger for `desarrollo` branch → deploys to dev backend
+- [ ] Set dev-specific env vars (dev Supabase URL/key, dev Sentry DSN or `environment=development` tag, dev Discord webhook if separate)
+- [ ] Verify: push to `desarrollo` deploys to dev backend, push to `main` deploys to prod backend, NO cross-contamination
+
+### 4C: Dev Frontend Setup
+- [ ] Create or configure dev Cloudflare Worker for the development frontend
+- [ ] Configure Workers Builds trigger for `desarrollo` branch → deploys to dev frontend
+- [ ] **DNS:** Configure `ohno.tuasistentevirtual.cl` in Cloudflare (CNAME to dev Worker)
+- [ ] Set dev-specific env vars (dev Supabase URL/key, dev Sentry DSN, dev BACKEND_URL → dev Cloud Run)
+- [ ] Verify: `ohno.tuasistentevirtual.cl` loads the dev frontend, `dash.tuasistentevirtual.cl` loads production, NO interference
+
+### 4D: Isolation Verification
+- [ ] Push a visible change to `desarrollo` → appears ONLY at `ohno.tuasistentevirtual.cl`, NOT at `dash.tuasistentevirtual.cl`
+- [ ] Push a visible change to `main` → appears ONLY at `dash.tuasistentevirtual.cl`, NOT at `ohno.tuasistentevirtual.cl`
+- [ ] Dev backend reads dev Supabase, prod backend reads prod Supabase — ZERO data leakage
+- [ ] Break something in dev intentionally → production is completely unaffected
+- [ ] Document the complete deployment topology
+
+### 4E: Schema Sync Strategy
+- [ ] Document how to propagate schema migrations from dev to prod (Supabase MCP `merge_branch` or manual migration)
+- [ ] Test the migration flow: apply migration on dev → verify → promote to prod
+
+---
+
+## Phase 5: Meta/WhatsApp Integration + Go-Live
+
+> **This phase ONLY begins after Phase 4 is complete with guaranteed prod/dev isolation.**
+> **The WhatsApp connection is the LAST step, not the first. Before connecting Meta, we must have a fully instrumented, thoroughly tested webhook simulation suite.**
+
+### 5A: Meta Webhook Simulation Suite (DISCONNECTED — no real WhatsApp)
+- [ ] Read official docs: [Meta Webhook Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components/)
+- [ ] Develop simulation scripts mimicking Meta webhook payload format
+- [ ] Scripts must simulate: multiple users chatting simultaneously from different phone numbers, at the same and different times
+- [ ] Scenarios:
+  - [ ] Single user, single message → full pipeline (inference + tool call + response)
+  - [ ] Single user, rapid burst of messages → mutex debouncing works correctly
+  - [ ] Multiple users simultaneously → no cross-talk, correct tenant isolation
+  - [ ] Tool-triggering intents (booking, checking, escalation) → tools fire correctly
+  - [ ] Malformed/unexpected payloads → graceful error handling, Sentry capture, Discord notification
+  - [ ] Edge cases: empty message, very long message, special characters, media messages
+- [ ] Full Sentry instrumentation: every error path reports to Sentry
+- [ ] Full Discord notification: every Sentry event → Discord alert in real time
+- [ ] Run simulation suite multiple times, verify:
+  - [ ] All messages persisted correctly in Supabase
+  - [ ] All responses generated correctly by LLM
+  - [ ] All tool calls executed correctly
+  - [ ] All alerts created correctly
+  - [ ] Frontend realtime updates work for each simulated conversation
+  - [ ] Zero unexpected errors in Sentry
+
+### 5B: Version Tag + Final Production Deploy
+- [ ] Simulation suite passes cleanly with zero unexpected errors
+- [ ] `git tag v1.0` on `main`
+- [ ] `git push origin main --tags` — triggers production auto-deploy
+- [ ] Verify: production frontend and backend running v1.0 code
+
+### 5C: Connect Meta/WhatsApp (LIVE)
+- [ ] Refresh/configure Meta WhatsApp API token (currently expired — 401 in Sentry)
+- [ ] Configure webhook URL in Meta Dashboard → production backend
+- [ ] Verify webhook verification handshake (GET /webhook with verify_token)
+- [ ] Send a real WhatsApp message → confirm full pipeline:
+  - [ ] Message received by webhook
+  - [ ] LLM inference completes
+  - [ ] Response sent back via Meta API
+  - [ ] Message appears in frontend CRM chat in real time
+  - [ ] Sentry shows clean trace (no errors)
+  - [ ] No unexpected Discord error notifications
+
+### 5D: Production Validation — System 100% Operational
+- [ ] Multiple real WhatsApp conversations tested
+- [ ] Calendar booking end-to-end (WhatsApp → LLM → GCal API → confirmation message)
+- [ ] Escalation tested (user requests human → bot paused → alert in CRM + Discord)
+- [ ] Sentry dashboard clean — no unexpected errors
+- [ ] Discord alerts only fire for legitimate issues
+- [ ] System declared production-ready 🚀
+
