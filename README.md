@@ -163,6 +163,7 @@ Además, `next.config.js` tenía `disableClientInstrumentation: true`, que **des
 | @types/react | 18.x | 19.x | Tipos de React 19 |
 | @types/react-dom | 18.x | 19.x | Tipos de React 19 |
 | eslint-config-next | 14.1.4 | 15.5.15 | Debe coincidir con versión de Next.js |
+| lucide-react | 0.364.0 | 1.7.0 | v0.364 solo soporta React 16-18. v1.x agrega React 19. [Migration](https://lucide.dev/guide/react/migration) — solo se removieron brand icons (no usamos ninguno) |
 
 ---
 
@@ -192,7 +193,7 @@ Config en: `~/.gemini/antigravity/mcp_config.json`
 | Frontend dominio prod | `dash.tuasistentevirtual.cl` | Custom domain en CF Pages |
 | Frontend dominio dev | `ohno.tuasistentevirtual.cl` | Pendiente de configurar |
 | GitHub repo | `YggrYergen/ia-whatsapp-crm` | Auto-deploys desde rama `main` |
-| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | En `wrangler.toml` y `sentry.client.config.ts` |
+| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | **Hardcodeado en `instrumentation-client.ts`** (no via env var — ver §0.2) |
 
 ---
 
@@ -946,7 +947,7 @@ Dev: pytest>=8.0.0, pytest-asyncio>=0.23.5, coverage>=7.4.0
 ```
 next@15.5.15               react@^19.0.0      ← Upgraded from 14.1.4/18.x (ver §0.2)
 @supabase/ssr@^0.10.0      @supabase/supabase-js@^2.98.0
-@sentry/nextjs@^10.47.0    lucide-react@^0.364.0
+@sentry/nextjs@^10.47.0    lucide-react@^1.7.0        ← Upgraded from 0.364.0 (React 19 peer dep)
 date-fns@^4.1.0            recharts@^3.8.1
 radix-ui@^1.4.3            shadcn@^4.1.2
 class-variance-authority    clsx@^2.1.1
