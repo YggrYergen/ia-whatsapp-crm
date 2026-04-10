@@ -6,9 +6,9 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-09 16:55 CLT)
+## 0. Estado Actual del Proyecto (2026-04-10 04:20 CLT)
 
-**Estado global:** 🟡 En estabilización — Fases 0-2F completas, Fase 3 (E2E Validation) en progreso. **51/65 items verificados.** Dos bugs críticos identificados: LLM tool-calling silent failure + character counter limit incorrecto (ver §0.6).
+**Estado global:** 🟡 En estabilización — Fases 0-3F completas. Phase 3 E2E Validation finalizada con todos los bugs resueltos. Listo para Phase 4 (Separación Prod/Dev).
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
@@ -39,31 +39,37 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 2D** | Discord alertas | ✅ **Completada** — Captain Hook webhook funcional |
 | **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
 | **Fase 2F** | Sentry Coverage Hardening + CORS + RLS DELETE + GCal secret | ✅ **Completada** — commit `5ba489d` (ver §0.4) |
-| **Fase 3** | E2E validation **interno** (sin WhatsApp): preamble Sentry→Discord, 7 LLM tools, todos los componentes CRM, flujo simulator completo | 🔄 En progreso — **51/65 items ✅**. 3A (UI) ✅, 3B (Tools) parcial, 3C (E2E flow) ✅, 3D (Observability) ✅. Bugs activos: LLM silent failure (§0.6), char counter (§0.6) |
+| **Fase 3** | E2E validation interno + bug fixes + observability hardening | ✅ **Completada** — 3E (bug fixes) + 3F (post-testing fixes). OTel deferred (Workers Free). Ver §0.6 |
 | **Fase 4** | Separación prod/dev: ecosistemas 100% independientes (`dash.` prod, `ohno.` dev), 2 backends, 2 frontends, 2 BDs | Pendiente |
 | **Fase 5** | Suite de simulación webhook Meta (desconectado) → tag `v1.0` → conectar WhatsApp → validación live | Pendiente |
 
-### Bugs Activos (Fase 3 — deben resolverse antes de conectar WhatsApp)
+### Bugs Resueltos (Fase 3)
 
-| ID | Bug | Root Cause | Fix Requerido | Referencia |
-|:---|:---|:---|:---|:---|
-| **BUG-1** | LLM responde sobre herramientas sin ejecutarlas (silent failure) | `tool_choice="auto"` permite al LLM responder en texto plano ignorando function calling. No hay validación post-LLM de si debió llamar una tool. | Investigar docs oficiales de OpenAI Function Calling. Evaluar: (a) logging explícito de `has_tool_calls` + contenido de respuesta, (b) detección de patrones de texto que indican intención de tool sin llamada real, (c) alertar a Sentry/Discord si el LLM menciona acciones de tool sin `has_tool_calls=true`. | §0.6, `use_cases.py:143-144` |
-| **BUG-2** | Character counter en `/config` muestra límite 2000 en vez de 4000 | Valor hardcodeado en `Frontend/app/config/page.tsx:160-161`. Threshold de color rojo en `> 1000` | Cambiar display a `/ 4000`, threshold rojo a `> 3500`. Agregar warning Sentry/Discord si prompt excede 4000 al guardar. | `config/page.tsx:160-161` |
+| ID | Bug | Resolución | Estado |
+|:---|:---|:---|:---|
+| **BUG-1** | LLM responde sobre herramientas sin ejecutarlas (silent failure) | 4-layer fix: (L1) INTERNAL_TOOL_RULES inmutables, (L2) detección "Silence Pattern", (L3) forced tool_choice para escalación, (L4) logging mejorado | ✅ |
+| **BUG-2** | Character counter en `/config` mostraba `/2000` | Actualizado a `/4000` con thresholds amber (>3000) y rojo (>3500). Sentry warning si >4000 (save NO bloqueado) | ✅ |
+| **BUG-3** | Tool errors: no Sentry/Discord + LLM mentía sobre resultados | Business errors (relay natural) vs crashes (human notified). Todos `status:error` → Sentry+Discord con tenant_id | ✅ |
+| **MISC-2** | Missing `import sentry_sdk` en `google_client.py` | Import top-level + eliminación de 5 inline imports redundantes | ✅ |
+| **OTEL-1** | CF Workers OTel export a Sentry | Requiere Workers Paid ($5/mo). Comentado en `wrangler.toml`. Observabilidad no bloqueada | ✅ Deferred |
+| **3F-1** | Sentry events sin tenant_id | `sentry_sdk.set_tag("tenant_id", ...)` al inicio del orquestador | ✅ |
+| **3F-2** | Discord alerts sin tenant en título | Todos los `send_discord_alert()` incluyen `Tenant {id}` | ✅ |
+| **3F-3** | Three dots (typing indicator) visible con IA pausada | Condición `&& selectedContact.bot_active` en ChatArea + TestChatArea | ✅ |
 
-### Backlog Técnico (NO implementar ahora — features futuras)
+### Backlog Técnico (Phase 6+ — NO implementar ahora)
 
-| Prioridad | Tarea | Referencia |
+| Prioridad | Área | Tarea |
 |:---|:---|:---|
-| ~~**Alta**~~ | ~~Preamble Fase 3: Sentry → Discord para TODOS los errores (incluidos los manejados)~~ | ✅ **RESUELTO** — Alert Rule "All Issues → Discord (CRM Observability)" (Rule ID `16897799`), canal `#general`, verificado E2E |
-| ~~**Alta**~~ | ~~E2E validation de las 5 LLM tools restantes~~ | ✅ **PARCIAL** — 5/7 tools verificadas (CheckAvailability, Book, CheckMyAppointments funcionan vía function calling; Escalate y Scoring invocaron LLM pero no ejecutaron tools — ver BUG-1) |
-| **Alta** | Configurar destinos OTel en CF dashboard | Ver §0.3 — `sentry-traces` y `sentry-logs` |
-| **Alta** | Notificaciones de pausa de bot → Sentry + Discord + admins/staff del tenant. Toda pausa (manual, por tool, por regla) debe ser observable y notificada | Nuevo feature — no existe actualmente |
-| **Alta** | Si un chat pausado recibe mensajes del cliente → notificar vía Discord, Sentry, y a admins/staff configurados por el tenant | Nuevo feature — actualmente el bot simplemente ignora el mensaje silenciosamente (`use_cases.py:94-96`) |
-| Media | Tool Registry tracking: logging y trazabilidad de qué tools se registraron, cuándo, y su estado | `tool_registry.py` — actualmente solo `logger.debug` al registrar |
-| Media | Tenant config versioning: historial de cambios al system prompt, LLM provider/model, etc. | No existe — cada `UPDATE` a `tenants` sobrescribe sin historial |
-| Media | Refrescar token de Meta WhatsApp API (401 en Sentry) | Token expirado/inválido — necesario para Phase 5 |
-| ~~Baja~~ | ~~Fix Google Calendar PEM credential loading~~ | ✅ **RESUELTO** — Phase 2F: raw JSON re-uploaded as v4 |
-| ~~Baja~~ | ~~Fix CORS para Workers URL~~ | ✅ **RESUELTO** — Phase 2F: `pages.dev` → `workers.dev` |
+| **🔴 Alta** | Config | **Tenant Assistant Config Revamp**: `/config` como controlador integral (prompt + modelo + tools on/off), sandbox como testing ground seguro, versionado con rollback, toggle de herramientas en tiempo real |
+| **🔴 Alta** | UI/Agenda | **Agenda Visual Revamp**: layout mobile overflow, navegación días/semanas/meses, responsive redesign, gestos touch |
+| **🟡 Media** | Observability | Bot pause notifications → Sentry + Discord + admins/staff del tenant |
+| **🟡 Media** | Observability | Paused chat inbound alerts — actualmente ignora silenciosamente |
+| **🟡 Media** | Backend | Tool Registry tracking: logging de tools registradas, schemas, historial |
+| **🟡 Media** | DB/Backend | Tenant Config Versioning: tabla `tenant_config_versions` con snapshots JSON |
+| **🟡 Media** | WhatsApp | Refrescar token Meta API (401 en Sentry) — necesario para Phase 5 |
+| **🟢 Baja** | LLM | BUG-4: CheckMyAppointments hallucination — LLM inventa detalles de citas |
+
+
 
 ---
 

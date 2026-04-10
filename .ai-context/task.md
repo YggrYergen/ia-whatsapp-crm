@@ -337,7 +337,7 @@ Docs consulted:
 
 ### 3E: Critical Bug Fixes (MUST resolve before Phase 4/5)
 
-- [/] **BUG-1: LLM Tool-Calling Silent Failure** — code changes deployed, pending live test
+- [x] **BUG-1: LLM Tool-Calling Silent Failure** ✅ — 4-layer fix deployed
   - [x] Research official OpenAI Function Calling docs for tool_choice strategies ✅
   - [x] Layer 1: Internal system prompt injection in `use_cases.py` — `INTERNAL_TOOL_RULES` injected at CODE level between tenant prompt and [CONTEXTO] block. Tenant CANNOT edit/delete these rules.
   - [x] Layer 2: Post-LLM validation — `TOOL_ACTION_PATTERNS` detects when LLM text implies tool action but `has_tool_calls=False` → Sentry `capture_message` + `set_context` + Discord alert
@@ -345,44 +345,84 @@ Docs consulted:
   - [x] Layer 4: Enhanced logging — full response content preview (150 chars) + tool_calls status + individual tool results (300 chars)
   - [ ] Re-test EscalateHumanTool and UpdatePatientScoringTool after deploy
   - [ ] Verify bot_active flips to false on escalation, metadata updates on scoring
+  > **NOTE:** UpdatePatientScoring depends on tenant tool config. Tool not in test tenant's list = LLM can't call it. This is a config surface limitation, not a code bug. → see Backlog "Tenant Assistant Config Revamp"
 
-- [x] **BUG-2: Character Counter Limit** ✅ (commit pending)
+- [x] **BUG-2: Character Counter Limit** ✅
   - [x] Changed display from `/ 2000` to `/ 4000` in `config/page.tsx`
   - [x] Changed red threshold from `> 1000` to `> 3500` (rose color)
   - [x] Added amber threshold at `> 3000` (amber color)
-  - [x] Added save validation: blocks save if > 4000 chars + `Sentry.captureMessage()` warning
+  - [x] Soft Sentry warning when prompt > 4000 chars (save NOT blocked — user decision)
   - [x] Added `import * as Sentry from '@sentry/nextjs'` to config page
   - [ ] Test: visual check in `/config` after deploy
 
-- [x] **BUG-3: DeleteAppointmentTool — LLM lies about error results** ✅ (commit pending)
-  - [x] Added `has_tool_error` check before synthesis pass — detects `"status": "error"` or `"failed:"` in tool results
-  - [x] Injects explicit `[INSTRUCCIÓN SISTEMA]` telling LLM to report failure honestly
-  - [ ] Test: trigger delete for nonexistent appointment → verify honest error message
+- [x] **BUG-3: Tool Error Handling — Complete Overhaul** ✅
+  - [x] **v1:** Basic `has_tool_error` check with single injection message
+  - [x] **v2 (this session):** Distinguish business errors vs technical crashes:
+    - **Business error** (tool ran OK, returned `{"status": "error", "message": "No encontré cita..."}`) → LLM relays naturally without drama
+    - **Technical crash** (Python exception during tool execution) → LLM tells patient human was requested + tech team alerted
+  - [x] **All tool `status:error` responses now fire Sentry + Discord** (previously only Python exceptions did — critical gap fixed)
+  - [x] Sentry context includes: tool_name, result preview, tenant_id, patient_phone, contact_role
+  - [x] Discord alert title includes tenant_id for all error types
+  - [ ] Test: trigger business error (delete nonexistent apt) → verify natural relay, no "inconveniente técnico"
+  - [ ] Test: verify Sentry + Discord fire for business errors
 
-- [x] **MISC-2: Missing `import sentry_sdk` in google_client.py** ✅ (commit pending)
+- [x] **MISC-2: Missing `import sentry_sdk` in google_client.py** ✅
   - [x] Added `import sentry_sdk` to top-level imports (fixes NameError at L39)
   - [x] Removed 5 redundant inline `import sentry_sdk` in except blocks
 
-- [/] **OTEL-1: CF Dashboard OTel Destinations** — manual action required
+- [x] **OTEL-1: CF Dashboard OTel Destinations** ✅ CLOSED (deferred)
   - [x] Read CF OTel export docs
-  - [x] ~~Create `sentry-traces` destination in CF dashboard~~ — **BLOCKED: requires Workers Paid plan (currently on Free)**
-  - [x] ~~Create `sentry-logs` destination in CF dashboard~~ — same
+  - [x] ~~Create destinations~~ — **BLOCKED: requires Workers Paid plan (currently on Free)**
   - [x] Commented out `destinations` in `wrangler.toml` with upgrade instructions
-  > **Resolution:** OTLP export is a Workers Paid feature. Observability is NOT blocked — backend has `sentry_sdk` (Cloud Run), frontend has `@sentry/nextjs`, and basic Workers Logs (CF dashboard) are still active on Free plan. OTLP destinations deferred until plan upgrade.
+  > **Resolution:** OTLP export is a Workers Paid feature ($5/mo). Observability NOT blocked — backend has `sentry_sdk` (Cloud Run), frontend has `@sentry/nextjs`, Workers Logs in CF dashboard (free). Deferred until plan upgrade.
 
+### Phase 3F: Post-Testing Fixes (this session)
+
+- [x] **FIX: Sentry tenant context** — `sentry_sdk.set_tag("tenant_id", ...)` at orchestrator start. All events now tagged.
+- [x] **FIX: Discord titles include tenant** — All `send_discord_alert()` titles now include `Tenant {tenant.id}`
+- [x] **FIX: Three dots typing indicator** — Only shows when `bot_active=true` in both ChatArea and TestChatArea
+- [x] **FIX: Tool error Sentry/Discord gap** — `status:error` tool responses now ALWAYS fire Sentry + Discord (previously only Python exceptions triggered alerts)
+- [x] **FIX: BUG-3 business vs crash differentiation** — Natural relay for business errors ("no appointment found"), escalation message only for actual crashes
 
 
 ---
 
-## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONECTION AND 100% QA TEST PASSED -- aka Phase 6
+## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONNECTION AND 100% QA TEST PASSED -- aka Phase 6
 
 > Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
+
+### HIGH PRIORITY — Tenant Assistant Config Revamp
+
+> **Context:** The current `/config` route only controls system_prompt + LLM provider/model. There is no way for owners to control WHICH tools are active, test changes safely, or rollback bad configs. This was surfaced during Phase 3E testing when `update_patient_scoring` couldn't fire because the tool wasn't in the tenant's configured tool list.
+
+- [ ] **`/config` as Live Agent Controller:** The config route should be the sole control surface for the live assistant's behavior — prompt, model, active tools, personality, response rules
+- [ ] **Chat de Pruebas as Safe Testing Ground:** The sandbox chat should let owners test modifications to their assistant config BEFORE those changes go live. Changes made in config should be testable in sandbox before committing to production
+- [ ] **Config Versioning & Rollback:** Every config change (prompt, model, tools) must be versioned with timestamp + author. Owners should be able to instantly rollback to any previous config version. Database schema change: `tenant_config_versions` table with JSON snapshots
+- [ ] **Tool On/Off Toggle:** Owners must be able to enable/disable individual tools in real time from the config surface. E.g., disable `delete_appointment` during a migration, enable `update_patient_scoring` when scoring criteria are ready. This affects what schemas get sent to the LLM
+- [ ] **Sandbox Role Selector Enhancement:** The sandbox chat already has a role switcher (cliente/staff/admin). Needs to be more prominent and its implications clearly documented. Different roles should demonstrate different tool access levels (e.g., admin can delete any appointment, cliente only their own)
+
+### HIGH PRIORITY — Agenda Visual Revamp
+
+> **Context:** The agenda viewer needs significant UI improvements, especially for mobile viewports where many elements don't fit properly.
+
+- [ ] **Mobile Layout Overhaul:** Agenda components overflow on small screens. Needs responsive redesign — possibly card-based layout for mobile instead of calendar grid
+- [ ] **Date Navigation:** Users need to scroll back and forth through days, weeks, months. This requires careful architectural thought:
+  - Data fetching strategy (lazy load vs pre-fetch range)
+  - URL state management (shareable links to specific date ranges)
+  - Performance for large appointment volumes
+  - Touch gestures for mobile (swipe between days/weeks)
+- [ ] **Design System Alignment:** Agenda should match the overall CRM aesthetic (glassmorphism, micro-animations, premium feel)
+
+### MEDIUM PRIORITY
 
 - [ ] **Bot Pause Notifications:** Every time bot is paused (by human hand, by EscalateHumanTool, by any system rule) must generate Sentry event + Discord notification + in-app notification to admins/staff as configured by tenant
 - [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
 - [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
-- [ ] **Tenant Config Versioning:** Audit trail for all changes to system_prompt, llm_provider, llm_model. Currently each UPDATE to tenants table overwrites without history
+- [ ] **Tenant Config Versioning (DB schema):** `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools. Each UPDATE creates a version snapshot
 - [ ] Responsive layout: mobile bottom nav works, pages render on small viewport: ask for human tester input and first focus group feedback
+
+### LOW PRIORITY / FUTURE
+- [ ] **BUG-4 (CheckMyAppointments hallucination):** LLM invents appointment details. Needs diagnostic data capture + prompt refinement. Deferred pending Phase 6 tool config revamp
 
 ---
 

@@ -47,6 +47,8 @@ class ProcessMessageUseCase:
     @staticmethod
     async def execute(payload: dict, tenant: TenantContext, db: AsyncClient):
         logger.info(f"🚀 [ORCH] Start for Tenant={tenant.id}")
+        # Tag ALL Sentry events in this execution with tenant context
+        sentry_sdk.set_tag("tenant_id", str(tenant.id))
         is_simulation = payload.get("is_simulation", False)
         contact_id = None
         
@@ -99,6 +101,7 @@ class ProcessMessageUseCase:
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Failed creating contact: {e}")
                     sentry_sdk.capture_exception(e)
+                    await send_discord_alert(title=f"❌ Contact Creation Error | Tenant {tenant.id}", description=str(e), severity="error", error=e)
             
             clinical_keywords = ["dolor", "fibrosis", "sangrado", "emergencia", "urgencia", "infectado"]
             force_escalation = any(kw in text_body for kw in clinical_keywords)
@@ -243,34 +246,73 @@ class ProcessMessageUseCase:
                         results.append(f"Tool {t['name']} result: {res}")
                         # BUG-1 Layer 4: Log tool result for traceability
                         logger.info(f"✅ [ORCH] Tool '{t['name']}' result: {str(res)[:300]}")
+                        # ============================================================
+                        # BUG-3: Detect tool-level status:error responses
+                        # These are NOT Python exceptions — the tool ran but
+                        # returned an error (e.g. "no appointment found").
+                        # ALWAYS report to Sentry + Discord for observability.
+                        # ============================================================
+                        res_str = str(res)
+                        if '"status": "error"' in res_str or '"status":"error"' in res_str:
+                            logger.warning(f"⚠️ [ORCH] Tool '{t['name']}' returned status:error — alerting Sentry/Discord")
+                            sentry_sdk.set_context("tool_error", {
+                                "tool_name": t['name'],
+                                "result": res_str[:500],
+                                "tenant_id": str(tenant.id),
+                                "patient_phone": patient_phone,
+                                "contact_role": contact_role,
+                            })
+                            sentry_sdk.capture_message(
+                                f"Tool '{t['name']}' returned error | Tenant {tenant.id}",
+                                level="warning"
+                            )
+                            await send_discord_alert(
+                                title=f"⚠️ Tool Error: {t['name']} | Tenant {tenant.id}",
+                                description=f"Tool returned error status.\nPhone: {patient_phone}\nRole: {contact_role}\nResult: {res_str[:300]}",
+                                severity="warning"
+                            )
                     except Exception as e: 
-                        results.append(f"Tool {t['name']} failed: {e}")
+                        results.append(f"Tool {t['name']} EXCEPTION: {e}")
                         sentry_sdk.capture_exception(e)
-                        await send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e)
+                        await send_discord_alert(title=f"💥 Tool Crash: {t['name']} | Tenant {tenant.id}", description=str(e), severity="error", error=e)
                 
                 # ============================================================
-                # BUG-3 Fix: Tool Result Error Injection
-                # Before synthesis, check if any tool returned an error.
-                # If so, inject explicit instruction telling the LLM to
-                # report the failure honestly instead of lying about success.
+                # BUG-3 Fix: Tool Result Error Injection (Synthesis Pass)
+                # Distinguish between:
+                #   - "business errors" (tool ran OK but e.g. "no appointment
+                #     found") → LLM should relay naturally
+                #   - "technical crashes" (Python exception) → LLM should
+                #     tell patient a human was requested
                 # ============================================================
-                has_tool_error = any(
-                    '"status": "error"' in r or '"status":"error"' in r or "failed:" in r
+                has_business_error = any(
+                    ('"status": "error"' in r or '"status":"error"' in r) and "EXCEPTION:" not in r
                     for r in results
                 )
+                has_crash = any("EXCEPTION:" in r for r in results)
                 
                 history.append({"role": "user", "content": f"[Resultados]: {results}"})
                 
-                if has_tool_error:
-                    logger.warning(f"⚠️ [ORCH] Tool returned error result — injecting honesty instruction for synthesis")
+                if has_crash:
+                    # Technical crash: escalate to human
+                    logger.warning(f"⚠️ [ORCH] Tool CRASHED — injecting human-escalation instruction")
                     history.append({
                         "role": "user", 
-                        "content": "[INSTRUCCIÓN SISTEMA]: Uno o más resultados anteriores contienen un ERROR. "
+                        "content": "[INSTRUCCIÓN SISTEMA]: Uno o más herramientas tuvieron un FALLO TÉCNICO. "
                                    "Informa al paciente amablemente que hubo un inconveniente técnico al procesar su solicitud, "
                                    "que ya se notificó a un miembro del equipo humano para que intervenga en la conversación, "
                                    "y que el equipo técnico fue alertado del problema. "
                                    "Tranquiliza al paciente y continúa la conversación normalmente para ayudar en lo que puedas. "
-                                   "NO digas que la acción se realizó correctamente si el resultado indica error."
+                                   "NO digas que la acción se realizó correctamente."
+                    })
+                elif has_business_error:
+                    # Business error: just relay the tool's message naturally
+                    logger.info(f"ℹ️ [ORCH] Tool returned business-level error — LLM will relay naturally")
+                    history.append({
+                        "role": "user", 
+                        "content": "[INSTRUCCIÓN SISTEMA]: Los resultados anteriores contienen respuestas de error del sistema. "
+                                   "Transmite la información al paciente de forma natural y amable, usando el mensaje de error como contexto. "
+                                   "NO digas que la acción se realizó correctamente si el resultado indica que no se pudo completar. "
+                                   "Continúa la conversación normalmente."
                     })
                 
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
@@ -314,7 +356,7 @@ class ProcessMessageUseCase:
                 "step": "orchestration_pipeline",
             })
             sentry_sdk.capture_exception(e)
-            await send_discord_alert(title="AI Orchestration Fatal Crash", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error")
+            await send_discord_alert(title=f"💥 AI Orchestration Fatal Crash | Tenant {tenant.id}", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error")
             if contact_id:
                 try: 
                     await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()

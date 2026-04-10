@@ -294,7 +294,7 @@ export default function ChatArea() {
                         )
                     })}
 
-                    {isIAProcessing && (
+                    {isIAProcessing && selectedContact.bot_active && (
                          <div className="flex w-full justify-start">
                              <div className="flex flex-col gap-1 items-start">
                                  <div className="text-[10px] font-bold uppercase tracking-wider ml-1 text-emerald-600">🤖 Asistente</div>

@@ -347,7 +347,7 @@ export default function TestChatArea() {
                         </div>
                     )
                 })}
-                {isIAProcessing && (
+                {isIAProcessing && selectedContact.bot_active && (
                     <div className="flex justify-start">
                         <div className="bg-white px-4 py-3 rounded-2xl border flex items-center gap-2">
                             <div className="flex gap-1">
