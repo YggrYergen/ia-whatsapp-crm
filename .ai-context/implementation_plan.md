@@ -4,7 +4,7 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE ser documentada EN ESE MOMENTO con: (1) qué se hizo, (2) por qué funciona, (3) links a los docs oficiales que lo respaldan. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
-## Status: Phase 0-2F COMPLETE ✅ | Phase 3 (E2E Validation) IN PROGRESS 🔄 | 51/65 items ✅ | 2 bugs activos🔄
+## Status: Phase 0-4 COMPLETE ✅ | Phase 5 (Meta/WhatsApp) NEXT | Calendar disconnected in dev (by design, see Phase 4 tech debt)
 
 ---
 
@@ -379,16 +379,29 @@ BUG-2: Character Counter Limit
 - **Backend:** Cloud Run service `ia-backend-prod` in `europe-west1`, project `saas-javiera`. Auto-deploys from `main` via Cloud Build trigger.
 - **Frontend:** Cloudflare Worker `ia-whatsapp-crm`. Auto-deploys from `main` via Workers Builds.
 
-**What needs to be set up:**
-- [ ] **Dev Frontend URL:** `ohno.tuasistentevirtual.cl` — dedicated subdomain for the development frontend (yes, the name is intentional — it's a valid URL)
-- [ ] **Dev Backend:** Either a separate Cloud Run service (`ia-backend-dev`) or a separate revision strategy. Must point to the **development** Supabase DB.
-- [ ] **Dev Frontend:** Either a separate Cloudflare Worker or a preview/staging deployment on Workers. Must point to `ohno.tuasistentevirtual.cl`.
-- [ ] **Branch strategy:** `main` → production (current behavior, MUST NOT change). `desarrollo` → development (auto-deploys to dev backend + dev frontend).
-- [ ] **Deployment triggers:** Each branch deploys to its own complete ecosystem. Push to `main` deploys to prod backend + prod frontend. Push to `desarrollo` deploys to dev backend + dev frontend.
-- [ ] **Environment variables:** Dev systems must use dev Supabase URL/keys, dev Sentry project (or environment tag), and dev-specific configs. Production variables must NEVER leak into dev and vice versa.
-- [ ] **DNS:** Configure `ohno.tuasistentevirtual.cl` in Cloudflare (CNAME to dev Worker or separate Worker route).
-- [ ] **Verification:** After setup, confirm TOTAL isolation — changes pushed to `desarrollo` must have ZERO effect on `dash.tuasistentevirtual.cl`, and vice versa.
-- [ ] **Schema sync strategy:** Document how to propagate schema migrations from dev to prod (via Supabase MCP `merge_branch` or manual migration application).
+### Phase 4: Production / Development Environment Separation — COMPLETE ✅ (2026-04-10)
+
+**Two fully independent ecosystems established:**
+
+| Component | Production | Development |
+|:---|:---|:---|
+| **Backend** | `ia-backend-prod` (europe-west1) | `ia-backend-dev` (us-central1) |
+| **Frontend** | `ia-whatsapp-crm` (CF Worker) | `dev-ia-whatsapp-crm` (CF Worker) |
+| **Database** | `nemrjlimrnrusodivtoa` (Supabase) | `nzsksjczswndjjbctasu` (Supabase) |
+| **Domain** | `dash.tuasistentevirtual.cl` | `ohno.tuasistentevirtual.cl` |
+| **Branch** | `main` | `desarrollo` |
+| **Sentry tag** | `environment=production` | `environment=development` |
+| **Discord prefix** | (none) | `[🔧 DESARROLLO]` |
+| **Calendar** | ✅ Connected (CasaVitaCure SA) | ❌ Intentionally disconnected (safety) |
+
+**Key secrets:**
+- `SUPABASE_SERVICE_ROLE_KEY` → prod only (nemrjlimrnrusodivtoa)
+- `SUPABASE_SERVICE_ROLE_KEY_DEV` → dev only (nzsksjczswndjjbctasu)
+- `GOOGLE_CALENDAR_CREDENTIALS` → prod only (CasaVitaCure SA — NOT safe for dev)
+
+**Known limitation:** Calendar/Agenda features don't work in dev. The Google Calendar credentials belong to the client (CasaVitaCure) and connecting them to dev would risk test operations corrupting the live calendar. This is documented as Phase 6+ backlog: "Calendar Multi-Tenant Architecture Refactor".
+
+**Schema sync strategy:** PR `desarrollo` → `main`. Auto-deploy fires for backend (Cloud Build) and frontend (Workers Builds). DB migrations applied manually via Supabase MCP to prod after verification on dev.
 
 ---
 
@@ -398,36 +411,45 @@ BUG-2: Character Counter Limit
 
 > **⚠️ The WhatsApp webhook connection is the LAST step, not the first. Before connecting Meta, we must have a fully instrumented, thoroughly tested webhook simulation suite.**
 
-**5A: Meta Webhook Simulation Suite (DISCONNECTED — no real WhatsApp):**
-- [ ] Develop simulation scripts that mimic the Meta webhook payload format (per [Meta Webhook Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components/))
-- [ ] Scripts must simulate: multiple users chatting simultaneously from different phone numbers, at the same and different times
-- [ ] Scenarios to cover:
-  - [ ] Single user, single message → full pipeline (inference + tool call + response)
-  - [ ] Single user, rapid burst of messages → mutex debouncing works correctly
-  - [ ] Multiple users simultaneously → no cross-talk, correct tenant isolation
-  - [ ] Messages with tool-triggering intent (booking, checking, escalation) → tools fire correctly
-  - [ ] Malformed/unexpected payloads → graceful error handling, Sentry capture, Discord notification
-  - [ ] Edge cases: empty message, very long message, special characters, media messages (if supported)
-- [ ] Full Sentry instrumentation: every error path in the webhook → simulator flow must report to Sentry
-- [ ] Full Discord notification: every Sentry event → Discord alert in real time
-- [ ] Run the full simulation suite multiple times, verify:
-  - [ ] All messages persisted correctly in Supabase
-  - [ ] All responses generated correctly by LLM
-  - [ ] All tool calls executed correctly
-  - [ ] All alerts created correctly
-  - [ ] Frontend realtime updates work for each simulated conversation
-  - [ ] Zero errors in Sentry (or all expected, none unexpected)
+**5A: Meta Webhook Simulation Suite ✅ COMPLETED (2026-04-10):**
+
+Architecture decision: **HTTP runner → `POST /webhook`** (not direct function call). Rationale: tests the real FastAPI routing, dependency injection, payload parsing, and BackgroundTasks scheduling — identical to what Meta sends in production. The runner is re-targetable: works against `localhost:8000` or the deployed dev backend. Ref: [Meta Webhook Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components/), [Meta Payload Examples](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples)
+
+Scripts created in `Backend/scripts/simulation/`:
+- [x] `payload_factory.py` — Meta-compliant payloads: text, status, image, location, reaction, malformed, edge cases
+- [x] `scenarios.py` — 9 scenarios covering happy path, tool triggers, clinical escalation, status webhooks, malformed payloads, burst, concurrent, and edge cases
+- [x] `runner.py` — CLI orchestrator with sequential/burst/concurrent modes, markdown report generation
+- [x] `cleanup.py` — Dev DB cleanup with production safety guard + dry-run mode
+- [x] `switch_env.py` — `.env` switcher (dev ↔ prod) for `SUPABASE_URL` and `ENVIRONMENT`
+
+Observability hardening (5A-OBS) — audited all `except` blocks in the critical pipeline:
+- [x] `dependencies.py` — Added Sentry + Discord (had neither before)
+- [x] `tool_registry.py` — Added Discord alerts (had Sentry only)
+- [x] `gemini_adapter.py` — Added Sentry + Discord (had neither before)
+- [x] `openai_adapter.py` — Added Discord alerts (had Sentry only)
+- [x] `use_cases.py` — Added Discord to msg persistence error + processing lock cleanup error
+
+Results: **9/9 scenarios passed** against local dev backend (2026-04-10). DB verification confirmed: 12 contacts created, escalation contacts correctly have `bot_active=false`, zero stuck processing locks.
 
 **5B: Version Tag + Final Production Deploy:**
-- [ ] Once simulation suite passes cleanly with zero unexpected errors: `git tag v1.0` on `main`
-- [ ] `git push origin main --tags` — triggers production auto-deploy
-- [ ] Verify: production frontend and backend are running the v1.0 code
+- [ ] Merge observability hardening changes to `main` branch
+- [ ] Deploy to production via Cloud Build auto-deploy
+- [ ] Run simulation suite against deployed dev backend (cloud verification)
+- [ ] Once clean: `git tag v1.0` on `main`, `git push origin main --tags`
+- [ ] Verify: production frontend and backend running the v1.0 code
 
 **5C: Connect Meta/WhatsApp (LIVE):**
-- [ ] Refresh/configure Meta WhatsApp API token (currently expired — 401 in Sentry)
-- [ ] Configure webhook URL in Meta Dashboard to point to production backend (`ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook`)
+
+> **System User token required** — the current token is expired (401 in Sentry). A System User must be created in Meta Business Manager with `whatsapp_business_messaging` + `whatsapp_business_management` permissions. Ref: [Meta System Users](https://developers.facebook.com/docs/marketing-api/system-users/)
+
+> **AI Chatbot Policy compliance** — Meta prohibits "general-purpose" AI chatbots (Jan 2026 policy). CasaVitaCure is compliant as a task-specific assistant (booking, scoring, escalation). No Tech Provider status needed for first client.
+
+- [ ] Create System User → generate permanent access token
+- [ ] Update `ws_token` in production Supabase `tenants` table
+- [ ] Update `ws_phone_id` to match real Meta `phone_number_id` (currently placeholder `123456789012345`)
+- [ ] Configure webhook URL in Meta Dashboard → `ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook`
 - [ ] Verify webhook verification handshake (GET /webhook with verify_token)
-- [ ] Send a real WhatsApp message to the business number → confirm full pipeline executes:
+- [ ] Send a real WhatsApp message → confirm full pipeline:
   - [ ] Message received by webhook
   - [ ] LLM inference completes
   - [ ] Response sent back via Meta API

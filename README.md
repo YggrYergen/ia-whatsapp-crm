@@ -6,25 +6,27 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-10 04:20 CLT)
+## 0. Estado Actual del Proyecto (2026-04-10 09:00 CLT)
 
-**Estado global:** 🟡 En estabilización — Fases 0-3F completas. Phase 3 E2E Validation finalizada con todos los bugs resueltos. Listo para Phase 4 (Separación Prod/Dev).
+**Estado global:** 🟢 Phase 5A completada — Suite de simulación webhook Meta verificada (9/9 escenarios ✅). Observabilidad hardened (Sentry + Discord en cada error path).
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
-| **Backend (Cloud Run)** | 🟢 Operativo + Observable | Rev `00052-7xc`, 100% tráfico. Sentry ✅, Discord alertas ✅, Cloud Logging JSON ✅ |
-| **Frontend (CF Workers)** | 🟢 Operativo + Observable | OpenNext (Workers). Sentry SDK captura errores ✅. CF Workers Logs ✅. Deploy auto via Workers Builds |
-| **BD Producción** | 🟢 Funcional | RLS activo. Migraciones aplicadas: `alerts` RLS + `is_read` + GCal OAuth columns |
-| **BD Desarrollo** | 🟢 Sincronizada | `is_read` column aplicada. Schema funcional |
+| **Backend PROD (Cloud Run)** | 🟢 Operativo + Observable | `ia-backend-prod` europe-west1. Sentry ✅, Discord ✅, Cloud Logging JSON ✅ |
+| **Backend DEV (Cloud Run)** | 🟢 Operativo | `ia-backend-dev` us-central1. Min=0, Max=1. Sentry `env=development` ✅, Discord `[🔧 DESARROLLO]` ✅ |
+| **Frontend PROD (CF Workers)** | 🟢 Operativo + Observable | `ia-whatsapp-crm` → `dash.tuasistentevirtual.cl`. Auto-deploy `main` |
+| **Frontend DEV (CF Workers)** | 🟢 Operativo | `dev-ia-whatsapp-crm` → `ohno.tuasistentevirtual.cl`. Auto-deploy `desarrollo` |
+| **BD Producción** | 🟢 Funcional | `nemrjlimrnrusodivtoa`. Secreto: `SUPABASE_SERVICE_ROLE_KEY` |
+| **BD Desarrollo** | 🟢 Funcional | `nzsksjczswndjjbctasu`. Secreto separado: `SUPABASE_SERVICE_ROLE_KEY_DEV` |
+| **Calendario (Agenda)** | 🟡 Solo en prod | ⚠️ Desconectado en dev (protección calendario cliente). Ver deuda técnica |
+| **Webhook Simulation Suite** | 🟢 Verificada | 9/9 escenarios pasaron. Scripts en `Backend/scripts/simulation/`. Ver §0.8 |
 | **Rama `main`** | 🟢 Al día | Auto-deploy backend (Cloud Build) + frontend (Workers Builds) |
-| **Rama `desarrollo`** | ⚪ Detrás de main | Se sincroniza DESPUÉS de estabilizar main |
-| **Monitoreo Backend** | 🟢 Completo | Sentry + Discord + Cloud Logging JSON — todo verificado |
-| **Monitoreo Frontend** | 🟢 Completo | Sentry SDK (client errors) ✅ + CF Workers Logs (server/routing) ✅ |
+| **Rama `desarrollo`** | 🟢 Ecosistema propio | Auto-deploy backend + frontend a infraestructura dev |
 
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E Interno 🔄 ──► FASE 4: Separación Prod/Dev ──► FASE 5: WhatsApp + Go-Live
+FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E Interno ✅ ──► FASE 4: Separación Prod/Dev ✅ ──► FASE 5A: Simulación ✅ ──► FASE 5B-D: Go-Live
 ```
 
 | Fase | Objetivo | Estado |
@@ -40,8 +42,11 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 2E** | OpenNext Migration (CF Pages → Workers) | ✅ **Completada** — ver §0.3 |
 | **Fase 2F** | Sentry Coverage Hardening + CORS + RLS DELETE + GCal secret | ✅ **Completada** — commit `5ba489d` (ver §0.4) |
 | **Fase 3** | E2E validation interno + bug fixes + observability hardening | ✅ **Completada** — 3E (bug fixes) + 3F (post-testing fixes). OTel deferred (Workers Free). Ver §0.6 |
-| **Fase 4** | Separación prod/dev: ecosistemas 100% independientes (`dash.` prod, `ohno.` dev), 2 backends, 2 frontends, 2 BDs | Pendiente |
-| **Fase 5** | Suite de simulación webhook Meta (desconectado) → tag `v1.0` → conectar WhatsApp → validación live | Pendiente |
+| **Fase 4** | Separación prod/dev: 2 ecosistemas 100% aislados | ✅ **Completada** — Backend dev (us-central1), Frontend dev (CF Worker), BD dev, DNS `ohno.tuasistentevirtual.cl`. Calendario excluido por seguridad |
+| **Fase 5A** | Suite de simulación webhook Meta (desconectado) + observability hardening | ✅ **Completada** — 9/9 escenarios pasaron (ver §0.8). Observabilidad completa: cada `except` → Sentry + Discord |
+| **Fase 5B** | Version Tag + Final Production Deploy | ⏳ Pendiente |
+| **Fase 5C** | Conectar Meta/WhatsApp (LIVE) — System User token, webhook URL | ⏳ Pendiente |
+| **Fase 5D** | Validación producción — sistema 100% operacional | ⏳ Pendiente |
 
 ### Bugs Resueltos (Fase 3)
 
@@ -55,18 +60,19 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **3F-1** | Sentry events sin tenant_id | `sentry_sdk.set_tag("tenant_id", ...)` al inicio del orquestador | ✅ |
 | **3F-2** | Discord alerts sin tenant en título | Todos los `send_discord_alert()` incluyen `Tenant {id}` | ✅ |
 | **3F-3** | Three dots (typing indicator) visible con IA pausada | Condición `&& selectedContact.bot_active` en ChatArea + TestChatArea | ✅ |
+| **5A-OBS** | Gaps de observabilidad: 5 archivos con `except` sin Sentry y/o Discord | Hardened: `dependencies.py`, `tool_registry.py`, `gemini_adapter.py`, `openai_adapter.py`, `use_cases.py` (2 handlers) | ✅ |
 
 ### Backlog Técnico (Phase 6+ — NO implementar ahora)
 
 | Prioridad | Área | Tarea |
 |:---|:---|:---|
+| **🔴 Alta** | Calendar | **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcodeado a CasaVitaCure (`casavitacure-crm`), Calendar IDs como fallback en `google_client.py:L69-72`, OAuth flow construido pero desconectado. Requiere: per-tenant OAuth, tabla `tenant_resources` para N calendarios dinámicos, UI en `/config`. **Bloquea:** calendario en dev, segundo cliente, escalabilidad |
 | **🔴 Alta** | Config | **Tenant Assistant Config Revamp**: `/config` como controlador integral (prompt + modelo + tools on/off), sandbox como testing ground seguro, versionado con rollback, toggle de herramientas en tiempo real |
 | **🔴 Alta** | UI/Agenda | **Agenda Visual Revamp**: layout mobile overflow, navegación días/semanas/meses, responsive redesign, gestos touch |
 | **🟡 Media** | Observability | Bot pause notifications → Sentry + Discord + admins/staff del tenant |
 | **🟡 Media** | Observability | Paused chat inbound alerts — actualmente ignora silenciosamente |
 | **🟡 Media** | Backend | Tool Registry tracking: logging de tools registradas, schemas, historial |
 | **🟡 Media** | DB/Backend | Tenant Config Versioning: tabla `tenant_config_versions` con snapshots JSON |
-| **🟡 Media** | WhatsApp | Refrescar token Meta API (401 en Sentry) — necesario para Phase 5 |
 | **🟢 Baja** | LLM | BUG-4: CheckMyAppointments hallucination — LLM inventa detalles de citas |
 
 
@@ -417,16 +423,24 @@ Config en: `~/.gemini/antigravity/mcp_config.json`
 
 | Recurso | Identificador | Notas |
 |:---|:---|:---|
-| Cloud Run service URL | `ia-backend-prod-ftyhfnvyla-ew.a.run.app` | Hardcodeada en `next.config.js` como fallback |
+| **PRODUCCIÓN** | | |
+| Cloud Run service (prod) | `ia-backend-prod` (europe-west1) | Auto-deploy desde `main` via Cloud Build |
+| Cloud Run service URL (prod) | `ia-backend-prod-ftyhfnvyla-ew.a.run.app` | Hardcodeada en `next.config.js` como fallback |
+| Cloudflare Worker (prod) | `ia-whatsapp-crm` | En `wrangler.toml`. **Worker, NO Pages** |
+| CF Workers URL (prod) | `ia-whatsapp-crm.tomasgemes.workers.dev` | URL directa del Worker |
+| Frontend dominio (prod) | `dash.tuasistentevirtual.cl` | Custom domain en CF Workers |
+| Supabase project (prod) | `nemrjlimrnrusodivtoa` | Secreto: `SUPABASE_SERVICE_ROLE_KEY` |
+| GCal credentials | `GOOGLE_CALENDAR_CREDENTIALS` (Secret Manager) | ⚠️ Service Account de CasaVitaCure — solo prod |
+| **DESARROLLO** | | |
+| Cloud Run service (dev) | `ia-backend-dev` (us-central1) | Min=0, Max=1. Auto-deploy desde `desarrollo` |
+| Cloud Run service URL (dev) | `ia-backend-dev-645489345350.us-central1.run.app` | |
+| Cloudflare Worker (dev) | `dev-ia-whatsapp-crm` | Build cmd: `--name dev-ia-whatsapp-crm` |
+| Frontend dominio (dev) | `ohno.tuasistentevirtual.cl` | Custom domain en CF Workers |
+| Supabase project (dev) | `nzsksjczswndjjbctasu` | Secreto separado: `SUPABASE_SERVICE_ROLE_KEY_DEV` |
+| **COMPARTIDOS** | | |
 | GCP project ID | `saas-javiera` | Para Cloud Build, IAM, etc. |
-| Supabase prod project | `nemrjlimrnrusodivtoa` | `nemrjlimrnrusodivtoa.supabase.co` |
-| Supabase dev project | `nzsksjczswndjjbctasu` | `nzsksjczswndjjbctasu.supabase.co` |
-| Cloudflare Worker | `ia-whatsapp-crm` | En `wrangler.toml`. **Worker, NO Pages** |
-| CF Workers URL | `ia-whatsapp-crm.tomasgemes.workers.dev` | URL directa del Worker |
-| Frontend dominio prod | `dash.tuasistentevirtual.cl` | Custom domain en CF Workers |
-| Frontend dominio dev | `ohno.tuasistentevirtual.cl` | Pendiente de configurar |
-| GitHub repo | `YggrYergen/ia-whatsapp-crm` | Auto-deploys: backend (Cloud Build) + frontend (Workers Builds) |
-| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | Hardcodeado en `instrumentation-client.ts` + como build/runtime var en CF dashboard |
+| GitHub repo | `YggrYergen/ia-whatsapp-crm` | `main` → prod, `desarrollo` → dev |
+| Sentry DSN | `b5b7a769848286fc...@o4511179991416832` | Mismo DSN, filtrado por tag `environment` |
 
 ---
 
@@ -612,6 +626,102 @@ openai_adapter.py:25-30  →  client.chat.completions.create(tools=tools, tool_c
                      Execute each tool via                 reply_text = content ← SILENT FAILURE POINT
                      tool_registry.execute_tool()          (no validation that LLM should have called a tool)
 ```
+
+---
+
+## 0.8. Phase 5A: Meta Webhook Simulation Suite — Documentación (2026-04-10)
+
+> **Estado: ✅ Completada.** Suite de simulación construida, 9/9 escenarios verificados contra backend dev local.
+
+### Decisión arquitectónica: HTTP Runner vs Direct Function Call
+
+Se eligió un **HTTP runner que envía payloads reales vía `POST /webhook`** en vez de invocar `ProcessMessageUseCase.execute()` directamente. Razones:
+
+1. **Fidelidad completa:** Testea el routing FastAPI real, dependency injection, parsing de payloads, y BackgroundTasks — exactamente lo que Meta enviará en producción
+2. **Re-targetable:** El mismo script funciona contra `localhost:8000` o contra el backend desplegado (`ia-backend-dev-xxx.a.run.app`)
+3. **Separación de concerns:** El runner es agnóstico al código interno — si cambiamos la implementación del pipeline, los tests siguen igual
+
+**Ref:** [Meta Webhook Reference](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components/), [Meta Payload Examples](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples)
+
+### Flag `is_simulation`
+
+El payload incluye `"is_simulation": true` en el root. El orquestador (`use_cases.py`) lee este flag y:
+- **Salta** el `asyncio.sleep(3)` debounce delay (línea 161)
+- **Salta** el envío vía Meta Graph API (línea 333-335)  
+- **EJECUTA** todo lo demás: LLM inference, tool calling, message persistence, observability
+
+Esto permite testear el pipeline completo sin conexión real a WhatsApp.
+
+### Scripts (`Backend/scripts/simulation/`)
+
+| Script | Propósito |
+|:---|:---|
+| `payload_factory.py` | Genera payloads Meta-compliant: text, status, image, location, reaction, malformed, edge cases |
+| `scenarios.py` | 9 escenarios de test con expected outcomes (ver tabla abajo) |
+| `runner.py` | CLI orchestrator: `python -m scripts.simulation.runner [--scenario X] [--target URL]` |
+| `cleanup.py` | Limpia datos de simulación de BD dev (guard contra prod, modo dry-run) |
+| `switch_env.py` | Cambia `.env` entre dev y prod: `python -m scripts.simulation.switch_env [dev|prod|status]` |
+
+### Escenarios y resultados (primera ejecución 2026-04-10)
+
+| # | Escenario | Modo | Resultado | Observaciones |
+|:---|:---|:---|:---|:---|
+| 1 | Happy Path: texto simple | sequential | ✅ 200 (1985ms) | Contacto creado, LLM respondió, mensaje persistido |
+| 2 | Booking Intent | sequential | ✅ 200 (625ms) | LLM hizo preguntas de calificación antes de reservar (correcto) |
+| 3 | Escalation Request | sequential | ✅ 200 (656ms) | `bot_active=false` seteado correctamente en contacto |
+| 4 | Clinical Keyword (force_escalation) | sequential | ✅ 200 (703ms) | `force_escalation=True`, `tool_choice` forzado, bot pausado |
+| 5 | Status-Only Webhook | sequential | ✅ 200×2 (1469ms) | Skip graceful — "No messages in payload", sin LLM call |
+| 6 | Malformed Payloads (×3) | sequential | ✅ 200×3 (4109ms) | Errores capturados → Sentry + Discord alerts generados |
+| 7 | Rapid Burst (5 msgs, mismo user) | burst | ✅ 200×5 (2422ms) | Mutex `is_processing_llm` funcional, locks liberados |
+| 8 | Multi-User Concurrent (×3) | concurrent | ✅ 200×3 (781ms) | 3 usuarios independientes, sin cross-talk |
+| 9 | Edge Cases (empty, long, unicode, media) | sequential | ✅ 200×6 (12344ms) | Zero crashes con inputs extremos |
+
+### Observability Hardening (5A-OBS)
+
+Se auditaron todos los `except` blocks del pipeline crítico. Los siguientes archivos tenían gaps de observabilidad que fueron corregidos:
+
+| Archivo | Antes | Después |
+|:---|:---|:---|
+| `app/api/dependencies.py` | Sin Sentry, sin Discord | ✅ Sentry + Discord en ambos handlers (TenantNotFound + generic Exception) |
+| `app/modules/intelligence/tool_registry.py` | Sentry ✅, Discord ❌ | ✅ Discord agregado a tool-not-found y tool crash |
+| `app/infrastructure/llm_providers/gemini_adapter.py` | Sin Sentry, sin Discord | ✅ Sentry + Discord agregados |
+| `app/infrastructure/llm_providers/openai_adapter.py` | Sentry ✅, Discord ❌ | ✅ Discord agregado |
+| `app/modules/communication/use_cases.py` | Parcial | ✅ Discord agregado a msg persistence error + processing lock cleanup |
+
+**Regla post-5A:** Todo `except` block en el backend DEBE reportar a Sentry (`capture_exception`) Y Discord (`send_discord_alert`). Sin excepciones.
+
+### Cómo ejecutar la simulación
+
+```bash
+# 1. Cambiar a entorno dev
+python -m scripts.simulation.switch_env dev
+# ⚠️ MANUAL: también swap SUPABASE_SERVICE_ROLE_KEY en .env (dev ↔ prod)
+
+# 2. Levantar backend local
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# 3. Ejecutar simulación completa
+python -m scripts.simulation.runner --wait-after 10
+
+# 4. (Opcional) Ejecutar un solo escenario
+python -m scripts.simulation.runner --scenario 1_happy_path
+
+# 5. Limpiar datos de simulación
+python -m scripts.simulation.cleanup --dry-run  # preview
+python -m scripts.simulation.cleanup            # ejecutar
+
+# 6. Restaurar entorno prod
+python -m scripts.simulation.switch_env prod
+# ⚠️ MANUAL: swap SUPABASE_SERVICE_ROLE_KEY de vuelta a prod
+```
+
+### Hallazgos Meta para Go-Live (Phase 5C)
+
+Documentación investigada durante Phase 5A que aplica al momento de conectar WhatsApp en producción:
+
+1. **System User Token Requerido:** El token temporal de API Setup expira en 24h. Para producción, crear un System User en Meta Business Manager con permisos `whatsapp_business_messaging` + `whatsapp_business_management` y generar token permanente. Ref: [Meta System Users](https://developers.facebook.com/docs/marketing-api/system-users/)
+2. **AI Chatbot Policy (Jan 2026):** Meta prohíbe chatbots IA de "propósito general". Solo se permiten assistentes task-specific (booking, soporte, tracking). CasaVitaCure es compliant (booking + scoring + escalation).
+3. **Tech Provider Status:** No requerido para el primer cliente. El track de Tech Provider (Embedded Signup, App Review) es para escalar a 15+ clientes — Phase 6+. Ref: [Meta Tech Provider](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/tech-provider/)
 
 ---
 
