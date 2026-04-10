@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
-from typing import Type, Dict, Any, List
+from typing import Type, Dict, Any, List, Optional
 from app.infrastructure.telemetry.logger_service import logger
 from app.core.models import TenantContext
 from app.core.exceptions import ProviderNotRegisteredError
@@ -21,7 +21,8 @@ class LLMStrategy(ABC):
         self, 
         system_prompt: str, 
         message_history: List[Dict[str, str]], 
-        tools: List[Dict[str, Any]]
+        tools: List[Dict[str, Any]],
+        tool_choice_override: Optional[Any] = None
     ) -> LLMResponse:
         pass
 

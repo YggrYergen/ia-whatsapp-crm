@@ -11,6 +11,37 @@ from app.modules.intelligence.tool_registry import tool_registry
 from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 import sentry_sdk
 
+# ============================================================
+# BUG-1 Layer 1: Internal System Prompt — Tool-Use Contract
+# These rules are injected at the CODE level, appended AFTER the
+# tenant-editable prompt. The tenant CANNOT modify or delete them.
+# This prevents the LLM from claiming it performed actions without
+# actually calling the corresponding tool functions.
+# ============================================================
+INTERNAL_TOOL_RULES = """
+[REGLAS INTERNAS DEL SISTEMA — NO MODIFICAR]
+- NUNCA afirmes que realizarás o realizaste una acción (agendar, cancelar, escalar, evaluar) sin EJECUTAR la herramienta correspondiente.
+- Si no puedes ejecutar una herramienta, admítelo honestamente al paciente.
+- Para escalar a un humano SIEMPRE usa 'request_human_escalation'. NO digas "voy a notificar" sin llamarla.
+- Para cancelar citas SIEMPRE usa 'delete_appointment'.
+- Para agendar SIEMPRE usa 'book_round_robin'.
+- Para evaluar scoring SIEMPRE usa 'update_patient_scoring'.
+- Si un resultado de herramienta indica ERROR, informa al paciente honestamente que la acción NO se completó.
+""".strip()
+
+# ============================================================
+# BUG-1 Layer 2: Silent Failure Detection Patterns
+# Maps tool names to text patterns that indicate the LLM is
+# claiming to perform the action without actually calling the tool.
+# ============================================================
+TOOL_ACTION_PATTERNS = [
+    ("request_human_escalation", ["escalar", "derivar a humano", "notificar a un agente", "transferir a", "asistencia humana", "voy a notificar"]),
+    ("update_patient_scoring", ["actualizar scoring", "puntaje", "evaluación de celulitis", "celludetox"]),
+    ("delete_appointment", ["cancelar cita", "eliminar cita", "cancelar tu hora", "cita ha sido cancelada"]),
+    ("book_round_robin", ["agendar", "reservar", "quedó confirmado", "cita confirmada", "reservar una hora"]),
+    ("get_merged_availability", ["verificar disponibilidad", "horarios disponibles"]),
+]
+
 class ProcessMessageUseCase:
     
     @staticmethod
@@ -136,12 +167,69 @@ class ProcessMessageUseCase:
             llm_strategy = LLMFactory.create(tenant_context=tenant)
             tools_schema = tool_registry.get_all_schemas(provider=tenant.llm_provider.lower())
             
-            system_prompt = f"{tenant.system_prompt}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nTeléfono: {patient_phone}\nRol: {contact_role}\nHora: {current_time_str}\n"
+            # ============================================================
+            # BUG-1 Layer 1: Inject INTERNAL_TOOL_RULES between tenant
+            # prompt and [CONTEXTO]. These are system-level safety rules
+            # the tenant cannot edit or accidentally delete.
+            # ============================================================
+            system_prompt = f"{tenant.system_prompt}\n\n{INTERNAL_TOOL_RULES}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nTeléfono: {patient_phone}\nRol: {contact_role}\nHora: {current_time_str}\n"
             if force_escalation:
                 system_prompt += "\n⚠️ RIESGO: Avisa amablemente que derivas a humano y usa 'request_human_escalation'."
 
-            response_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=tools_schema)
-            logger.info(f"✅ [ORCH] LLM Reply received. ToolCalls={response_dto.has_tool_calls}")
+            # ============================================================
+            # BUG-1 Layer 3: Conditional tool_choice override
+            # When force_escalation=True, force the LLM to call the
+            # escalation tool instead of just talking about it.
+            # Per OpenAI docs: {"type": "function", "function": {"name": X}}
+            # Ref: https://platform.openai.com/docs/guides/function-calling
+            # ============================================================
+            tool_choice_override = None
+            if force_escalation and tools_schema:
+                tool_choice_override = {"type": "function", "function": {"name": "request_human_escalation"}}
+                logger.info("🔒 [ORCH] force_escalation=True → tool_choice forced to 'request_human_escalation'")
+
+            response_dto = await llm_strategy.generate_response(
+                system_prompt=system_prompt,
+                message_history=history,
+                tools=tools_schema,
+                tool_choice_override=tool_choice_override
+            )
+            
+            # ============================================================
+            # BUG-1 Layer 4: Enhanced logging — full response details
+            # ============================================================
+            logger.info(f"✅ [ORCH] LLM Reply received. ToolCalls={response_dto.has_tool_calls} | ContentPreview='{(response_dto.content or '')[:150]}'")
+
+            # ============================================================
+            # BUG-1 Layer 2: Post-LLM Silent Failure Detection
+            # Detect the "Silence Pattern": LLM text implies a tool action
+            # (e.g., "voy a notificar a un agente") but has_tool_calls=False.
+            # This is a critical guardrail — log to Sentry + Discord.
+            # ============================================================
+            if not response_dto.has_tool_calls and response_dto.content:
+                content_lower = response_dto.content.lower()
+                for tool_name, patterns in TOOL_ACTION_PATTERNS:
+                    if any(p in content_lower for p in patterns):
+                        logger.warning(f"🚨 [ORCH] SILENT FAILURE DETECTED: LLM text implies '{tool_name}' but has_tool_calls=False")
+                        sentry_sdk.set_context("silent_failure", {
+                            "expected_tool": tool_name,
+                            "llm_content": response_dto.content[:500],
+                            "has_tool_calls": False,
+                            "tenant_id": str(tenant.id),
+                            "contact_id": str(contact_id) if contact_id else "unknown",
+                            "patient_phone": patient_phone,
+                            "force_escalation": force_escalation,
+                        })
+                        sentry_sdk.capture_message(
+                            f"LLM Silent Failure: implied '{tool_name}' without calling it",
+                            level="warning"
+                        )
+                        await send_discord_alert(
+                            title=f"🚨 LLM Silent Failure: {tool_name}",
+                            description=f"LLM text implied tool action but didn't call it.\nTenant: {tenant.id}\nPhone: {patient_phone}\nContent: {response_dto.content[:200]}",
+                            severity="warning"
+                        )
+                        break
 
             reply_text = response_dto.content or ""
             if response_dto.has_tool_calls:
@@ -153,18 +241,41 @@ class ProcessMessageUseCase:
                     try:
                         res = await tool_registry.execute_tool(t["name"], **args)
                         results.append(f"Tool {t['name']} result: {res}")
+                        # BUG-1 Layer 4: Log tool result for traceability
+                        logger.info(f"✅ [ORCH] Tool '{t['name']}' result: {str(res)[:300]}")
                     except Exception as e: 
                         results.append(f"Tool {t['name']} failed: {e}")
                         sentry_sdk.capture_exception(e)
                         await send_discord_alert(title=f"Tool Execution Error: {t['name']}", description=str(e), severity="warning", error=e)
                 
+                # ============================================================
+                # BUG-3 Fix: Tool Result Error Injection
+                # Before synthesis, check if any tool returned an error.
+                # If so, inject explicit instruction telling the LLM to
+                # report the failure honestly instead of lying about success.
+                # ============================================================
+                has_tool_error = any(
+                    '"status": "error"' in r or '"status":"error"' in r or "failed:" in r
+                    for r in results
+                )
+                
                 history.append({"role": "user", "content": f"[Resultados]: {results}"})
+                
+                if has_tool_error:
+                    logger.warning(f"⚠️ [ORCH] Tool returned error result — injecting honesty instruction for synthesis")
+                    history.append({
+                        "role": "user", 
+                        "content": "[INSTRUCCIÓN SISTEMA]: Uno o más resultados anteriores contienen un ERROR. "
+                                   "Informa al paciente honestamente que la acción NO se completó exitosamente. "
+                                   "NO digas que se realizó correctamente si el resultado indica error."
+                    })
+                
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
                 reply_text = final_dto.content or "Error final."
 
             if not reply_text: reply_text = "Lo siento, tuve un problema. ¿En qué te ayudo?"
 
-            logger.info(f"📤 [ORCH] Final Reply: '{reply_text[:50]}...'")
+            logger.info(f"📤 [ORCH] Final Reply: '{reply_text[:80]}...'")
 
             # ============================================================
             # PARALLEL: Persist assistant reply + send via Meta API + unset processing

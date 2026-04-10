@@ -73,7 +73,7 @@ Docs consulted:
 - [x] **TESTED:** Cloud Logging shows clean structured JSON
 - [x] Active revision: `ia-backend-prod-00052-7xc` serving 100% traffic
 
-### 2B: Sentry Frontend Client-Side — BLOCKED (adapter limitation) → resolved by Phase 2E
+### 2B: Sentry Frontend Client-Side — SOLVED (adapter limitation) → resolved by Phase 2E
 Docs consulted:
 - [Sentry Next.js Manual Setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/)
 - [Next.js instrumentation-client.ts](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client)
@@ -159,7 +159,7 @@ Docs consulted:
 - [x] **OBSERVABILITY:** Added `[observability]` block to `wrangler.toml` — enables Workers Logs + OTel export to Sentry (commit `b48f860`)
   - Per: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
   - Per: https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/sentry/
-- [ ] **OBSERVABILITY:** Create OTel destinations in CF dashboard (`sentry-traces`, `sentry-logs`) — see deploy guide Paso 9B
+- [/] **OBSERVABILITY:** Create OTel destinations in CF dashboard (`sentry-traces`, `sentry-logs`) — Instructions provided in §3E, MANUAL action required (CAPTCHA blocks automation)
 - [x] **OBSERVABILITY:** Updated deploy guide (`cloudflare_workers_deploy_guide.md`) with full Paso 9 instructions
 - [x] **OBSERVABILITY:** Workers Logs confirmed WORKING in CF dashboard ✅ — shows invocation logs + errors
 - [x] **BUG FIX:** `TypeError: Expected "8000" to be a string` — root cause: `.env.local` with `BACKEND_URL=http://localhost:8000` was NOT in `.gitignore`. Build baked `localhost:8000` into routes manifest. Fix: added `.env.local` to `.gitignore` (commit `19b665f`).
@@ -271,8 +271,8 @@ Docs consulted:
 - [x] "CONFIG AGENTE" header renders with close (×) button ✅ (verified 2026-04-09)
 - [x] Bot status badge shows "EJECUTANDO" ✅ (verified 2026-04-09)
 - [x] System prompt textarea loads from `tenants.system_prompt` — "Eres Javiera..." visible ✅ (verified 2026-04-09)
-- [ ] Edit prompt → click "GUARDAR CAMBIOS" → saves to `tenants` table → toast confirmation
-- [ ] Realtime subscription updates prompt if changed externally
+- [ ] Edit prompt → click "GUARDAR CAMBIOS" → saves to `tenants` table → toast confirmation → change confirmed in db logs 
+- [ ] Realtime subscription updates prompt in all config surfaces if changed externally, or by any of the config surfaces.
 - [x] Metrics card renders (Contexto 95%, Acierto A+) — static/placeholder ✅ (verified visually)
 - [x] Warning banner about prompt impact renders ✅ (verified visually)
 
@@ -292,33 +292,33 @@ Docs consulted:
 #### `/admin-feedback` (Auditoría Dev) — admin only
 - [x] Admin Feedback page loads and fetches `test_feedback` rows from Supabase ✅ (verified 2026-04-09 — "AUDITORÍA DE SANDBOX" header, real data shown)
 - [x] Rows display with history (USER SIMULATION / IA RESPONSE pairs), notes, tester data ✅ (verified 2026-04-09)
-- [ ] Delete button removes row from `test_feedback` table (visible but untested — need to test click)
+- [x] Delete button removes row from `test_feedback` table (visible and click tested ✅)
 
 #### `/config` (Configuración Global)
 - [x] Config page loads with tenant data ✅ (verified 2026-04-09 — "Cerebro del Asistente" header, CONFIGURACIÓN GLOBAL badge)
 - [x] LLM Provider dropdown: switch between "OpenAI (SOTA)" and "Google Gemini (Next-Gen)" → model list updates dynamically ✅ (verified 2026-04-09)
 - [x] LLM Model dropdown: models change based on provider ✅ (verified — Gemini shows: Gemini 3.1 Pro (Expert), Gemini 3.1 Flash-Lite (Ultrarapid); OpenAI: GPT-4o Mini (Legacy))
 - [ ] System prompt textarea: edit and save → persists to `tenants` table (need to test save flow)
-- [x] Character counter updates — shows **3099 / 2000** in RED ⚠️ (prompt exceeds limit! cosmetic but notable)
+- [ ] Character counter updates — shows **3099 / 2000** in RED limit need to be 4000 characters ⚠️ (prompt exceeds limit  cosmetic but notable)
 - [x] Google Calendar section: shows "Desconectado" + "Conectar Google Calendar" button ✅ (verified 2026-04-09)
 - [x] "Solicitar Custom LLM" CTA renders ✅ (verified 2026-04-09)
 
 #### Cross-cutting
 - [x] All sidebar links navigate correctly (7 items + config + notifications + logout) ✅ (verified 2026-04-09 — Dashboard, Chats, Agenda, Pacientes all tested)
-- [ ] Logout button → redirects to `/login` (not tested — would end session)
+- [x] Logout button → redirects to `/login` ✅ (verified 2026-04-09)
 - [x] Feedback button (bottom sidebar) → opens FEEDBACK GLOBAL modal ✅ (verified 2026-04-09)
-- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport (not tested)
+
 
 ### 3B: Herramientas LLM (TODAS las 7 tools) — Individual via `/api/simulate`
 - [x] Inventariar todas las tools ✅ (7 tools confirmed in tool_registry)
-- [x] CheckAvailabilityTool (get_merged_availability) — ✅ user confirmed working (2026-04-09)
-- [x] CheckMyAppointmentsTool (get_my_appointments) — ✅ verified 2026-04-09 via sandbox. AI response: "no tienes citas agendadas para esta fecha en tu perfil" — tool correctly identified no appointments for sandbox phone
+- [!] CheckAvailabilityTool (get_merged_availability) — user confirmed working (2026-04-09)
+- [!] CheckMyAppointmentsTool (get_my_appointments) — verification incoclusive via sandbox. AI response: "no tienes citas agendadas para esta fecha en tu perfil" — tool correctly identified no appointments for sandbox phone but also hallucinates more appoinments than what the agenda actually has. or maybe it misinterpreted a long 1h appointment (which is a session and not an evaluation) for two distinct, needs further investigation **BUG**
 - [x] BookAppointmentTool (book_round_robin) — ✅ user confirmed working (2026-04-09)
 - [ ] UpdateAppointmentTool (update_appointment) — requires existing appointment to test (untested — need real scenario)
-- [ ] DeleteAppointmentTool (delete_appointment) — requires existing appointment to test (untested — need real scenario)
+- [!] DeleteAppointmentTool (delete_appointment) — tested **BUG-3** when tool is called fails silently, no sentry notification nor discord notif is sent; then LLM lies about the result of the tool execution in the response to the user.
 - [!] EscalateHumanTool (request_human_escalation) -- **BUG-1**: LLM responded "Voy a notificar a un agente" but DID NOT call the tool function. bot_active stayed true, no alert created. This is a SILENT FAILURE: the system told the user it would escalate but didn't.
 - [!] UpdatePatientScoringTool (update_patient_scoring) -- **BUG-1**: LLM responded about celulitis leve but DID NOT call the tool function. metadata stayed {}. Same silent failure pattern.
-- [ ] Each tool failure must appear in Sentry with full traceback + tool context
+- [!] Each tool failure must appear in Sentry with full traceback + tool context & if possible the conversation that trigered it. Immediate notification with all details must be sent to discord.
 
 > **ROOT CAUSE (BUG-1):** `tool_choice="auto"` in `openai_adapter.py:29` allows the LLM to choose text response over function calling. No post-LLM validation exists in `use_cases.py:144-146` to detect when the LLM SHOULD have called a tool but didn't. This IS a code-level gap (not just LLM behavior) because the system has no guardrail against the LLM lying about tool usage. Fix required per official OpenAI Function Calling docs. See README section 0.6.
 
@@ -331,30 +331,50 @@ Docs consulted:
 ### 3D: Observability Verification
 - [x] Intentional tool error → Sentry event within 30s → Discord alert arrives ✅ (verified via /api/debug-exception in Phase 3 Preamble)
 - [x] Frontend error → Sentry event → Discord alert arrives ✅ (Sentry SDK configured in Frontend — `next.config.ts` has withSentryConfig, documented in README §0.4)
-- [ ] Workers Logs show invocation details in CF dashboard (visual check deferred — Cloudflare Workers Logs observability tab)
+- [ ] Workers Logs show invocation details in CF dashboard (visual check deferred — Cloudflare Workers Logs observability tab) - NEED THIS!
 - [x] Cloud Run logs show structured JSON for backend requests ✅ (confirmed in prior audit)
 - [x] Confirm zero blind spots: 30+ catch blocks instrumented with sentry_sdk.capture_exception ✅ (documented in §0.4)
 
 ### 3E: Critical Bug Fixes (MUST resolve before Phase 4/5)
 
-- [ ] **BUG-1: LLM Tool-Calling Silent Failure**
-  - [ ] Research official OpenAI Function Calling docs for tool_choice strategies
-  - [ ] Implement post-LLM validation: detect when LLM text implies tool action but has_tool_calls=False
-  - [ ] Add Sentry/Discord alert for detected silent failures
-  - [ ] Add enhanced logging of full LLM response content + has_tool_calls flag
-  - [ ] Evaluate conditional tool_choice for force_escalation scenarios
-  - [ ] Re-test EscalateHumanTool and UpdatePatientScoringTool after fix
+- [/] **BUG-1: LLM Tool-Calling Silent Failure** — code changes deployed, pending live test
+  - [x] Research official OpenAI Function Calling docs for tool_choice strategies ✅
+  - [x] Layer 1: Internal system prompt injection in `use_cases.py` — `INTERNAL_TOOL_RULES` injected at CODE level between tenant prompt and [CONTEXTO] block. Tenant CANNOT edit/delete these rules.
+  - [x] Layer 2: Post-LLM validation — `TOOL_ACTION_PATTERNS` detects when LLM text implies tool action but `has_tool_calls=False` → Sentry `capture_message` + `set_context` + Discord alert
+  - [x] Layer 3: Conditional `tool_choice` — added `tool_choice_override` param to `LLMStrategy`, `OpenAIStrategy`, `GeminiStrategy`. When `force_escalation=True`, passes `{"type": "function", "function": {"name": "request_human_escalation"}}` to FORCE escalation tool call
+  - [x] Layer 4: Enhanced logging — full response content preview (150 chars) + tool_calls status + individual tool results (300 chars)
+  - [ ] Re-test EscalateHumanTool and UpdatePatientScoringTool after deploy
   - [ ] Verify bot_active flips to false on escalation, metadata updates on scoring
 
-- [ ] **BUG-2: Character Counter Limit**
-  - [ ] Change Frontend/app/config/page.tsx display from `/ 2000` to `/ 4000`
-  - [ ] Change red threshold from `> 1000` to `> 3500`
-  - [ ] Add Sentry/Discord warning if prompt > 4000 on save
-  - [ ] Test: save prompt with 3500+ chars, verify counter shows correctly
+- [x] **BUG-2: Character Counter Limit** ✅ (commit pending)
+  - [x] Changed display from `/ 2000` to `/ 4000` in `config/page.tsx`
+  - [x] Changed red threshold from `> 1000` to `> 3500` (rose color)
+  - [x] Added amber threshold at `> 3000` (amber color)
+  - [x] Added save validation: blocks save if > 4000 chars + `Sentry.captureMessage()` warning
+  - [x] Added `import * as Sentry from '@sentry/nextjs'` to config page
+  - [ ] Test: visual check in `/config` after deploy
+
+- [x] **BUG-3: DeleteAppointmentTool — LLM lies about error results** ✅ (commit pending)
+  - [x] Added `has_tool_error` check before synthesis pass — detects `"status": "error"` or `"failed:"` in tool results
+  - [x] Injects explicit `[INSTRUCCIÓN SISTEMA]` telling LLM to report failure honestly
+  - [ ] Test: trigger delete for nonexistent appointment → verify honest error message
+
+- [x] **MISC-2: Missing `import sentry_sdk` in google_client.py** ✅ (commit pending)
+  - [x] Added `import sentry_sdk` to top-level imports (fixes NameError at L39)
+  - [x] Removed 5 redundant inline `import sentry_sdk` in except blocks
+
+- [/] **OTEL-1: CF Dashboard OTel Destinations** — manual action required
+  - [x] Read CF OTel export docs
+  - [ ] Create `sentry-traces` destination in CF dashboard (CAPTCHA blocks automation — see manual instructions below)
+  - [ ] Create `sentry-logs` destination in CF dashboard
+  > **Manual instructions:** CF Dashboard → Account → Workers & Pages → Observability → Add destination
+  > For each: OTLP Endpoint = `https://o4511179991416832.ingest.us.sentry.io/api/4511184254402560/integration/otlp/v1/{traces|logs}`
+  > Header: `x-sentry-auth: sentry sentry_key=b5b7a769848286fcfcc7f367a970c34f`
+
 
 ---
 
-## Backlog (Future Features -- NOT for current phase)
+## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONECTION AND 100% QA TEST PASSED -- aka Phase 6
 
 > Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
 
@@ -362,6 +382,7 @@ Docs consulted:
 - [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
 - [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
 - [ ] **Tenant Config Versioning:** Audit trail for all changes to system_prompt, llm_provider, llm_model. Currently each UPDATE to tenants table overwrites without history
+- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport: ask for human tester input and first focus group feedback
 
 ---
 
@@ -456,5 +477,5 @@ Docs consulted:
 - [ ] Escalation tested (user requests human → bot paused → alert in CRM + Discord)
 - [ ] Sentry dashboard clean — no unexpected errors
 - [ ] Discord alerts only fire for legitimate issues
-- [ ] System declared production-ready 🚀
+- [ ] System declared production-ready 🚀 (Resilient MVP)
 

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase'
 import { Save, Bot, Info, Sparkles, Zap, ChevronLeft, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -28,6 +29,13 @@ export default function ConfigPanel() {
 
     const handleSave = async () => {
         if (!tenant) return
+        // BUG-2 fix: Block save if system prompt exceeds 4000 characters
+        // This is a hard limit to prevent excessively long prompts from degrading LLM performance
+        if (tenant.system_prompt && tenant.system_prompt.length > 4000) {
+            Sentry.captureMessage(`System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars`, 'warning')
+            alert(`El System Prompt excede el límite de 4000 caracteres (actual: ${tenant.system_prompt.length}). Por favor reduce el contenido antes de guardar.`)
+            return
+        }
         setSaving(true)
         const { error } = await supabase.from('tenants').update({
             llm_provider: tenant.llm_provider,
@@ -157,8 +165,8 @@ export default function ConfigPanel() {
                                     <label className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
                                         System Prompt (Identidad y Reglas)
                                     </label>
-                                    <Badge variant="outline" className={`font-black text-[10px] ${tenant.system_prompt?.length > 1000 ? 'text-rose-600 border-rose-200 bg-rose-50' : 'text-slate-400'}`}>
-                                        {tenant.system_prompt?.length || 0} / 2000 caracteres
+                                    <Badge variant="outline" className={`font-black text-[10px] ${(tenant.system_prompt?.length || 0) > 3500 ? 'text-rose-600 border-rose-200 bg-rose-50' : (tenant.system_prompt?.length || 0) > 3000 ? 'text-amber-600 border-amber-200 bg-amber-50' : 'text-slate-400'}`}>
+                                        {tenant.system_prompt?.length || 0} / 4000 caracteres
                                     </Badge>
                                 </div>
                                 <div className="relative group">

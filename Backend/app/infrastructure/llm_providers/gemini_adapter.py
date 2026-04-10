@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.modules.intelligence.router import LLMStrategy, LLMResponse
 from app.core.config import settings
 from app.infrastructure.telemetry.logger_service import logger
@@ -18,7 +18,7 @@ class GeminiStrategy(LLMStrategy):
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel(self.model_id)
 
-    async def generate_response(self, system_prompt: str, message_history: List[Dict[str, str]], tools: List[Dict[str, Any]]) -> LLMResponse:
+    async def generate_response(self, system_prompt: str, message_history: List[Dict[str, str]], tools: List[Dict[str, Any]], tool_choice_override: Optional[Any] = None) -> LLMResponse:
         if not genai: return LLMResponse(content="Gemini SDK failure.")
             
         try:
