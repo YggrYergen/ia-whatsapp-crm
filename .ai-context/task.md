@@ -384,46 +384,6 @@ Docs consulted:
 - [x] **FIX: Tool error Sentry/Discord gap** — `status:error` tool responses now ALWAYS fire Sentry + Discord (previously only Python exceptions triggered alerts)
 - [x] **FIX: BUG-3 business vs crash differentiation** — Natural relay for business errors ("no appointment found"), escalation message only for actual crashes
 
-
----
-
-## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONNECTION AND 100% QA TEST PASSED -- aka Phase 6
-
-> Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
-
-### HIGH PRIORITY — Tenant Assistant Config Revamp
-
-> **Context:** The current `/config` route only controls system_prompt + LLM provider/model. There is no way for owners to control WHICH tools are active, test changes safely, or rollback bad configs. This was surfaced during Phase 3E testing when `update_patient_scoring` couldn't fire because the tool wasn't in the tenant's configured tool list.
-
-- [ ] **`/config` as Live Agent Controller:** The config route should be the sole control surface for the live assistant's behavior — prompt, model, active tools, personality, response rules
-- [ ] **Chat de Pruebas as Safe Testing Ground:** The sandbox chat should let owners test modifications to their assistant config BEFORE those changes go live. Changes made in config should be testable in sandbox before committing to production
-- [ ] **Config Versioning & Rollback:** Every config change (prompt, model, tools) must be versioned with timestamp + author. Owners should be able to instantly rollback to any previous config version. Database schema change: `tenant_config_versions` table with JSON snapshots
-- [ ] **Tool On/Off Toggle:** Owners must be able to enable/disable individual tools in real time from the config surface. E.g., disable `delete_appointment` during a migration, enable `update_patient_scoring` when scoring criteria are ready. This affects what schemas get sent to the LLM
-- [ ] **Sandbox Role Selector Enhancement:** The sandbox chat already has a role switcher (cliente/staff/admin). Needs to be more prominent and its implications clearly documented. Different roles should demonstrate different tool access levels (e.g., admin can delete any appointment, cliente only their own)
-
-### HIGH PRIORITY — Agenda Visual Revamp
-
-> **Context:** The agenda viewer needs significant UI improvements, especially for mobile viewports where many elements don't fit properly.
-
-- [ ] **Mobile Layout Overhaul:** Agenda components overflow on small screens. Needs responsive redesign — possibly card-based layout for mobile instead of calendar grid
-- [ ] **Date Navigation:** Users need to scroll back and forth through days, weeks, months. This requires careful architectural thought:
-  - Data fetching strategy (lazy load vs pre-fetch range)
-  - URL state management (shareable links to specific date ranges)
-  - Performance for large appointment volumes
-  - Touch gestures for mobile (swipe between days/weeks)
-- [ ] **Design System Alignment:** Agenda should match the overall CRM aesthetic (glassmorphism, micro-animations, premium feel)
-
-### MEDIUM PRIORITY
-
-- [ ] **Bot Pause Notifications:** Every time bot is paused (by human hand, by EscalateHumanTool, by any system rule) must generate Sentry event + Discord notification + in-app notification to admins/staff as configured by tenant
-- [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
-- [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
-- [ ] **Tenant Config Versioning (DB schema):** `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools. Each UPDATE creates a version snapshot
-- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport: ask for human tester input and first focus group feedback
-
-### LOW PRIORITY / FUTURE
-- [ ] **BUG-4 (CheckMyAppointments hallucination):** LLM invents appointment details. Needs diagnostic data capture + prompt refinement. Deferred pending Phase 6 tool config revamp
-
 ---
 
 ## Phase 4: Production / Development Environment Separation
@@ -432,14 +392,19 @@ Docs consulted:
 
 > **Infrastructure to respect (must not be broken):**
 > - Database: 2 separate Supabase projects — prod (`nemrjlimrnrusodivtoa`) and dev (`nzsksjczswndjjbctasu`)
-> - Backend: Cloud Run `ia-backend-prod`, `europe-west1`, auto-deploys from `main` via Cloud Build
-> - Frontend: Cloudflare Worker `ia-whatsapp-crm`, auto-deploys from `main` via Workers Builds
+> - prod Backend: Cloud Run `ia-backend-prod`, `europe-west1`, auto-deploys from `main` via Cloud Build
+> - prod Frontend: Cloudflare Worker `ia-whatsapp-crm`, auto-deploys from `main` via Workers Builds
+> - dev Backend must be configured to cloud run ia-backend-dev (which i think is already deployed, this one has to have the min workers to 0 so it can shut off if not being used and max to 1 worker), this time the regions server must be researched thorougly we are looking for the cheapest one available NEAREST to chile (thorough research and backed on facts decision with citing and links to confirm it was the right choice) with auto-deploy on updates on the desarrollo github branch.
+> - dev Frontend: must be configured on new Cloudflare Worker `dev-ia-whatsapp-crm`, auto-deploys from `desarrollo` via Workers Builds
+> - Both dev front and back need the same thorough implementation of sentry and discord notifications but it has to be clear that these come from the dev branch. research this thoroughly on official docs on how to achieve this before implementing anything.
 
 ### 4A: Audit Current State
 - [ ] Verify exactly which triggers exist (Cloud Build, Workers Builds)
 - [ ] Verify what branches they listen to
 - [ ] Verify what env vars each system uses
 - [ ] Document current state before making ANY changes
+- [ ] Research and document in the official docs on how to best set this up: google cloud run docs, sentry docs, cloudflare (it might have problems with having two autodeploys for different branches of the same repo? might not even be possible? this needs to be checked)
+- [ ] Research the best strategy given the configuration to send the dev changes -once fully tested and aproved- to the prod without breaking stuff, front, back and db's.
 
 ### 4B: Dev Backend Setup
 - [ ] Create or configure dev Cloud Run service (`ia-backend-dev`) pointing to dev Supabase DB
@@ -519,3 +484,41 @@ Docs consulted:
 - [ ] Discord alerts only fire for legitimate issues
 - [ ] System declared production-ready 🚀 (Resilient MVP)
 
+---
+
+## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONNECTION AND 100% QA TEST PASSED -- aka Phase 6
+
+> Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
+
+### HIGH PRIORITY — Tenant Assistant Config Revamp
+
+> **Context:** The current `/config` route only controls system_prompt + LLM provider/model. There is no way for owners to control WHICH tools are active, test changes safely, or rollback bad configs. This was surfaced during Phase 3E testing when `update_patient_scoring` couldn't fire because the tool wasn't in the tenant's configured tool list.
+
+- [ ] **`/config` as Live Agent Controller:** The config route should be the sole control surface for the live assistant's behavior — prompt, model, active tools, personality, response rules
+- [ ] **Chat de Pruebas as Safe Testing Ground:** The sandbox chat should let owners test modifications to their assistant config BEFORE those changes go live. Changes made in config should be testable in sandbox before committing to production
+- [ ] **Config Versioning & Rollback:** Every config change (prompt, model, tools) must be versioned with timestamp + author. Owners should be able to instantly rollback to any previous config version. Database schema change: `tenant_config_versions` table with JSON snapshots
+- [ ] **Tool On/Off Toggle:** Owners must be able to enable/disable individual tools in real time from the config surface. E.g., disable `delete_appointment` during a migration, enable `update_patient_scoring` when scoring criteria are ready. This affects what schemas get sent to the LLM
+- [ ] **Sandbox Role Selector Enhancement:** The sandbox chat already has a role switcher (cliente/staff/admin). Needs to be more prominent and its implications clearly documented. Different roles should demonstrate different tool access levels (e.g., admin can delete any appointment, cliente only their own)
+
+### HIGH PRIORITY — Agenda Visual Revamp
+
+> **Context:** The agenda viewer needs significant UI improvements, especially for mobile viewports where many elements don't fit properly.
+
+- [ ] **Mobile Layout Overhaul:** Agenda components overflow on small screens. Needs responsive redesign — possibly card-based layout for mobile instead of calendar grid
+- [ ] **Date Navigation:** Users need to scroll back and forth through days, weeks, months. This requires careful architectural thought:
+  - Data fetching strategy (lazy load vs pre-fetch range)
+  - URL state management (shareable links to specific date ranges)
+  - Performance for large appointment volumes
+  - Touch gestures for mobile (swipe between days/weeks)
+- [ ] **Design System Alignment:** Agenda should match the overall CRM aesthetic (glassmorphism, micro-animations, premium feel)
+
+### MEDIUM PRIORITY
+
+- [ ] **Bot Pause Notifications:** Every time bot is paused (by human hand, by EscalateHumanTool, by any system rule) must generate Sentry event + Discord notification + in-app notification to admins/staff as configured by tenant
+- [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
+- [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
+- [ ] **Tenant Config Versioning (DB schema):** `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools. Each UPDATE creates a version snapshot
+- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport: ask for human tester input and first focus group feedback
+
+### LOW PRIORITY / FUTURE
+- [ ] **BUG-4 (CheckMyAppointments hallucination):** LLM invents appointment details. Needs diagnostic data capture + prompt refinement. Deferred pending Phase 6 tool config revamp

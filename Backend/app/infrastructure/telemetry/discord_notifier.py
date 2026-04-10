@@ -6,10 +6,24 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# Environment auto-detection for Discord alerts.
+# When ENVIRONMENT != "production", ALL alerts are prefixed
+# with [🔧 DESARROLLO] so it's impossible to confuse dev
+# alerts with production alerts in Discord.
+# Ref: controlled by ENVIRONMENT env var in Cloud Run.
+# ============================================================
+_IS_PRODUCTION = (getattr(settings, "ENVIRONMENT", "development") == "production")
+_ENV_PREFIX = "" if _IS_PRODUCTION else "[🔧 DESARROLLO] "
+_ENV_LABEL = "production" if _IS_PRODUCTION else "desarrollo"
+
 async def send_discord_alert(title: str, description: str, error: Exception = None, severity: str = "error"):
     """
     Sends an alert to Discord using Webhooks.
     Severity can be 'error', 'warning', 'info'
+    
+    In non-production environments, all titles are auto-prefixed
+    with [🔧 DESARROLLO] for immediate visual distinction.
     """
     webhook_url = getattr(settings, "DISCORD_WEBHOOK_URL", None)
     if not webhook_url:
@@ -23,10 +37,16 @@ async def send_discord_alert(title: str, description: str, error: Exception = No
     }
     
     embed = {
-        "title": title,
+        "title": f"{_ENV_PREFIX}{title}",
         "description": description,
         "color": color_map.get(severity, 16711680),
-        "fields": []
+        "fields": [
+            {
+                "name": "🌍 Environment",
+                "value": f"`{_ENV_LABEL}`",
+                "inline": True
+            }
+        ]
     }
 
     if error:
@@ -55,3 +75,4 @@ async def send_discord_alert(title: str, description: str, error: Exception = No
             await client.post(webhook_url, json=payload, timeout=5.0)
     except Exception as e:
         logger.error(f"Failed to send Discord alert: {e}")
+
