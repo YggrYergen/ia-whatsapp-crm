@@ -148,7 +148,13 @@ class ProcessMessageUseCase:
                     hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
                     if hist_res.data:
                         for m in reversed(hist_res.data):
-                            rol = "assistant" if m["sender_role"] == "assistant" else "user"
+                            sr = m["sender_role"]
+                            if sr == "system_alert":
+                                continue  # System alerts are not part of the conversation
+                            elif sr in ("assistant", "human_agent"):
+                                rol = "assistant"  # Both AI and staff are "business side"
+                            else:
+                                rol = "user"
                             history.append({"role": rol, "content": m["content"]})
                 return history
 
