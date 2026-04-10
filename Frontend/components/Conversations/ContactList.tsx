@@ -24,7 +24,7 @@ export default function ContactList() {
     if (isLoadingAuth) {
         return (
             <div className={`
-                bg-white border-r border-slate-200 flex-col flex-shrink-0 z-10 w-full relative
+                bg-white border-r border-slate-200 flex-col flex-shrink-0 z-10 w-full h-full relative
                 ${mobileView === 'list' ? 'flex absolute inset-0 md:static md:w-[320px] lg:w-[380px]' : 'hidden md:flex md:w-[320px] lg:w-[380px]'}
             `}>
                 <div className="h-[72px] bg-white px-4 md:px-5 flex items-center border-b border-slate-100 flex-shrink-0">
@@ -47,7 +47,7 @@ export default function ContactList() {
 
     return (
         <div className={`
-            bg-white border-r border-slate-200 flex-col flex-shrink-0 z-10 w-full relative
+            bg-white border-r border-slate-200 flex-col flex-shrink-0 z-10 w-full h-full relative
             ${mobileView === 'list' ? 'flex absolute inset-0 md:static md:w-[320px] lg:w-[380px]' : 'hidden md:flex md:w-[320px] lg:w-[380px]'}
         `}>
             {/* Header / Search */}

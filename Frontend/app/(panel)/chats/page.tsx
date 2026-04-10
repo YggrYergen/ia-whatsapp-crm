@@ -18,6 +18,7 @@ export default function ChatsPage() {
       <div className={`
         ${mobileView === 'list' ? 'flex w-full' : 'hidden'} 
         lg:flex lg:w-[320px] xl:w-[380px] border-r border-slate-200
+        flex-col h-full flex-shrink-0
       `}>
         <ContactList />
       </div>
