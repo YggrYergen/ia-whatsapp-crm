@@ -121,6 +121,7 @@ class ProcessMessageUseCase:
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Msg persistence err: {e}")
                     sentry_sdk.capture_exception(e)
+                    await send_discord_alert(title=f"❌ Msg Persistence Error | Tenant {tenant.id}", description=f"Failed to persist inbound message for contact {contact_id}: {str(e)[:300]}", severity="error", error=e)
 
             # ============================================================
             # STEP 2: Logic routing (Bot Active check)
@@ -362,3 +363,4 @@ class ProcessMessageUseCase:
                     await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
                 except Exception as cleanup_err:
                     sentry_sdk.capture_exception(cleanup_err)
+                    await send_discord_alert(title=f"🔒 Processing Lock Cleanup Failed | Contact {contact_id}", description=f"Failed to reset is_processing_llm=False. Contact may be permanently locked: {str(cleanup_err)[:300]}", severity="error", error=cleanup_err)

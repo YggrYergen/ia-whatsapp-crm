@@ -2,6 +2,8 @@ from typing import List, Dict, Any, Optional
 from app.modules.intelligence.router import LLMStrategy, LLMResponse
 from app.core.config import settings
 from app.infrastructure.telemetry.logger_service import logger
+import sentry_sdk
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 
 try:
     import google.generativeai as genai
@@ -26,4 +28,11 @@ class GeminiStrategy(LLMStrategy):
             return LLMResponse(content="Mock structural inference.")
         except Exception as e:
             logger.error(f"Generative AI Fail sequence triggered: {str(e)}")
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title="💥 Gemini LLM Error",
+                description=f"Gemini inference failed: {str(e)[:300]}",
+                severity="error",
+                error=e
+            )
             raise

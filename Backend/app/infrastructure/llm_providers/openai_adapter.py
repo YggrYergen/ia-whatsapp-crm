@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from app.modules.intelligence.router import LLMStrategy, LLMResponse
 from app.core.config import settings
 from app.infrastructure.telemetry.logger_service import logger
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 import sentry_sdk
 
 try:
@@ -68,4 +69,10 @@ class OpenAIStrategy(LLMStrategy):
         except Exception as e:
             logger.error(f"OpenAI Fault: {str(e)}")
             sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title="💥 OpenAI LLM Error",
+                description=f"OpenAI inference failed (model={self.model_id}): {str(e)[:300]}",
+                severity="error",
+                error=e
+            )
             raise
