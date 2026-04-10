@@ -29,12 +29,10 @@ export default function ConfigPanel() {
 
     const handleSave = async () => {
         if (!tenant) return
-        // BUG-2 fix: Block save if system prompt exceeds 4000 characters
-        // This is a hard limit to prevent excessively long prompts from degrading LLM performance
+        // BUG-2 fix: Warn via Sentry if system prompt exceeds 4000 characters
+        // Soft warning only — save is NOT blocked (user may have valid reasons for long prompts)
         if (tenant.system_prompt && tenant.system_prompt.length > 4000) {
             Sentry.captureMessage(`System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars`, 'warning')
-            alert(`El System Prompt excede el límite de 4000 caracteres (actual: ${tenant.system_prompt.length}). Por favor reduce el contenido antes de guardar.`)
-            return
         }
         setSaving(true)
         const { error } = await supabase.from('tenants').update({

@@ -266,8 +266,11 @@ class ProcessMessageUseCase:
                     history.append({
                         "role": "user", 
                         "content": "[INSTRUCCIÓN SISTEMA]: Uno o más resultados anteriores contienen un ERROR. "
-                                   "Informa al paciente honestamente que la acción NO se completó exitosamente. "
-                                   "NO digas que se realizó correctamente si el resultado indica error."
+                                   "Informa al paciente amablemente que hubo un inconveniente técnico al procesar su solicitud, "
+                                   "que ya se notificó a un miembro del equipo humano para que intervenga en la conversación, "
+                                   "y que el equipo técnico fue alertado del problema. "
+                                   "Tranquiliza al paciente y continúa la conversación normalmente para ayudar en lo que puedas. "
+                                   "NO digas que la acción se realizó correctamente si el resultado indica error."
                     })
                 
                 final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
