@@ -32,10 +32,11 @@ service = "ia-whatsapp-crm"
 # Workers Logs: enables console.log + invocation logs in the CF dashboard.
 # Ref: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
 #
-# OTel Export → Sentry: exports traces and logs to Sentry via OTLP.
-# Destination names MUST match those created in the CF dashboard at:
-#   Account → Workers & Pages → Observability → Pipelines → Add destination
-# Ref: https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/sentry/
+# NOTE: OTel OTLP export to Sentry (destinations) requires Workers PAID plan.
+# Currently on Free plan, so destinations are commented out.
+# When upgrading, uncomment destinations and create them in CF dashboard:
+#   Account → Workers & Pages → Observability → Add destination
+#   Ref: https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/sentry/
 [observability]
 enabled = true
 head_sampling_rate = 1
@@ -43,8 +44,8 @@ head_sampling_rate = 1
 [observability.logs]
 enabled = true
 invocation_logs = true
-destinations = [ "sentry-logs" ]
+# destinations = [ "sentry-logs" ]  # Requires Workers Paid plan
 
 [observability.traces]
 enabled = true
-destinations = [ "sentry-traces" ]
+# destinations = [ "sentry-traces" ]  # Requires Workers Paid plan

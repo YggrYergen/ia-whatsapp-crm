@@ -365,11 +365,11 @@ Docs consulted:
 
 - [/] **OTEL-1: CF Dashboard OTel Destinations** — manual action required
   - [x] Read CF OTel export docs
-  - [ ] Create `sentry-traces` destination in CF dashboard (CAPTCHA blocks automation — see manual instructions below)
-  - [ ] Create `sentry-logs` destination in CF dashboard
-  > **Manual instructions:** CF Dashboard → Account → Workers & Pages → Observability → Add destination
-  > For each: OTLP Endpoint = `https://o4511179991416832.ingest.us.sentry.io/api/4511184254402560/integration/otlp/v1/{traces|logs}`
-  > Header: `x-sentry-auth: sentry sentry_key=b5b7a769848286fcfcc7f367a970c34f`
+  - [x] ~~Create `sentry-traces` destination in CF dashboard~~ — **BLOCKED: requires Workers Paid plan (currently on Free)**
+  - [x] ~~Create `sentry-logs` destination in CF dashboard~~ — same
+  - [x] Commented out `destinations` in `wrangler.toml` with upgrade instructions
+  > **Resolution:** OTLP export is a Workers Paid feature. Observability is NOT blocked — backend has `sentry_sdk` (Cloud Run), frontend has `@sentry/nextjs`, and basic Workers Logs (CF dashboard) are still active on Free plan. OTLP destinations deferred until plan upgrade.
+
 
 
 ---
