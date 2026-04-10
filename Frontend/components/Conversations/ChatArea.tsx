@@ -143,8 +143,8 @@ export default function ChatArea() {
     return (
         <div
             className={`
-                flex-col relative bg-cover bg-center flex-1
-                ${mobileView === 'chat' ? 'flex w-full absolute inset-0 z-[60] md:static md:w-auto md:z-auto' : 'hidden md:flex'}
+                flex-col relative bg-cover bg-center flex-1 h-full
+                ${mobileView === 'chat' ? 'flex w-full absolute inset-0 z-[60] md:static md:w-auto md:z-auto md:inset-auto' : 'hidden md:flex'}
             `}
             style={{ backgroundColor: '#efeae2' }}
         >
@@ -316,9 +316,9 @@ export default function ChatArea() {
 
             {/* Input Bar */}
             <form onSubmit={handleSendMessage} className={`
-                bg-[#f0f2f5] px-3 md:px-5 py-3 md:py-4 flex gap-2 md:gap-3 items-center z-20 pb-safe relative
+                bg-[#f0f2f5] px-3 md:px-5 py-3 md:py-4 flex gap-2 md:gap-3 items-center z-20 pb-safe relative flex-shrink-0
                 ${!selectedContact.bot_active && !isTestContact ? 'border-t-4 border-amber-400' : ''}
-                pb-[100px] md:pb-4
+                pb-[env(safe-area-inset-bottom,16px)] md:pb-4
             `}>
                 {!selectedContact.bot_active && !isTestContact && (
                     <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-[10px] font-bold px-4 py-1 rounded-t-lg flex items-center gap-1 shadow-sm">
