@@ -2,6 +2,7 @@ import os
 import httpx
 import traceback
 import logging
+import sentry_sdk
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -74,5 +75,8 @@ async def send_discord_alert(title: str, description: str, error: Exception = No
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json=payload, timeout=5.0)
     except Exception as e:
+        # Discord itself failed — at least capture in Sentry so we know
         logger.error(f"Failed to send Discord alert: {e}")
+        sentry_sdk.capture_exception(e)
+
 

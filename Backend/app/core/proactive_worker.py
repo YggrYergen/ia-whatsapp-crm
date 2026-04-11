@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 from app.infrastructure.telemetry.logger_service import logger
 from app.infrastructure.database.supabase_client import SupabasePooler
 from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 from app.core.config import settings
+import sentry_sdk
 import httpx
 
 class ProactiveWorker:
@@ -23,8 +25,16 @@ class ProactiveWorker:
                 await self.process_tasks()
             except httpx.ConnectError:
                 logger.warning("⚠️ Proactive Worker: Temporary network connection issue to DB ignored. Retrying next tick.")
+                sentry_sdk.capture_message("Proactive Worker: network connect error", level="warning")
             except Exception as e:
                 logger.error(f"❌ Error in Proactive Worker loop: {e}", exc_info=True)
+                sentry_sdk.capture_exception(e)
+                await send_discord_alert(
+                    title="❌ Proactive Worker Error",
+                    description=f"Worker loop exception: {str(e)[:300]}",
+                    severity="error",
+                    error=e
+                )
             await asyncio.sleep(self.interval)
 
     async def process_tasks(self):

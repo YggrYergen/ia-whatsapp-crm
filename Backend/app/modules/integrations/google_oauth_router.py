@@ -15,6 +15,8 @@ from cryptography.fernet import Fernet
 
 from app.infrastructure.database.supabase_client import SupabasePooler
 from app.infrastructure.telemetry.logger_service import logger
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+import sentry_sdk
 
 router = APIRouter(prefix="/api/google", tags=["google-oauth"])
 
@@ -100,53 +102,80 @@ async def google_callback(code: str, state: str):
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/google/callback")
     client_config = _get_google_client_config()
 
-    flow = Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=redirect_uri)
-    flow.fetch_token(code=code)
-
-    credentials = flow.credentials
-    if not credentials.refresh_token:
-        raise HTTPException(400, "No refresh token received. User may need to re-authorize with prompt=consent.")
-
-    # Get user email from ID token
-    from google.oauth2 import id_token as gid_token
-    from google.auth.transport import requests as google_requests
     try:
-        id_info = gid_token.verify_oauth2_token(
-            credentials.id_token,
-            google_requests.Request(),
-            credentials.client_id,
+        flow = Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=redirect_uri)
+        flow.fetch_token(code=code)
+
+        credentials = flow.credentials
+        if not credentials.refresh_token:
+            sentry_sdk.capture_message(f"OAuth: No refresh token for tenant {tenant_id}", level="warning")
+            raise HTTPException(400, "No refresh token received. User may need to re-authorize with prompt=consent.")
+
+        # Get user email from ID token
+        from google.oauth2 import id_token as gid_token
+        from google.auth.transport import requests as google_requests
+        try:
+            id_info = gid_token.verify_oauth2_token(
+                credentials.id_token,
+                google_requests.Request(),
+                credentials.client_id,
+            )
+            email = id_info.get("email", "unknown")
+        except Exception as e:
+            logger.warning(f"[OAUTH] Failed to parse ID token for tenant {tenant_id}: {e}")
+            sentry_sdk.capture_exception(e)
+            email = "unknown"
+
+        # Encrypt and store
+        encrypted_refresh = encrypt_token(credentials.refresh_token)
+        db = await SupabasePooler.get_client()
+        await db.table("tenants").update({
+            "google_refresh_token_encrypted": encrypted_refresh,
+            "google_calendar_email": email,
+            "google_calendar_connected_at": "now()",
+            "google_calendar_status": "connected",
+        }).eq("id", tenant_id).execute()
+
+        logger.info(f"✅ [OAUTH] Tenant {tenant_id} connected Google Calendar ({email})")
+
+        # Redirect to frontend settings page
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        return RedirectResponse(f"{frontend_url}/config?google=connected")
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
+    except Exception as e:
+        logger.error(f"❌ [OAUTH] Callback failed for tenant {tenant_id}: {e}", exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Google OAuth Callback Failed | Tenant {tenant_id}",
+            description=f"OAuth token exchange or storage failed: {str(e)[:300]}",
+            severity="error",
+            error=e
         )
-        email = id_info.get("email", "unknown")
-    except Exception:
-        email = "unknown"
-
-    # Encrypt and store
-    encrypted_refresh = encrypt_token(credentials.refresh_token)
-    db = await SupabasePooler.get_client()
-    await db.table("tenants").update({
-        "google_refresh_token_encrypted": encrypted_refresh,
-        "google_calendar_email": email,
-        "google_calendar_connected_at": "now()",
-        "google_calendar_status": "connected",
-    }).eq("id", tenant_id).execute()
-
-    logger.info(f"✅ [OAUTH] Tenant {tenant_id} connected Google Calendar ({email})")
-
-    # Redirect to frontend settings page
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-    return RedirectResponse(f"{frontend_url}/config?google=connected")
+        raise HTTPException(500, f"OAuth callback failed: {str(e)}")
 
 
 @router.post("/disconnect")
 async def google_disconnect(tenant_id: str):
     """Revoke Google Calendar connection for a tenant."""
-    db = await SupabasePooler.get_client()
-    await db.table("tenants").update({
-        "google_refresh_token_encrypted": None,
-        "google_calendar_email": None,
-        "google_calendar_connected_at": None,
-        "google_calendar_status": "disconnected",
-    }).eq("id", tenant_id).execute()
+    try:
+        db = await SupabasePooler.get_client()
+        await db.table("tenants").update({
+            "google_refresh_token_encrypted": None,
+            "google_calendar_email": None,
+            "google_calendar_connected_at": None,
+            "google_calendar_status": "disconnected",
+        }).eq("id", tenant_id).execute()
 
-    logger.info(f"🔌 [OAUTH] Tenant {tenant_id} disconnected Google Calendar")
-    return {"status": "disconnected"}
+        logger.info(f"🔌 [OAUTH] Tenant {tenant_id} disconnected Google Calendar")
+        return {"status": "disconnected"}
+    except Exception as e:
+        logger.error(f"❌ [OAUTH] Disconnect failed for tenant {tenant_id}: {e}", exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Google OAuth Disconnect Failed | Tenant {tenant_id}",
+            description=f"Failed to disconnect Google Calendar: {str(e)[:300]}",
+            severity="error",
+            error=e
+        )
+        raise HTTPException(500, f"Disconnect failed: {str(e)}")

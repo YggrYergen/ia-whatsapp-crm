@@ -1,6 +1,7 @@
 from supabase import create_async_client, AsyncClient
 from app.core.config import settings
 from app.infrastructure.telemetry.logger_service import logger
+import sentry_sdk
 
 class SupabasePooler:
     """Singleton implementation for Supabase Client to avoid memory leaks across multiple requests."""
@@ -17,6 +18,7 @@ class SupabasePooler:
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize Async Supabase client: {str(e)}")
+                sentry_sdk.capture_exception(e)
                 raise
         return cls._instance
 

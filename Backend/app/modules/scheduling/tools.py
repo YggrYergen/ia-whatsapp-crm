@@ -4,6 +4,7 @@ import asyncio
 import sentry_sdk
 from app.modules.intelligence.tools.base import AITool
 from app.infrastructure.telemetry.logger_service import logger
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 from app.modules.scheduling.services import SchedulingService
 
 class CheckAvailabilityTool(AITool):
@@ -176,6 +177,12 @@ class EscalateHumanTool(AITool):
             except Exception as e:
                 logger.error(f"[EscalateTool] Failed to mute bot for {patient_phone}: {e}")
                 sentry_sdk.capture_exception(e)
+                await send_discord_alert(
+                    title=f"❌ EscalateTool: Bot Mute Failed | {patient_phone}",
+                    description=f"Failed to set bot_active=False for {patient_phone}: {str(e)[:300]}",
+                    severity="error",
+                    error=e
+                )
                 
         res = await SchedulingService.request_human_escalation(tenant, patient_phone, reason)
         return json.dumps(res)
@@ -224,4 +231,10 @@ class UpdatePatientScoringTool(AITool):
         except Exception as e:
             logger.error(f"[ScoringTool] Failed to update score for {phone}: {e}")
             sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ ScoringTool: Update Failed | {phone}",
+                description=f"Failed to update score for {phone}: {str(e)[:300]}",
+                severity="error",
+                error=e
+            )
             return json.dumps({"status": "error", "message": str(e)})
