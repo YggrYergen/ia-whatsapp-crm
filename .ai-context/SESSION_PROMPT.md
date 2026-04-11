@@ -13,8 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Deploy Block A quick wins IMMEDIATELY for instant prod improvement, then execute Blocks B-H
-SESSION BLOCKS:  A, B, C, D, E, F, G, H
+SESSION GOAL:    Block A DONE on DEV ✅ — Awaiting PROD merge approval → then execute Blocks B-H
+SESSION BLOCKS:  A (✅ DEV-verified), B, C, D, E, F, G, H
+LAST COMMIT:     d09e836 (desarrollo) — Block A quick wins
 ```
 
 ---
@@ -38,17 +39,25 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 - ✅ Deep research session (50+ web searches): model pricing corrected, BSUID migration identified, Graph API deprecation found, 12 critical corrections documented (CC-1 to CC-12)
 - ✅ Sprint 1 v2 plan approved: Dashboard MVP deferred to Sprint 2, replaced with resilience layer + system prompt engineering
 - ✅ Model decision finalized: `gpt-5.4-mini` for PROD, `gpt-5.4-nano` for DEV/budget, `max_completion_tokens=500` cost cap
+- ✅ **Block A executed & verified on DEV** (2026-04-11 18:00 CLT):
+  - A1: Model `gpt-4o-mini` → `gpt-5.4-mini` in 3 backend files + frontend dropdown + tests
+  - A2: Removed `.lower()` on text_body — casing preserved (verified: "Te llamas Tomás" in logs)
+  - A3: Disabled BUG-5 (TOOL_ACTION_PATTERNS) — 0 false alerts in DEV logs
+  - A4: History limit 20 → 30 messages
+  - A5: Graph API v19.0 → v25.0 (v19 dies May 21, 2026)
+  - A6: `max_completion_tokens=500` cost cap added
+  - DEV revision `ia-backend-dev-00005-klk` — 0 exceptions, 3 test messages successful
+  - ⏳ Awaiting user approval to merge `desarrollo → main` for PROD deploy
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Block A — Quick Wins (30 min) → DEPLOY IMMEDIATELY:**
-- A1: Change `gpt-4o-mini` → `gpt-5.4-mini` in 3 files
-- A2: Remove `.lower()` in `use_cases.py:L64`
-- A3: Disable BUG-5 (comment `TOOL_ACTION_PATTERNS` L219-L242)
-- A4: Increase history limit 20→30
-- A5: Graph API v19.0→v25.0
-- A6: Add `max_completion_tokens=500`
-- A7: DEPLOY to production
-- A8: Live test via WhatsApp
+**Block A — ✅ DONE on DEV, awaiting PROD merge:**
+- A1-A6: All code changes applied and verified (see "Completed" above)
+- A7: ⏳ Merge to `main` blocked until user approves
+- A8: ⏳ Live WhatsApp test after PROD deploy
+
+**Block B — `strict: true` tool schemas (1 hr) ← NEXT:**
+- Migrate all 7 tool schemas to `strict: true` mode
+- Load `deep_dive_a` §3 Phase 3 before starting
 
 **Block B — `strict: true` tool schemas (1 hr)**
 **Block C — OpenAI adapter enhancement (30 min)**
@@ -67,8 +76,9 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 ### Known Blockers & Risks
 - ⚠️ `META_APP_SECRET` env var needed for Block E1 (webhook signature verification) — must be retrieved from Meta App Dashboard → Settings → Basic
 - ⚠️ Block D (agentic loop) is the highest-risk block — 3-5 hours estimated, involves rewriting the core message processing flow
-- ⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief
-- ⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)
+- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Resolved on DEV, awaiting PROD merge**
+- ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
+- ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
 
 ---
 
@@ -93,11 +103,11 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |
 |:---|:---|:---|:---|
-| BUG-5 | Silent Failure Detector 95%+ false positives | 🟡 → Disable | Block A3: comment L219-L242 `use_cases.py` |
-| BUG-6 | Response quality unacceptable in production | 🔴 7 Root Causes | Blocks A-D: model, tools, adapter, agentic loop |
-| CC-1 | Codebase uses deprecated `gpt-4o-mini` | 🔴 | Block A1: 3 files |
+| BUG-5 | Silent Failure Detector 95%+ false positives | ✅ Disabled (DEV) | Block A3: commented L219-L242 `use_cases.py` |
+| BUG-6 | Response quality unacceptable in production | 🟡 Partial (A done) | Blocks B-D remaining: tools, adapter, agentic loop |
+| CC-1 | Codebase uses deprecated `gpt-4o-mini` | ✅ Fixed (DEV) | Block A1: 3 backend + frontend + tests |
 | CC-3 | BSUID migration needed for contact lookups | 🔴 | Block G1: add column + index |
-| CC-4 | Graph API v19.0 deprecated May 21, 2026 | 🔴 | Block A5: `meta_graph_api.py:L8` |
+| CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
 | CC-5 | Tool schemas missing `strict: true` | 🔴 | Block B1: all 7 tools |
 | CC-7 | No webhook signature verification | 🔴 SECURITY | Block E1: HMAC-SHA256 |
 | CC-8 | No LLM rate limit per contact | 🔴 COST | Block E2: 20/hour max |
