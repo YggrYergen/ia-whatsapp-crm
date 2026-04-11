@@ -53,8 +53,24 @@ class ProcessMessageUseCase:
         contact_id = None
         
         try:
-            entry = payload["entry"][0]
-            changes = entry["changes"][0]["value"]
+            # Error points #1-2: Payload parsing — malformed webhook
+            try:
+                entry = payload["entry"][0]
+                changes = entry["changes"][0]["value"]
+            except (KeyError, IndexError, TypeError) as parse_err:
+                logger.error(f"❌ [ORCH] Malformed webhook payload: {parse_err}")
+                sentry_sdk.set_context("malformed_payload", {
+                    "payload_keys": list(payload.keys()) if isinstance(payload, dict) else str(type(payload)),
+                    "tenant_id": str(tenant.id),
+                })
+                sentry_sdk.capture_exception(parse_err)
+                await send_discord_alert(
+                    title=f"❌ Malformed Webhook Payload | Tenant {tenant.id}",
+                    description=f"Could not parse entry/changes from payload: {str(parse_err)[:300]}",
+                    severity="error", error=parse_err
+                )
+                return
+
             if "messages" not in changes:
                 logger.info("ℹ️ [ORCH] No messages in payload.")
                 return
@@ -69,8 +85,19 @@ class ProcessMessageUseCase:
                 logger.warning("⚠️ [ORCH] Tenant deactivated. Ignoring.")
                 return
 
+            # Error point #3: Contact lookup DB query
             logger.info("🔍 [ORCH] Looking up contact...")
-            contact_res = await db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
+            try:
+                contact_res = await db.table("contacts").select("*").eq("phone_number", patient_phone).eq("tenant_id", tenant.id).execute()
+            except Exception as lookup_err:
+                logger.error(f"❌ [ORCH] Contact lookup failed: {lookup_err}")
+                sentry_sdk.capture_exception(lookup_err)
+                await send_discord_alert(
+                    title=f"❌ Contact Lookup Failed | Tenant {tenant.id}",
+                    description=f"Phone: {patient_phone}\nError: {str(lookup_err)[:300]}",
+                    severity="error", error=lookup_err
+                )
+                return  # Cannot proceed without contact info
             
             bot_active = True
             contact_role = "cliente"
@@ -138,25 +165,46 @@ class ProcessMessageUseCase:
             # ============================================================
             # PARALLEL: Set processing lock + fetch history
             # ============================================================
+            # Error points #6-7: Processing lock + history fetch
             async def _set_processing():
                 if contact_id:
-                    await db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
+                    try:
+                        await db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
+                    except Exception as lock_err:
+                        logger.error(f"❌ [ORCH] Failed to set processing lock: {lock_err}")
+                        sentry_sdk.capture_exception(lock_err)
+                        await send_discord_alert(
+                            title=f"❌ Processing Lock Failed | Tenant {tenant.id}",
+                            description=f"Contact: {contact_id}\nError: {str(lock_err)[:300]}",
+                            severity="error", error=lock_err
+                        )
+                        # Non-fatal: continue without lock (risk of double-processing)
 
             async def _fetch_history():
                 history = []
                 if contact_id:
                     logger.info("📚 [ORCH] Fetching history...")
-                    hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(30).execute()
-                    if hist_res.data:
-                        for m in reversed(hist_res.data):
-                            sr = m["sender_role"]
-                            if sr == "system_alert":
-                                continue  # System alerts are not part of the conversation
-                            elif sr in ("assistant", "human_agent"):
-                                rol = "assistant"  # Both AI and staff are "business side"
-                            else:
-                                rol = "user"
-                            history.append({"role": rol, "content": m["content"]})
+                    try:
+                        hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(30).execute()
+                        if hist_res.data:
+                            for m in reversed(hist_res.data):
+                                sr = m["sender_role"]
+                                if sr == "system_alert":
+                                    continue  # System alerts are not part of the conversation
+                                elif sr in ("assistant", "human_agent"):
+                                    rol = "assistant"  # Both AI and staff are "business side"
+                                else:
+                                    rol = "user"
+                                history.append({"role": rol, "content": m["content"]})
+                    except Exception as hist_err:
+                        logger.error(f"❌ [ORCH] Failed to fetch history: {hist_err}")
+                        sentry_sdk.capture_exception(hist_err)
+                        await send_discord_alert(
+                            title=f"❌ History Fetch Failed | Tenant {tenant.id}",
+                            description=f"Contact: {contact_id}\nError: {str(hist_err)[:300]}",
+                            severity="error", error=hist_err
+                        )
+                        # Non-fatal: continue with empty history
                 return history
 
             # Run concurrently
@@ -174,9 +222,36 @@ class ProcessMessageUseCase:
             if not history or history[-1].get("content", "").lower() != text_body:
                 history.append({"role": "user", "content": f"[(Log): {current_time_str}]\n{text_body}"})
 
+            # Error points #9-10: LLM strategy creation + schema fetch
             logger.info(f"🧠 [ORCH] Calling LLM (Provider={tenant.llm_provider})...")
-            llm_strategy = LLMFactory.create(tenant_context=tenant)
-            tools_schema = tool_registry.get_all_schemas(provider=tenant.llm_provider.lower())
+            try:
+                llm_strategy = LLMFactory.create(tenant_context=tenant)
+            except Exception as factory_err:
+                logger.error(f"❌ [ORCH] LLMFactory.create failed: {factory_err}")
+                sentry_sdk.set_context("llm_factory_error", {
+                    "provider": tenant.llm_provider,
+                    "model": tenant.llm_model,
+                    "tenant_id": str(tenant.id),
+                })
+                sentry_sdk.capture_exception(factory_err)
+                await send_discord_alert(
+                    title=f"💥 LLM Factory Failed | Tenant {tenant.id}",
+                    description=f"Provider: {tenant.llm_provider}\nModel: {tenant.llm_model}\nError: {str(factory_err)[:300]}",
+                    severity="error", error=factory_err
+                )
+                raise  # Fatal — cannot proceed without LLM
+
+            try:
+                tools_schema = tool_registry.get_all_schemas(provider=tenant.llm_provider.lower())
+            except Exception as schema_err:
+                logger.error(f"❌ [ORCH] Tool schema fetch failed: {schema_err}")
+                sentry_sdk.capture_exception(schema_err)
+                await send_discord_alert(
+                    title=f"💥 Tool Schema Fetch Failed | Tenant {tenant.id}",
+                    description=f"Provider: {tenant.llm_provider}\nError: {str(schema_err)[:300]}",
+                    severity="error", error=schema_err
+                )
+                tools_schema = []  # Non-fatal: proceed without tools
             
             # ============================================================
             # BUG-1 Layer 1: Inject INTERNAL_TOOL_RULES between tenant
@@ -481,18 +556,46 @@ class ProcessMessageUseCase:
             # ============================================================
             # PARALLEL: Persist assistant reply + send via Meta API + unset processing
             # ============================================================
+            # Error points #17-20: Post-loop parallel operations
             async def _persist_reply():
                 if contact_id:
-                    await db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                    try:
+                        await db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                    except Exception as persist_err:
+                        logger.error(f"❌ [ORCH] Failed to persist reply: {persist_err}")
+                        sentry_sdk.capture_exception(persist_err)
+                        await send_discord_alert(
+                            title=f"❌ Reply Persistence Failed | Tenant {tenant.id}",
+                            description=f"Contact: {contact_id}\nReply: {reply_text[:200]}\nError: {str(persist_err)[:200]}",
+                            severity="error", error=persist_err
+                        )
 
             async def _send_meta():
                 if not is_simulation:
-                    logger.info("📲 [ORCH] Sending via Meta API...")
-                    await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+                    try:
+                        logger.info("📲 [ORCH] Sending via Meta API...")
+                        await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+                    except Exception as meta_err:
+                        logger.error(f"❌ [ORCH] Meta API send failed: {meta_err}")
+                        sentry_sdk.capture_exception(meta_err)
+                        await send_discord_alert(
+                            title=f"💥 Meta API Send Failed | Tenant {tenant.id}",
+                            description=f"Phone: {patient_phone}\nReply: {reply_text[:200]}\nError: {str(meta_err)[:200]}",
+                            severity="error", error=meta_err
+                        )
 
             async def _unset_processing():
                 if contact_id:
-                    await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                    try:
+                        await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                    except Exception as unset_err:
+                        logger.error(f"❌ [ORCH] Failed to unset processing lock: {unset_err}")
+                        sentry_sdk.capture_exception(unset_err)
+                        await send_discord_alert(
+                            title=f"🔒 Processing Lock Release Failed | Tenant {tenant.id}",
+                            description=f"Contact {contact_id} may be permanently locked.\nError: {str(unset_err)[:300]}",
+                            severity="error", error=unset_err
+                        )
 
             await asyncio.gather(
                 _persist_reply(),
