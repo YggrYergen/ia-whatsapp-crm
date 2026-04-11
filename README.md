@@ -6,18 +6,19 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-10 09:00 CLT)
+## 0. Estado Actual del Proyecto (2026-04-10 10:50 CLT)
 
-**Estado global:** 🟢 Phase 5A completada — Suite de simulación webhook Meta verificada (9/9 escenarios ✅). Observabilidad hardened (Sentry + Discord en cada error path).
+**Estado global:** 🟢 Phase 5C completada — **WhatsApp LIVE.** Meta webhook conectado, mensajes E2E funcionando (inbound + outbound), System User token permanente instalado. Sistema en validación final (5D).
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
-| **Backend PROD (Cloud Run)** | 🟢 Operativo + Observable | `ia-backend-prod` europe-west1. Sentry ✅, Discord ✅, Cloud Logging JSON ✅ |
+| **Backend PROD (Cloud Run)** | 🟢 Operativo + Observable | `ia-backend-prod` europe-west1 rev `00075-skt`. Sentry ✅, Discord ✅, Cloud Logging JSON ✅ |
 | **Backend DEV (Cloud Run)** | 🟢 Operativo | `ia-backend-dev` us-central1. Min=0, Max=1. Sentry `env=development` ✅, Discord `[🔧 DESARROLLO]` ✅ |
 | **Frontend PROD (CF Workers)** | 🟢 Operativo + Observable | `ia-whatsapp-crm` → `dash.tuasistentevirtual.cl`. Auto-deploy `main` |
 | **Frontend DEV (CF Workers)** | 🟢 Operativo | `dev-ia-whatsapp-crm` → `ohno.tuasistentevirtual.cl`. Auto-deploy `desarrollo` |
 | **BD Producción** | 🟢 Funcional | `nemrjlimrnrusodivtoa`. Secreto: `SUPABASE_SERVICE_ROLE_KEY` |
 | **BD Desarrollo** | 🟢 Funcional | `nzsksjczswndjjbctasu`. Secreto separado: `SUPABASE_SERVICE_ROLE_KEY_DEV` |
+| **Meta/WhatsApp** | 🟢 **LIVE** | Webhook verificado, mensajes E2E, System User token permanente. WABA `2112673849573880`, Phone ID `1041525325713013` |
 | **Calendario (Agenda)** | 🟡 Solo en prod | ⚠️ Desconectado en dev (protección calendario cliente). Ver deuda técnica |
 | **Webhook Simulation Suite** | 🟢 Verificada | 9/9 escenarios pasaron. Scripts en `Backend/scripts/simulation/`. Ver §0.8 |
 | **Rama `main`** | 🟢 Al día | Auto-deploy backend (Cloud Build) + frontend (Workers Builds) |
@@ -26,7 +27,7 @@
 ### Plan de Go-Live (en ejecución)
 
 ```
-FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: Monitoreo ✅ ──► FASE 3: E2E Interno ✅ ──► FASE 4: Separación Prod/Dev ✅ ──► FASE 5A: Simulación ✅ ──► FASE 5B-D: Go-Live
+FASE 0: Pre-flight ✅ ─► FASE 1: Estabilizar ✅ ─► FASE 2: Monitoreo ✅ ─► FASE 3: E2E ✅ ─► FASE 4: Prod/Dev ✅ ─► FASE 5A: Simulación ✅ ─► FASE 5B: Deploy ✅ ─► FASE 5C: Meta LIVE ✅ ─► FASE 5D: Validación ⏳
 ```
 
 | Fase | Objetivo | Estado |
@@ -44,15 +45,15 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **Fase 3** | E2E validation interno + bug fixes + observability hardening | ✅ **Completada** — 3E (bug fixes) + 3F (post-testing fixes). OTel deferred (Workers Free). Ver §0.6 |
 | **Fase 4** | Separación prod/dev: 2 ecosistemas 100% aislados | ✅ **Completada** — Backend dev (us-central1), Frontend dev (CF Worker), BD dev, DNS `ohno.tuasistentevirtual.cl`. Calendario excluido por seguridad |
 | **Fase 5A** | Suite de simulación webhook Meta (desconectado) + observability hardening | ✅ **Completada** — 9/9 escenarios pasaron (ver §0.8). Observabilidad completa: cada `except` → Sentry + Discord |
-| **Fase 5B** | Version Tag + Final Production Deploy | ⏳ Pendiente |
-| **Fase 5C** | Conectar Meta/WhatsApp (LIVE) — System User token, webhook URL | ⏳ Pendiente |
-| **Fase 5D** | Validación producción — sistema 100% operacional | ⏳ Pendiente |
+| **Fase 5B** | Version Tag + Final Production Deploy | ✅ **Completada** — `v1.0` tag, rev `00074-jx4` |
+| **Fase 5C** | Conectar Meta/WhatsApp (LIVE) | ✅ **Completada** — Webhook verificado, System User token permanente, mensajes E2E confirmados. Bug fix: trailing space en GCP Secret |
+| **Fase 5D** | Validación producción — sistema 100% operacional | 🔴 **Problemas en live testing** — Mensajes E2E funcionan pero calidad de respuestas inaceptable en pruebas con cliente real. BUG-1 L2 detector con 95%+ false positives. Ver §0.9 |
 
 ### Bugs Resueltos (Fase 3)
 
 | ID | Bug | Resolución | Estado |
 |:---|:---|:---|:---|
-| **BUG-1** | LLM responde sobre herramientas sin ejecutarlas (silent failure) | 4-layer fix: (L1) INTERNAL_TOOL_RULES inmutables, (L2) detección "Silence Pattern", (L3) forced tool_choice para escalación, (L4) logging mejorado | ✅ |
+| **BUG-1** | LLM responde sobre herramientas sin ejecutarlas (silent failure) | 4-layer fix: (L1) INTERNAL_TOOL_RULES inmutables, (L2) detección "Silence Pattern", (L3) forced tool_choice para escalación, (L4) logging mejorado. **Nota: L2 detector tiene 95%+ false positives en producción (ver BUG-5).** | ✅ (parcial — L2 requiere refinamiento) |
 | **BUG-2** | Character counter en `/config` mostraba `/2000` | Actualizado a `/4000` con thresholds amber (>3000) y rojo (>3500). Sentry warning si >4000 (save NO bloqueado) | ✅ |
 | **BUG-3** | Tool errors: no Sentry/Discord + LLM mentía sobre resultados | Business errors (relay natural) vs crashes (human notified). Todos `status:error` → Sentry+Discord con tenant_id | ✅ |
 | **MISC-2** | Missing `import sentry_sdk` en `google_client.py` | Import top-level + eliminación de 5 inline imports redundantes | ✅ |
@@ -61,15 +62,29 @@ FASE 0: Pre-flight ✅ ──► FASE 1: Estabilizar main ✅ ──► FASE 2: 
 | **3F-2** | Discord alerts sin tenant en título | Todos los `send_discord_alert()` incluyen `Tenant {id}` | ✅ |
 | **3F-3** | Three dots (typing indicator) visible con IA pausada | Condición `&& selectedContact.bot_active` en ChatArea + TestChatArea | ✅ |
 | **5A-OBS** | Gaps de observabilidad: 5 archivos con `except` sin Sentry y/o Discord | Hardened: `dependencies.py`, `tool_registry.py`, `gemini_adapter.py`, `openai_adapter.py`, `use_cases.py` (2 handlers) | ✅ |
+| **5C-SECRET** | Webhook verification 403 con token correcto | GCP Secret `WHATSAPP_VERIFY_TOKEN` tenía trailing space (hex `20`). Corregido secret v3 + redeploy rev `00075-skt` | ✅ |
 
-### Backlog Técnico (Phase 6+ — NO implementar ahora)
+### Bugs Activos (Live Testing — Phase 5D)
+
+| ID | Bug | Severidad | Detalle |
+|:---|:---|:---|:---|
+| **BUG-5** | Silent Failure Detector (BUG-1 Layer 2) — 95%+ false positives | 🔴 Alta | `TOOL_ACTION_PATTERNS` en `use_cases.py` dispara alertas Sentry/Discord cuando el LLM usa palabras como "agendar", "escalar" en preguntas de calificación normales. Ej: "¿podemos agendar una evaluación?" → false positive. El detector es virtualmente inútil en su estado actual. Requiere reescritura completa o desactivación. |
+| **BUG-6** | Calidad de respuestas inaceptable en producción | 🔴 Alta | En pruebas live con la dueña del primer cliente (jugando como si fuera clienta), las interacciones fueron de muy baja calidad. Requiere diagnóstico: (1) ¿hay respuestas hardcodeadas que interfieren con el flujo natural? (Solo deben existir para graceful degradation de errores técnicos). (2) ¿El system prompt actual produce respuestas útiles? (3) ¿Hay code paths que cortocircuitan la inferencia LLM? Audit completo necesario de `use_cases.py` y todos los puntos donde se genera texto de respuesta. |
+
+### Backlog Técnico (Phase 6+)
+
+> **Contexto:** Nuevo tenant llega el martes. Los items marcados 🔴 son bloqueantes o críticos para la viabilidad del producto.
 
 | Prioridad | Área | Tarea |
 |:---|:---|:---|
-| **🔴 Alta** | Calendar | **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcodeado a CasaVitaCure (`casavitacure-crm`), Calendar IDs como fallback en `google_client.py:L69-72`, OAuth flow construido pero desconectado. Requiere: per-tenant OAuth, tabla `tenant_resources` para N calendarios dinámicos, UI en `/config`. **Bloquea:** calendario en dev, segundo cliente, escalabilidad |
+| **🔴 CRÍTICA** | LLM/UX | **Response Quality Audit & Fix**: Diagnóstico completo de por qué las respuestas en producción son malas. Revisar: hardcoded responses fuera de error handling, system prompt effectiveness, code paths que cortocircuitan LLM, context window/history management. Las respuestas deben ser naturales, útiles, y profesionales. |
+| **🔴 CRÍTICA** | LLM/Observability | **BUG-5 Fix: Silent Failure Detector Rewrite**: El Layer 2 detector actual (`TOOL_ACTION_PATTERNS`) es inservible (95%+ false positives). Opciones: (a) desactivar completamente, (b) reescribir con análisis semántico más sofisticado, (c) reemplazar con un enfoque diferente (ej: solo alertar cuando force_escalation=True pero no hay tool_call). |
+| **🔴 CRÍTICA** | Calendar | **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcodeado a CasaVitaCure (`casavitacure-crm`), Calendar IDs como fallback en `google_client.py:L69-72`, OAuth flow construido pero desconectado. Requiere: per-tenant OAuth, tabla `tenant_resources` para N calendarios dinámicos, UI en `/config`. **Bloquea:** calendario en dev, segundo cliente, escalabilidad |
+| **🔴 Alta** | Escalation/UX | **Human Escalation Workflow Completo**: `EscalateHumanTool` actualmente solo setea `bot_active=false`. En la práctica NO SIRVE sin: (1) Highlight visual de chats que necesitan intervención humana en el panel, (2) Sistema de tracking solved/pending para chats escalados, (3) Notificaciones activas a admins/staff del tenant, (4) UX intuitiva para que el staff retome la conversación y reactive el bot cuando termine, (5) Historial de escalaciones. Requiere diseño UX completo antes de implementar. |
+| **🔴 Alta** | CRM/Intelligence | **Customer Intelligence System (reemplaza UpdatePatientScoringTool)**: El scoring de pacientes actual nunca funcionó en la práctica. Lo que se necesita es MUCHO más amplio: (1) Tracking de comportamiento del cliente (visitas, compras, intereses, problemas), (2) Perfil enriquecido con preferencias y historial, (3) Tab/vista de CRM dedicada con datos del cliente (inexistente o no implementada actualmente), (4) **Acciones basadas en datos**: ej. cliente valioso no vuelve en 30 días → notificación + capacidad de re-engagement (feature clave solicitado por primer cliente), (5) Scoring calculado, no solo metadata manual. Requiere: nuevo schema de BD, UI completa, posiblemente tools adicionales que trabajen en conjunto con la actual. **Diseño extenso requerido.** |
 | **🔴 Alta** | Config | **Tenant Assistant Config Revamp**: `/config` como controlador integral (prompt + modelo + tools on/off), sandbox como testing ground seguro, versionado con rollback, toggle de herramientas en tiempo real |
-| **🔴 Alta** | UI/Agenda | **Agenda Visual Revamp**: layout mobile overflow, navegación días/semanas/meses, responsive redesign, gestos touch |
-| **🟡 Media** | Observability | Bot pause notifications → Sentry + Discord + admins/staff del tenant |
+| **🟡 Alta** | UI/Agenda | **Agenda Visual Revamp**: layout mobile overflow, navegación días/semanas/meses, responsive redesign, gestos touch |
+| **🟡 Media** | Observability | Bot pause notifications: Sentry + Discord + admins/staff del tenant |
 | **🟡 Media** | Observability | Paused chat inbound alerts — actualmente ignora silenciosamente |
 | **🟡 Media** | Backend | Tool Registry tracking: logging de tools registradas, schemas, historial |
 | **🟡 Media** | DB/Backend | Tenant Config Versioning: tabla `tenant_config_versions` con snapshots JSON |
@@ -531,9 +546,9 @@ La barra inferior (action bar) del sandbox tiene 5 botones primarios + inline no
 
 ---
 
-## 0.6. Fase 3 E2E Verification — Hallazgos y Bugs Activos (2026-04-09)
+## 0.6. Fase 3 E2E Verification — Hallazgos y Resoluciones (2026-04-09)
 
-> **Estado: 51/65 items verificados.** Dos bugs críticos identificados que deben resolverse antes de conectar WhatsApp.
+> **Estado: ✅ RESUELTO.** BUG-1, BUG-2, BUG-3 corregidos en Phase 3E/3F. **Sin embargo**, BUG-1 Layer 2 detector resultó inservible en producción (95%+ false positives → BUG-5). La sección abajo documenta el análisis original; la resolución está en la tabla de Bugs Resueltos (§0).
 
 ### Matriz de Verificación (resumen)
 
@@ -722,6 +737,36 @@ Documentación investigada durante Phase 5A que aplica al momento de conectar Wh
 1. **System User Token Requerido:** El token temporal de API Setup expira en 24h. Para producción, crear un System User en Meta Business Manager con permisos `whatsapp_business_messaging` + `whatsapp_business_management` y generar token permanente. Ref: [Meta System Users](https://developers.facebook.com/docs/marketing-api/system-users/)
 2. **AI Chatbot Policy (Jan 2026):** Meta prohíbe chatbots IA de "propósito general". Solo se permiten assistentes task-specific (booking, soporte, tracking). CasaVitaCure es compliant (booking + scoring + escalation).
 3. **Tech Provider Status:** No requerido para el primer cliente. El track de Tech Provider (Embedded Signup, App Review) es para escalar a 15+ clientes — Phase 6+. Ref: [Meta Tech Provider](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/tech-provider/)
+
+---
+
+## 0.9. Phase 5D: Live Testing Findings — Producción con Cliente Real (2026-04-10)
+
+> **Estado: 🔴 Problemas críticos identificados.** El sistema funciona técnicamente (mensajes E2E fluyen) pero la calidad de las interacciones en producción es inaceptable.
+
+### Contexto
+
+La dueña del primer cliente (CasaVitaCure) probó el sistema jugando como si fuera una clienta. Las respuestas del bot fueron de baja calidad — poco naturales, poco útiles, y en algunos casos confusas. Estas pruebas revelaron una brecha significativa entre "funciona técnicamente" y "funciona en la práctica".
+
+### Hallazgos
+
+| Área | Problema | Impacto |
+|:---|:---|:---|
+| **Calidad de respuestas (BUG-6)** | Las respuestas del LLM no son naturales ni profesionales en conversaciones reales. Requiere diagnóstico: ¿hay respuestas hardcodeadas fuera de error handling? ¿El system prompt es efectivo? ¿Hay code paths que cortocircuitan la inferencia LLM? | 🔴 Crítico — el producto no es usable en su estado actual |
+| **Silent Failure Detector (BUG-5)** | `TOOL_ACTION_PATTERNS` de BUG-1 Layer 2 genera 95%+ false positives. Dispara Sentry/Discord en cada conversación normal donde el LLM menciona "agendar", "escalar", etc. como parte de preguntas de calificación | 🔴 Alto — ruido de alertas inutiliza Sentry/Discord |
+| **Escalation — gap entre tool y UX** | `EscalateHumanTool` setea `bot_active=false` pero no hay workflow humano: sin highlight de chats escalados, sin tracking, sin notificaciones, sin UX para retomar/reactivar | 🔴 Alto — feature no funcional en práctica |
+| **Scoring — concepto insuficiente** | `UpdatePatientScoringTool` nunca funcionó. Pero además, lo que se necesita es un **Customer Intelligence System** completo: tracking de comportamiento, perfil enriquecido, acciones basadas en datos (ej: re-engagement de clientes valiosos). Feature clave del primer cliente. | 🔴 Alto — requiere diseño completo |
+
+### Regla sobre respuestas hardcodeadas
+
+> **Las UNICAS respuestas hardcodeadas permitidas en el sistema son para error handling — cuando algo falla técnicamente y el LLM no puede generar respuesta.** Ejemplos válidos: timeout de LLM, crash de tool, error de red. En TODOS los demás casos, la respuesta DEBE venir del LLM con el system prompt del tenant. Si existen respuestas hardcodeadas fuera de este contexto, son bugs.
+
+### Próximos pasos
+
+1. **Response Quality Audit:** Revisar exhaustivamente `use_cases.py` y todo code path que genera texto de respuesta. Identificar y eliminar hardcoded responses fuera de error handling.
+2. **BUG-5 Fix:** Desactivar o reescribir el Layer 2 detector.
+3. **System Prompt Tuning:** Evaluar si el prompt actual del tenant produce respuestas útiles en conversaciones reales.
+4. **Nueva conversación:** Planificación para segundo tenant (llega martes) con features requeridas significativamente más amplias que las actuales.
 
 ---
 

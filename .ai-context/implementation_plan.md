@@ -4,7 +4,7 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE ser documentada EN ESE MOMENTO con: (1) qué se hizo, (2) por qué funciona, (3) links a los docs oficiales que lo respaldan. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
-## Status: Phase 0-4 COMPLETE ✅ | Phase 5 (Meta/WhatsApp) NEXT | Calendar disconnected in dev (by design, see Phase 4 tech debt)
+## Status: Phase 0-5C COMPLETE ✅ | Phase 5D IN PROGRESS 🔴 | Live testing: response quality inaceptable, BUG-5 (L2 detector 95%+ false positives), BUG-6 (calidad respuestas)
 
 ---
 
@@ -18,6 +18,12 @@
 - ✅ Phase 2D: Discord Alerts — FULLY VERIFIED (see below)
 - ✅ Phase 2E: OpenNext Migration — FULLY VERIFIED (see below)
 - ✅ Phase 2F: Sentry Coverage Hardening — FULLY VERIFIED (commit `5ba489d`, 2026-04-09)
+- ✅ Phase 3: E2E Validation — COMPLETE (3A-3F all done, BUGs 1-3 resolved, see README §0.6)
+- ✅ Phase 4: Prod/Dev Separation — COMPLETE (2 ecosystems, calendar excluded by design)
+- ✅ Phase 5A: Simulation Suite — COMPLETE (9/9 scenarios, see README §0.8)
+- ✅ Phase 5B: Version Tag — `v1.0`, rev `00074-jx4`
+- ✅ Phase 5C: Meta/WhatsApp LIVE — Webhook verified, System User token, E2E confirmed
+- 🔴 Phase 5D: Production Validation — IN PROGRESS, critical issues found (BUG-5, BUG-6, see §0.9)
 
 ---
 
@@ -256,7 +262,7 @@ Systemic "silent failures" — 30+ catch blocks across backend and frontend were
 
 ## Remaining Phases
 
-### Phase 3: Internal E2E Validation — IN PROGRESS 🔄
+### Phase 3: Internal E2E Validation — COMPLETE ✅
 
 > **⚠️ SCOPE: This phase is INTERNAL ONLY. No WhatsApp/Meta connection. The system is tested entirely via the simulator (`/api/simulate`), the frontend UI, and direct API calls. WhatsApp integration happens in Phase 5.**
 
@@ -431,36 +437,366 @@ Observability hardening (5A-OBS) — audited all `except` blocks in the critical
 
 Results: **9/9 scenarios passed** against local dev backend (2026-04-10). DB verification confirmed: 12 contacts created, escalation contacts correctly have `bot_active=false`, zero stuck processing locks.
 
-**5B: Version Tag + Final Production Deploy:**
-- [ ] Merge observability hardening changes to `main` branch
-- [ ] Deploy to production via Cloud Build auto-deploy
-- [ ] Run simulation suite against deployed dev backend (cloud verification)
-- [ ] Once clean: `git tag v1.0` on `main`, `git push origin main --tags`
-- [ ] Verify: production frontend and backend running the v1.0 code
+**5B: Version Tag + Final Production Deploy ✅ COMPLETED (2026-04-10):**
 
-**5C: Connect Meta/WhatsApp (LIVE):**
+- [x] Merge observability hardening changes to `main` branch
+  - Commit `8d95ec2`: `fix(5a-obs): hardened observability` (5 files)
+  - Commit `f0da91b`: `feat(phase5a): Meta webhook simulation suite + docs update`
+- [x] Deploy to production via Cloud Build auto-deploy
+  - Revision `ia-backend-prod-00074-jx4` — deployed `13:14:42 UTC`, startup clean, zero errors
+  - `gemini_adapter.py:9` FutureWarning confirms updated code is live
+- [x] `git tag v1.0` on `main` → `git push origin v1.0`
+- [x] Production verified: `ia-backend-prod-ftyhfnvyla-ew.a.run.app` serving revision 00074
 
-> **System User token required** — the current token is expired (401 in Sentry). A System User must be created in Meta Business Manager with `whatsapp_business_messaging` + `whatsapp_business_management` permissions. Ref: [Meta System Users](https://developers.facebook.com/docs/marketing-api/system-users/)
+**5C: Connect Meta/WhatsApp (LIVE) — ✅ COMPLETED (2026-04-10 ~14:45 UTC):**
 
-> **AI Chatbot Policy compliance** — Meta prohibits "general-purpose" AI chatbots (Jan 2026 policy). CasaVitaCure is compliant as a task-specific assistant (booking, scoring, escalation). No Tech Provider status needed for first client.
+> **All steps below were successfully executed.** Webhook verified, messages flowing E2E, System User permanent token installed. See task.md for detailed execution log.
 
-- [ ] Create System User → generate permanent access token
-- [ ] Update `ws_token` in production Supabase `tenants` table
-- [ ] Update `ws_phone_id` to match real Meta `phone_number_id` (currently placeholder `123456789012345`)
-- [ ] Configure webhook URL in Meta Dashboard → `ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook`
-- [ ] Verify webhook verification handshake (GET /webhook with verify_token)
-- [ ] Send a real WhatsApp message → confirm full pipeline:
-  - [ ] Message received by webhook
-  - [ ] LLM inference completes
-  - [ ] Response sent back via Meta API
-  - [ ] Message appears in frontend CRM chat in real time
-  - [ ] Sentry shows clean trace (no errors)
-  - [ ] No Discord error notifications (clean run)
+> ⚠️ IMPORTANT: No code changes needed. This is 100% manual configuration in Meta's web UIs + one SQL query in Supabase.
 
-**5D: Production Validation — System 100% Operational:**
-- [ ] Multiple real WhatsApp conversations tested
-- [ ] Calendar booking tested end-to-end (WhatsApp → LLM → GCal API → confirmation message)
-- [ ] Escalation tested (user requests human → bot paused → alert in CRM + Discord)
-- [ ] Sentry dashboard clean — no unexpected errors
-- [ ] Discord alerts only fire for legitimate issues
-- [ ] System declared production-ready 🚀
+> **AI Chatbot Policy compliance** — Meta prohibits "general-purpose" AI chatbots (Jan 2026 policy). CasaVitaCure is compliant as a task-specific assistant (booking, scoring, escalation). No Tech Provider / Solution Partner status needed for first client. Ref: [Meta AI Chatbot Policy](https://developers.facebook.com/docs/whatsapp/overview/ai-chatbot-policy)
+
+> **Your backend is already fully configured.** The webhook handler, payload parser, LLM pipeline, and reply sender are all deployed and verified. You only need to give Meta the right URL and give the backend the right token.
+
+---
+
+#### PREREQUISITE CHECKLIST — Before Starting
+
+Before you touch anything:
+
+- [ ] **You have a Meta Business account** (the one that owns the CasaVitaCure WhatsApp number). If you don't, go to [business.facebook.com](https://business.facebook.com/) and create one.
+- [ ] **You have a Meta Developer account** and an App already created. If you don't, go to [developers.facebook.com](https://developers.facebook.com/), click **My Apps → Create App**, select **Business**, and add the **WhatsApp** product.
+- [ ] **Business Verification is complete.** Go to [business.facebook.com/settings/](https://business.facebook.com/settings/) → left sidebar → **Business Info** (or **Security Center**) → check that verification status is ✅. If not, you need to complete this first (takes 1-5 business days). You need a verified business to go live.
+- [ ] **Privacy Policy URL and Terms of Service URL** are set in your Meta App. Go to [developers.facebook.com](https://developers.facebook.com/) → Your App → **Settings → Basic** → fill in both URLs. Without these, you cannot switch to Live Mode.
+- [ ] **App is in Live Mode**, NOT Development Mode. At the top of your App Dashboard, there's a toggle showing "Development" or "Live". If it says "Development", toggle it to **Live**. In Development mode, webhooks only work for registered test numbers.
+
+---
+
+#### STEP 1 — Create a System User in Meta Business Manager
+
+**WHY:** The temporary tokens Meta gives you expire in ~24 hours. A System User generates a permanent, never-expiring token.
+
+**WHERE TO GO:**
+
+🔗 **URL:** [https://business.facebook.com/settings/](https://business.facebook.com/settings/)
+
+If that URL doesn't work (Meta loves moving things), try these alternatives:
+- [https://business.facebook.com/settings/system-users](https://business.facebook.com/settings/system-users)
+- Go to [business.facebook.com](https://business.facebook.com/) → click the ⚙️ **gear icon** (bottom-left sidebar) → **Business Settings**
+
+**WHAT TO DO:**
+
+1. **Make sure you're in the right business account.** Look at the top-left corner — it should show your business name (the one that owns the CasaVitaCure WABA). If you have multiple businesses, click the dropdown and switch.
+
+2. **Find "System Users"** in the left sidebar. Look for:
+   - **Users** → **System users**
+   - OR it might be under **People and assets** → **System users**
+   - OR search for "system users" if there's a search bar
+
+3. **Click the blue "Add" button** (top-right area)
+
+4. **Fill in the popup:**
+   - **System user name:** `javiera-crm-bot` (or whatever you want — this is just a label)
+   - **System user role:** Select **Admin** (NOT Employee — Employee doesn't have enough permissions)
+   - Click **Create system user**
+
+5. **Verify it appeared in the list.** You should see `javiera-crm-bot` listed with role "Admin".
+
+---
+
+#### STEP 2 — Assign Assets to the System User
+
+**WHY:** The system user needs permission to access your WhatsApp app AND your WhatsApp Business Account. Without both, the token won't work.
+
+**STILL ON THE SAME PAGE** (business.facebook.com/settings → System Users)
+
+1. **Click on `javiera-crm-bot`** in the list (select the row)
+
+2. **Click "Assign assets"** button (it may say "Add Assets" instead)
+
+3. **A dialog appears with tabs at the top.** You need to do TWO assignments:
+
+   **Assignment A — The App:**
+   - Click the **"Apps"** tab
+   - You'll see a list of your Meta apps. Find your WhatsApp Business app (the one you created in developers.facebook.com)
+   - Click on it to select it
+   - On the right side, a permission toggle appears. **Toggle ON "Full control"** (or "Manage app")
+   - Click **Save Changes** (or if there's no save, the toggle auto-saves — but look for a save button)
+
+   **Assignment B — The WhatsApp Business Account (WABA):**
+   - Click the **"WhatsApp accounts"** tab (it might just say "WhatsApp")
+   - You'll see your WhatsApp Business Account listed (the one tied to CasaVitaCure's phone number)
+   - Click on it to select it
+   - On the right side, **toggle ON "Full control"** (or "Manage WhatsApp Business Account")
+   - Click **Save Changes**
+
+4. **Verify:** After saving, when you click on `javiera-crm-bot`, you should see two assigned assets: one App and one WhatsApp account, both with "Full control".
+
+---
+
+#### STEP 3 — Generate a Permanent Access Token
+
+**STILL ON THE SAME PAGE** (business.facebook.com/settings → System Users → javiera-crm-bot selected)
+
+1. **Click "Generate new token"** button (should be visible when the system user is selected — might be on the right side or as a blue button at the top)
+
+2. **A dialog appears. Fill it in CAREFULLY:**
+
+   - **App:** Select your WhatsApp Business app from the dropdown (the same one you assigned in Step 2A)
+
+   - **Token expiration:** Select **"Never"** (this makes it permanent). If you don't see "Never", select the longest duration available and set a calendar reminder to renew it.
+
+   - **Permissions:** You need to scroll through a list of checkboxes and check **exactly these three**:
+
+     ☑️ `whatsapp_business_messaging` — this is what lets the token SEND messages via the WhatsApp Cloud API
+
+     ☑️ `whatsapp_business_management` — this lets the token manage phone numbers, templates, etc.
+
+     ☑️ `business_management` — this is a prerequisite for the other two
+
+     > **⚠️ If you can't find these permissions:** Scroll down! There are usually 50+ permissions listed alphabetically. `business_management` starts with B, `whatsapp_*` are at the very bottom of the list near W. Use Ctrl+F in your browser to search if needed.
+
+3. **Click "Generate token"**
+
+4. **🚨🚨🚨 A popup shows your token. THIS IS THE ONLY TIME YOU WILL SEE IT. 🚨🚨🚨**
+   - The token looks like a very long string (200+ characters), starts with `EAA...`
+   - **Copy it RIGHT NOW.** Ctrl+C or click the copy icon
+   - **Paste it into your password manager, a secure note, or a text file immediately**
+   - DO NOT close this dialog until you've confirmed you have the token saved
+   - If you lose this token, you'll have to generate a new one (the old one is gone forever)
+
+5. **Verify your token starts with `EAA` and is over 150 characters long.** If it's short (like 20 chars), something went wrong.
+
+---
+
+#### STEP 4 — Find Your Phone Number ID
+
+**WHY:** The backend uses the Phone Number ID (NOT the phone number itself) to route incoming messages to the right tenant. The current value in the database is `123456789012345` — a placeholder that needs to be replaced with the real one.
+
+**WHERE TO GO:**
+
+🔗 **URL:** [https://developers.facebook.com/apps/](https://developers.facebook.com/apps/)
+
+**WHAT TO DO:**
+
+1. **Click on your WhatsApp Business app** in the list
+
+2. **In the left sidebar, look for "WhatsApp" section** and click **"API Setup"**
+   - If you don't see "API Setup", try: **WhatsApp → Getting Started** or **WhatsApp → Quickstart**
+   - Alternative path: **Use Cases** (left sidebar) → click **Customize** on the WhatsApp use case → **API Setup**
+
+3. **Look for a section called "Send and receive messages"** or **"From"** or **"Phone numbers"**
+   - You'll see your registered business phone number (the CasaVitaCure number)
+   - **Right below or next to the phone number**, there's a field called **Phone Number ID**
+   - It's a long numeric string like `375028372012345`
+
+4. **Copy the Phone Number ID.** This is NOT the same as the phone number.
+
+   **How to tell them apart:**
+   - Phone number: `+56 9 1234 5678` (has country code, may have spaces/dashes)
+   - Phone Number ID: `375028372012345` (just digits, no + or spaces, usually 15 digits)
+
+**ALTERNATIVE — If you can't find it in the App Dashboard:**
+
+🔗 Try [https://business.facebook.com/wa/manage/phone-numbers/](https://business.facebook.com/wa/manage/phone-numbers/)
+
+This is the WhatsApp Manager. Click on your phone number and the Phone Number ID should be shown in the details.
+
+---
+
+#### STEP 5 — Update the Production Database (Supabase)
+
+**WHY:** Your backend reads `ws_token` and `ws_phone_id` from the Supabase `tenants` table at runtime. You need to replace the placeholders with the real values from Steps 3 and 4.
+
+**WHERE TO GO:**
+
+🔗 **URL:** [https://supabase.com/dashboard/project/nemrjlimrnrusodivtoa/sql/new](https://supabase.com/dashboard/project/nemrjlimrnrusodivtoa/sql/new)
+
+(That's the SQL Editor for the PRODUCTION Supabase project)
+
+If that URL doesn't work, go to [supabase.com/dashboard](https://supabase.com/dashboard) → click on the production project (the one that says `nemrjlimrnrusodivtoa`) → click **SQL Editor** in the left sidebar → click **New query**
+
+**WHAT TO DO:**
+
+1. **Paste this SQL** (replace the two placeholder values with YOUR real values from Steps 3 and 4):
+
+```sql
+UPDATE tenants
+SET
+  ws_token = 'EAAxxxxxxxx_PASTE_YOUR_ENTIRE_TOKEN_HERE_xxxxxxxx',
+  ws_phone_id = '375028372012345'
+WHERE name = 'CasaVitaCure';
+```
+
+> **⚠️ CAREFUL:** Make sure you paste the ENTIRE token between the single quotes. No leading/trailing spaces. The token is usually 200+ characters, so it will be a very long line — that's normal.
+
+2. **Click "Run"** (or press Ctrl+Enter)
+
+3. **Verify it worked.** Run this query:
+
+```sql
+SELECT name, ws_phone_id, LENGTH(ws_token) as token_length,
+       SUBSTRING(ws_token, 1, 10) as token_preview
+FROM tenants
+WHERE name = 'CasaVitaCure';
+```
+
+**Expected result:**
+| name | ws_phone_id | token_length | token_preview |
+|---|---|---|---|
+| CasaVitaCure | 375028372012345 | 200+ | EAAxxxxxx |
+
+If `token_length` is less than 100, the token didn't copy correctly. Redo it.
+
+---
+
+#### STEP 6 — Find Your WHATSAPP_VERIFY_TOKEN
+
+**WHY:** When you configure the webhook in Meta's dashboard (next step), Meta asks for a "Verify Token". This must match EXACTLY what your backend expects. Your backend reads it from the `WHATSAPP_VERIFY_TOKEN` environment variable in Cloud Run.
+
+**WHERE TO GO:**
+
+🔗 **URL:** [https://console.cloud.google.com/run/detail/europe-west1/ia-backend-prod/revisions?project=saas-javiera](https://console.cloud.google.com/run/detail/europe-west1/ia-backend-prod/revisions?project=saas-javiera)
+
+If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.google.com/) → select project **saas-javiera** → side menu → **Cloud Run** → click **ia-backend-prod**
+
+**WHAT TO DO:**
+
+1. Click on the **latest revision** (should be `ia-backend-prod-00074-jx4` or newer)
+2. Click the **"Edit & Deploy New Revision"** button (or look for a tab called "Variables" or "Environment Variables")
+3. Scroll through the list of environment variables
+4. Find **`WHATSAPP_VERIFY_TOKEN`** — copy its value exactly (case-sensitive, no extra spaces)
+5. **You'll need this value in the next step.** Paste it somewhere accessible (clipboard, notepad)
+
+> **⚠️ Don't change this value!** Just read it. If you change it here, you'd also need to change it in Meta's dashboard, and vice versa. They must match.
+
+---
+
+#### STEP 7 — Configure the Webhook URL in Meta
+
+**WHY:** This tells Meta WHERE to send incoming WhatsApp messages. Right now, Meta doesn't know about your server. After this step, every WhatsApp message to CasaVitaCure's number will be forwarded to your backend.
+
+**WHERE TO GO:**
+
+🔗 **URL:** [https://developers.facebook.com/apps/](https://developers.facebook.com/apps/) → click your app
+
+**WHAT TO DO:**
+
+1. **In the left sidebar**, click **WhatsApp → Configuration**
+   - If you don't see "Configuration", try: **WhatsApp → Getting Started** and look for a webhook section
+   - Alternative path: **Use Cases** → **Customize** → **Configuration**
+
+2. **Find the "Webhook" section** on the page. There should be a subsection with fields for Callback URL and Verify Token, with an **"Edit"** button.
+
+3. **Click "Edit"** (or "Configure" if it says that instead)
+
+4. **Fill in EXACTLY these values:**
+
+   | Field | What to type |
+   |---|---|
+   | **Callback URL** | `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook` |
+   | **Verify Token** | *(paste the WHATSAPP_VERIFY_TOKEN value from Step 6)* |
+
+   > **⚠️ TRIPLE CHECK the Callback URL:** It must be EXACTLY `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook` — no trailing slash, no `/api/` prefix, and it's `https` not `http`.
+
+5. **Click "Verify and Save"**
+
+   **What happens behind the scenes:** Meta sends a GET request to your URL with the verify token. Your backend (the code in `security.py`) checks if the token matches and returns a challenge number. If everything matches, Meta confirms the webhook.
+
+6. **Check the result:**
+   - ✅ **Green checkmark / "Verified"** = SUCCESS! Move to Step 8.
+   - ❌ **Error / "Verification failed"** = Something is wrong. See troubleshooting below.
+
+   **Troubleshooting verification failures:**
+   - **"URL could not be validated"** → Your backend might be down. Check Cloud Run logs.
+   - **"Verification failed"** → The verify token doesn't match. Double-check Step 6 — copy the value again, make sure there are no invisible spaces.
+   - **Other error** → Check Cloud Run logs for a `WARNING: WhatsApp Webhook verification failed` entry. This means the request reached your server but the token didn't match.
+
+---
+
+#### STEP 8 — Subscribe to Webhook Events
+
+**WHY:** Verifying the webhook only sets up the connection. You also need to tell Meta WHICH events to send you. Without subscribing to `messages`, you'll never receive incoming WhatsApp messages.
+
+**STILL ON THE SAME PAGE** (developers.facebook.com → Your App → WhatsApp → Configuration)
+
+1. **Look for "Webhook fields"** section (usually right below where you just configured the webhook URL)
+
+2. **Click "Manage"** (or "Subscribe" or "Edit")
+
+3. **A list of event types appears.** Find and **subscribe** to:
+
+   - **`messages`** → Toggle this ON / click Subscribe ✅
+     - This is the critical one — it sends you incoming user messages
+
+4. **Optionally subscribe to:**
+   - **`message_status`** → delivery/read receipts. Currently the backend handles these gracefully (skips LLM call, just acknowledges). Useful for debugging.
+
+5. **Click "Done"** or just close the modal — subscriptions are usually saved immediately when you toggle them.
+
+---
+
+#### STEP 9 — Send a Test Message & Verify EVERYTHING Works
+
+**This is the moment of truth. 🎉**
+
+1. **Open WhatsApp on your phone** (personal account is fine)
+
+2. **Send a message to the CasaVitaCure WhatsApp number** — something simple like:
+
+   > "Hola, me gustaría saber sobre sus servicios"
+
+3. **Wait 2-10 seconds.** The AI should respond via WhatsApp.
+
+4. **While waiting, monitor these (open all of them in separate tabs):**
+
+   | What to check | Where | What you should see |
+   |---|---|---|
+   | **Cloud Run Logs** | [GCP Console → Cloud Run → ia-backend-prod → Logs](https://console.cloud.google.com/run/detail/europe-west1/ia-backend-prod/logs?project=saas-javiera) | `POST /webhook` → Status 200 |
+   | **Sentry** | Your Sentry dashboard | **No new errors** (clean) |
+   | **Discord** | Your alerts channel | **No new alerts** (clean) |
+   | **CRM Frontend** | [https://dash.tuasistentevirtual.cl](https://dash.tuasistentevirtual.cl) | New chat appears in the conversations list |
+   | **Supabase contacts** | [Production Supabase → Table Editor → contacts](https://supabase.com/dashboard/project/nemrjlimrnrusodivtoa/editor) | New row with `bot_active=true` |
+   | **Supabase messages** | Same → messages table | Two new rows: user message + AI response |
+
+5. **If the AI responded on WhatsApp → 🎉 YOU'RE DONE. IT WORKS.**
+
+---
+
+#### TROUBLESHOOTING — If Something Goes Wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| No webhook received at all (empty Cloud Run logs) | Webhook not configured or app in Development mode | Redo Step 7, and make sure app is in **Live** mode (toggle at top of App Dashboard) |
+| Webhook received but `Tenant Not Found` in Discord/Sentry | `ws_phone_id` in Supabase doesn't match Meta's Phone Number ID | Redo Step 5 — double-check the Phone Number ID from Step 4 |
+| Webhook received, LLM responds, but WhatsApp message never arrives | `ws_token` is wrong or permissions are missing | Redo Step 3 — verify all 3 permissions were checked |
+| WhatsApp shows "This message failed to send" | Token expired or Meta rate limit | Check Sentry for 401 errors. Regenerate token if needed. |
+| Cloud Run logs show `403 Verification failed` | Verify token mismatch | Redo Step 6+7 — the token in Meta Dashboard must match the env var exactly |
+| Everything works but CRM frontend doesn't show the chat | Frontend issue, not a Meta issue | Check browser console for errors; verify Supabase realtime is enabled |
+| AI responds but response is weird/empty | System prompt issue or LLM error | Check Sentry for LLM-related errors |
+
+**5D: Production Validation — 🔴 CRITICAL ISSUES FOUND:**
+
+**What has been verified ✅:**
+- [x] Webhook handshake with Meta (GET /webhook → 200, challenge returned)
+- [x] Inbound messages from real WhatsApp number (`56931374341`) reach backend
+- [x] LLM (OpenAI) generates contextual responses following system prompt
+- [x] Outbound messages sent via Meta Graph API reach user's WhatsApp
+- [x] Messages persisted in Supabase (contacts + messages tables, 10+ messages verified)
+- [x] Conversation appears in CRM frontend dashboard
+- [x] Sentry telemetry active (events captured correctly)
+- [x] System User permanent token installed (never-expiring)
+- [x] Direct Meta Graph API test call returned `200` with `wa_id` confirmation
+
+**Critical issues found in live testing 🔴:**
+- [ ] **BUG-6: Response Quality**: Owner tested as client — interactions were of unacceptable quality. Responses not natural, not useful, sometimes confusing. Root cause needs full audit: hardcoded responses outside error handling? System prompt issues? Code paths short-circuiting LLM?
+- [ ] **BUG-5: Silent Failure Detector**: Layer 2 `TOOL_ACTION_PATTERNS` has 95%+ false positives. Triggers on normal qualifying questions ("podemos agendar"). Must be disabled or completely rewritten.
+- [ ] **Escalation workflow**: `EscalateHumanTool` sets `bot_active=false` but lacks: visual chat highlighting, solved/pending tracking, admin notifications, staff UX for takeover/reactivation. NOT FUNCTIONAL IN PRACTICE.
+- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked in practice. Needs complete rethinking as a Customer Intelligence System: behavior tracking, enriched profiles, action triggers (e.g. 30-day no-return re-engagement). KEY FEATURE for first client.
+
+**Still pending 🟡:**
+- [ ] API Version Update: Code uses Graph API `v19.0`, Meta latest is `v25.0`. Change in `meta_graph_api.py` line 8.
+- [ ] Publish App to Live Mode: App currently in Development mode.
+- [ ] Calendar booking E2E via real WhatsApp conversation
+- [ ] Sentry cleanup: resolve/dismiss false positive warnings
+- [ ] System declared production-ready 🚀 (Resilient MVP)

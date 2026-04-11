@@ -343,9 +343,11 @@ Docs consulted:
   - [x] Layer 2: Post-LLM validation — `TOOL_ACTION_PATTERNS` detects when LLM text implies tool action but `has_tool_calls=False` → Sentry `capture_message` + `set_context` + Discord alert
   - [x] Layer 3: Conditional `tool_choice` — added `tool_choice_override` param to `LLMStrategy`, `OpenAIStrategy`, `GeminiStrategy`. When `force_escalation=True`, passes `{"type": "function", "function": {"name": "request_human_escalation"}}` to FORCE escalation tool call
   - [x] Layer 4: Enhanced logging — full response content preview (150 chars) + tool_calls status + individual tool results (300 chars)
-  - [ ] Re-test EscalateHumanTool and UpdatePatientScoringTool after deploy
-  - [ ] Verify bot_active flips to false on escalation, metadata updates on scoring
-  > **NOTE:** UpdatePatientScoring depends on tenant tool config. Tool not in test tenant's list = LLM can't call it. This is a config surface limitation, not a code bug. → see Backlog "Tenant Assistant Config Revamp"
+  - [x] Re-test EscalateHumanTool after deploy — ✅ simulation scenario 3 confirmed `bot_active=false` set correctly. **BUT**: in practice the tool is non-functional (see Backlog "Human Escalation Workflow").
+  - [x] Verify bot_active flips to false on escalation — ✅ confirmed via simulation
+  > **NOTE:** EscalateHumanTool technically WORKS (sets bot_active=false, fires alerts) but is NOT USEFUL in practice. Lacks: chat highlighting, solved/pending tracking, admin notifications, staff takeover UX, escalation history. Requires full UX design. See Backlog.
+
+  > **NOTE:** UpdatePatientScoring never worked in practice AND the concept is insufficient. What's needed is a Customer Intelligence System: behavior tracking, enriched profiles, action triggers. See Backlog.
 
 - [x] **BUG-2: Character Counter Limit** ✅
   - [x] Changed display from `/ 2000` to `/ 4000` in `config/page.tsx`
@@ -475,93 +477,125 @@ Docs consulted:
   - [ ] Frontend realtime updates work for each simulated conversation — **deferred to manual check**
   - [x] Zero unexpected errors — all errors were from expected malformed payload scenarios
 
-### 5B: Version Tag + Final Production Deploy
-- [ ] Deploy observability fixes to production (5A-OBS changes: `dependencies.py`, `tool_registry.py`, `gemini_adapter.py`, `openai_adapter.py`, `use_cases.py`)
-- [ ] Simulation suite passes cleanly with zero unexpected errors (✅ done locally, needs cloud verification)
-- [ ] `git tag v1.0` on `main`
-- [ ] `git push origin main --tags` — triggers production auto-deploy
-- [ ] Verify: production frontend and backend running v1.0 code
+### 5B: Version Tag + Final Production Deploy ✅ COMPLETED (2026-04-10)
+- [x] Deploy observability fixes to production (5A-OBS changes: `dependencies.py`, `tool_registry.py`, `gemini_adapter.py`, `openai_adapter.py`, `use_cases.py`)
+  - Commit `8d95ec2`: `fix(5a-obs): hardened observability`
+  - Commit `f0da91b`: `feat(phase5a): Meta webhook simulation suite + docs update`
+- [x] Cloud Build auto-deploy → Revision `ia-backend-prod-00074-jx4` live at `13:14:42 UTC`
+- [x] `git tag v1.0` on `main` → pushed to origin
+- [x] Production verified: backend serving revision 00074, startup clean, zero errors
 
-### 5C: Connect Meta/WhatsApp (LIVE)
+### 5C: Connect Meta/WhatsApp (LIVE) ✅ COMPLETED (2026-04-10)
 
-> **CRITICAL — System User Token Required:** The current Meta API token is expired (401 in Sentry). Before connecting, create a System User in Meta Business Manager with `whatsapp_business_messaging` + `whatsapp_business_management` permissions and generate a **permanent** token.
-> **Ref:** [Meta System Users](https://developers.facebook.com/docs/marketing-api/system-users/)
-> **CRITICAL — AI Chatbot Policy:** Meta prohibits "general-purpose" AI chatbots (Jan 2026). CasaVitaCure is compliant: task-specific assistant for booking, scoring, and escalation.
+> **Completed 2026-04-10 ~14:45 UTC. All manual configuration steps done. WhatsApp E2E LIVE.**
 
-- [ ] Create System User in Meta Business Manager → generate permanent access token
-- [ ] Update `ws_token` in production Supabase `tenants` table for CasaVitaCure
-- [ ] Update `ws_phone_id` in production Supabase to match real Meta phone_number_id (currently `123456789012345` placeholder)
-- [ ] Configure webhook URL in Meta Dashboard → production backend (`ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook`)
-- [ ] Verify webhook verification handshake (GET /webhook with verify_token)
-- [ ] Send a real WhatsApp message → confirm full pipeline:
-  - [ ] Message received by webhook
-  - [ ] LLM inference completes
-  - [ ] Response sent back via Meta API
-  - [ ] Message appears in frontend CRM chat in real time
-  - [ ] Sentry shows clean trace (no errors)
-  - [ ] No unexpected Discord error notifications
+**Step 1: Tenant Credentials Updated in Production Supabase** ✅
+- [x] `ws_phone_id` updated from placeholder to real value: `1041525325713013`
+- [x] `ws_token` updated with temporary token for initial testing
+- [x] WABA ID confirmed: `2112673849573880`
 
-### 5D: Production Validation — System 100% Operational
-- [ ] Multiple real WhatsApp conversations tested
-- [ ] Calendar booking end-to-end (WhatsApp → LLM → GCal API → confirmation message)
-- [ ] Escalation tested (user requests human → bot paused → alert in CRM + Discord)
-- [ ] Sentry dashboard clean — no unexpected errors
-- [ ] Discord alerts only fire for legitimate issues
+**Step 2: Webhook Configuration** ✅
+- [x] Callback URL: `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook`
+- [x] Verify Token: `synapse_token_secret_2025` (from GCP Secret Manager `WHATSAPP_VERIFY_TOKEN`)
+- [x] 🐛 **BUG FOUND & FIXED:** Webhook verification returned 403 despite correct token
+  - **Root cause:** GCP Secret Manager had a **trailing space** in `WHATSAPP_VERIFY_TOKEN` (hex `20` at end)
+  - **Fix:** Created new secret version (v3) without trailing space via `WriteAllBytes` (PowerShell `echo -n` doesn't work)
+  - **Deploy:** `gcloud run services update --update-secrets` → Revision `ia-backend-prod-00075-skt`
+  - **Verified:** `curl.exe` GET → HTTP 200, `hub.challenge` returned correctly
+- [x] Meta webhook verified ✅ (user confirmed in dashboard)
+
+**Step 3: Subscribe to Webhook Events** ✅
+- [x] Subscribed to `messages` field in WhatsApp → Configuration → Webhook fields
+
+**Step 4: End-to-End Verification** ✅
+- [x] Real WhatsApp messages received from `56931374341` → processed correctly
+- [x] LLM (OpenAI) generated contextual responses → sent back to WhatsApp
+- [x] Messages persisted in Supabase: 10+ messages (5 user + 5 assistant) in full conversation
+- [x] Conversation appeared in CRM frontend
+- [x] Sentry captured telemetry (silent failure warnings — false positives, see notes below)
+
+**Step 5: System User Permanent Token** ✅
+- [x] Created System User in Meta Business Settings
+- [x] Assigned assets: App (Full control) + WABA (Full control)
+- [x] Generated permanent token (never-expiring) with `whatsapp_business_messaging` + `whatsapp_business_management`
+- [x] Updated `tenants.ws_token` in production Supabase with permanent token
+- [x] **Verified:** Direct Meta Graph API call (`POST /v19.0/{phone_id}/messages`) returned `200` with `wa_id` confirmation
+- [x] User confirmed message received on WhatsApp ✅
+
+**Known Issues Found During 5C:**
+- **Silent Failure False Positives:** The BUG-1 Layer 2 detector triggers when LLM says "agendar" in qualifying questions (e.g., "podemos agendar una evaluación"). This is correct LLM behavior (asking qualifying questions before booking), not a failure. Fix: adjust pattern sensitivity. Severity: Low — warning only, does not block responses.
+- **API Version:** Code uses Graph API `v19.0`, Meta example shows `v25.0`. `v19.0` still works. Update when convenient.
+- **App Mode:** App is in Development mode. Only admins/developers/testers of the app receive webhooks. Must publish to Live mode before onboarding non-tester clients.
+
+### 5D: Production Validation — 🔴 CRITICAL ISSUES FOUND
+
+> **Live testing with first client owner (2026-04-10) revealed critical gap between "works technically" and "works in practice".**
+
+- [x] Real WhatsApp conversations flowing (10+ messages verified)
+- [x] AI responses arrive on WhatsApp within 2-10 seconds
+- [x] Messages persist correctly in Supabase (contacts + messages tables)
+- [x] Permanent System User token installed (no expiration)
+
+**🔴 Critical — must fix before product is usable:**
+- [ ] **BUG-6: Response Quality**: Owner played as client — interactions were of unacceptable quality ("sadly hilarious"). Full audit needed: hardcoded responses outside error handling? System prompt issues? Code paths short-circuiting LLM? Rule: ONLY valid hardcoded responses are for graceful degradation of technical failures.
+- [ ] **BUG-5: Silent Failure Detector (L2)**: `TOOL_ACTION_PATTERNS` has 95%+ false positives. Fires on every normal conversation where LLM says "agendar" or "escalar" in qualifying questions. Completely inservible. Must be disabled or rewritten from scratch.
+- [ ] **Escalation workflow**: Tool technically works (`bot_active=false`) but is NON-FUNCTIONAL in practice. Missing: chat highlighting, tracking, notifications, staff takeover UX, reactivation, history.
+- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked. Need full Customer Intelligence System: behavior tracking, enriched profiles, action triggers (30-day no-return re-engagement = key feature for first client).
+
+**🟡 Still pending:**
+- [ ] Calendar booking E2E via real WhatsApp
+- [ ] Sentry dashboard audit — clean up false positive warnings
+- [ ] Publish Meta App to Live mode (required for non-tester clients)
+- [ ] Update Graph API version `v19.0` → `v25.0` in `meta_graph_api.py`
 - [ ] System declared production-ready 🚀 (Resilient MVP)
 
 ---
 
-## Backlog (Future Features -- NOT for current phase) -- WILL BE IMPLEMENTED AFTER META CONNECTION AND 100% QA TEST PASSED -- aka Phase 6
+## Backlog (Phase 6+ — NOT for current phase)
 
-> Items below are documented for future implementation. They are NOT blockers for WhatsApp go-live.
+> Items below are documented for future implementation. **Nuevo tenant llega el martes** — many of these are now urgent.
+> Items marked [!!!] are blockers or critical for product viability.
 
-### HIGH PRIORITY — Tenant Assistant Config Revamp
+### 🔴 CRITICAL — Must Fix for Product Viability
 
-> **Context:** The current `/config` route only controls system_prompt + LLM provider/model. There is no way for owners to control WHICH tools are active, test changes safely, or rollback bad configs. This was surfaced during Phase 3E testing when `update_patient_scoring` couldn't fire because the tool wasn't in the tenant's configured tool list.
+- [!!!] **Response Quality Audit & Fix (BUG-6)**: Full diagnostic of why production responses are bad. Audit every code path in `use_cases.py` that generates response text. Identify and eliminate hardcoded responses outside of error handling. Only valid hardcoded responses: LLM timeout, tool crash, network error. All other responses MUST come from LLM with tenant system prompt. Includes system prompt tuning with real conversation data.
 
-- [ ] **`/config` as Live Agent Controller:** The config route should be the sole control surface for the live assistant's behavior — prompt, model, active tools, personality, response rules
-- [ ] **Chat de Pruebas as Safe Testing Ground:** The sandbox chat should let owners test modifications to their assistant config BEFORE those changes go live. Changes made in config should be testable in sandbox before committing to production
-- [ ] **Config Versioning & Rollback:** Every config change (prompt, model, tools) must be versioned with timestamp + author. Owners should be able to instantly rollback to any previous config version. Database schema change: `tenant_config_versions` table with JSON snapshots
-- [ ] **Tool On/Off Toggle:** Owners must be able to enable/disable individual tools in real time from the config surface. E.g., disable `delete_appointment` during a migration, enable `update_patient_scoring` when scoring criteria are ready. This affects what schemas get sent to the LLM
-- [ ] **Sandbox Role Selector Enhancement:** The sandbox chat already has a role switcher (cliente/staff/admin). Needs to be more prominent and its implications clearly documented. Different roles should demonstrate different tool access levels (e.g., admin can delete any appointment, cliente only their own)
+- [!!!] **BUG-5 Fix: Silent Failure Detector Rewrite**: Current `TOOL_ACTION_PATTERNS` in `use_cases.py` Layer 2 is inservible (95%+ false positives). Options: (a) disable completely, (b) semantic rewrite, (c) different approach (e.g., only alert when `force_escalation=True` but no `tool_call`). Noise is drowning real alerts in Sentry/Discord.
 
-### HIGH PRIORITY — Calendar Multi-Tenant Architecture Refactor
+- [!!!] **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcoded to CasaVitaCure (`casavitacure-crm`), Calendar IDs fallback in `google_client.py:L69-72`, OAuth flow built but disconnected. Requires: per-tenant OAuth, `tenant_resources` table for N calendars, UI in `/config`. **Blocks:** dev calendar, second client, scalability.
 
-> **Context (diagnosed 2026-04-10):** The calendar system is fundamentally single-tenant. It uses a Service Account from CasaVitaCure's GCP project as a global singleton, with Calendar IDs hardcoded as fallback. The OAuth per-tenant flow (`google_oauth_router.py`) stores refresh tokens but `google_client.py` never reads them. This blocks: (1) adding new clients, (2) having N calendars per tenant (fumigación teams, hotel rooms, etc.), (3) safely connecting dev environment.
+### 🔴 HIGH PRIORITY — Required Features (not just fixes)
 
-**3 Structural Problems:**
-1. Service Account belongs to client (`casavitacure-crm`), not our SaaS — singleton pattern, shared across all tenants
-2. `TenantContext` model doesn't include `calendar_ids` — `_get_calendar_ids()` always falls back to hardcoded CasaVitaCure IDs
-3. OAuth flow exists but is disconnected — `google_client.py` ignores `google_refresh_token_encrypted` from tenants table
+- [ ] **Human Escalation Workflow Completo**: `EscalateHumanTool` currently only sets `bot_active=false`. In practice this is USELESS without:
+  1. Visual highlighting of chats needing human intervention in the panel
+  2. Solved/pending tracking system for escalated chats
+  3. Active notifications to admins/staff as configured by tenant
+  4. Intuitive UX for staff to take over conversation AND reactivate bot when done
+  5. Escalation history and audit trail
+  - Requires FULL UX design before implementation. More requirements likely to surface during design.
 
-**Required changes:**
-- [ ] Add `calendar_ids` field to `TenantContext` model (so DB values are actually used)
-- [ ] Replace Service Account singleton with per-tenant OAuth credentials (use stored `google_refresh_token_encrypted`)
-- [ ] Create `tenant_resources` table for N dynamic calendars per tenant (name, calendar_id, provider, color, sort_order)
-- [ ] Update `_get_calendar_ids()` to read from `tenant_resources` instead of hardcoded fallback
-- [ ] Update `/config` UI to manage calendar resources (add/remove/reorder)
-- [ ] Create dev-specific test calendar(s) for safe development testing
-- [ ] Consider future abstraction: `CalendarProvider` interface supporting Google, Cal.com, internal
+- [ ] **Customer Intelligence System (replaces UpdatePatientScoringTool)**: Patient scoring NEVER WORKED in practice AND the concept is insufficient. What's needed:
+  1. **Behavior tracking**: visits, purchases, interests, problems, conversation history analysis
+  2. **Enriched customer profile**: preferences, purchase history, service history, notes
+  3. **Dedicated CRM tab/view**: Current scoring UI is either not implemented or nonexistent. Needs solid thought to be helpful.
+  4. **Action triggers**: e.g., valuable customer hasn't returned in 30 days → notification + re-engagement capability (*KEY FEATURE requested by first client with high conversion rate requirement*)
+  5. **Calculated scoring**: Not just manual metadata — intelligent, data-driven scoring
+  - May need additional tools beyond current `UpdatePatientScoringTool`. If multiple tools, extensive design needed for how they work together.
+  - Requires: new DB schema, complete UI, possibly multiple LLM tools, integration with notification system.
+  - **Extensive design required before implementation.**
 
-### HIGH PRIORITY — Agenda Visual Revamp
+- [ ] **Tenant Assistant Config Revamp**: `/config` as integral controller (prompt + model + tools on/off), sandbox as safe testing ground, versioning with rollback, real-time tool toggle
 
-> **Context:** The agenda viewer needs significant UI improvements, especially for mobile viewports where many elements don't fit properly.
+### 🟡 MEDIUM PRIORITY
 
-- [ ] **Mobile Layout Overhaul:** Agenda components overflow on small screens. Needs responsive redesign — possibly card-based layout for mobile instead of calendar grid
-- [ ] **Date Navigation:** Users need to scroll back and forth through days, weeks, months. This requires careful architectural thought:
-  - Data fetching strategy (lazy load vs pre-fetch range)
-  - URL state management (shareable links to specific date ranges)
-  - Performance for large appointment volumes
-  - Touch gestures for mobile (swipe between days/weeks)
-- [ ] **Design System Alignment:** Agenda should match the overall CRM aesthetic (glassmorphism, micro-animations, premium feel)
+- [ ] **Agenda Visual Revamp**: mobile layout overflow, day/week/month navigation, responsive redesign, touch gestures
+- [ ] **Bot Pause Notifications**: Every bot pause (by human, by EscalateHumanTool, by any system rule) → Sentry + Discord + in-app notification to admins/staff as configured by tenant
+- [ ] **Paused Chat Inbound Alerts**: If a paused chat receives messages from client, notify via Discord, Sentry, and to admins/staff. Currently bot silently ignores (`use_cases.py:94-96`)
+- [ ] **Tool Registry Tracking**: Full logging of registered tools, schemas, and execution history
+- [ ] **Tenant Config Versioning (DB schema)**: `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools
+- [ ] Responsive layout: mobile bottom nav, small viewport rendering, human tester input needed
 
-### MEDIUM PRIORITY
-
-- [ ] **Bot Pause Notifications:** Every time bot is paused (by human hand, by EscalateHumanTool, by any system rule) must generate Sentry event + Discord notification + in-app notification to admins/staff as configured by tenant
-- [ ] **Paused Chat Inbound Alerts:** If a paused chat receives messages from the client, notify via Discord, Sentry, and to admins/staff configured by tenant. Currently the bot silently ignores (`use_cases.py:94-96`)
-- [ ] **Tool Registry Tracking:** Full logging and traceability of which tools are registered at boot, their schemas, and execution history
-- [ ] **Tenant Config Versioning (DB schema):** `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools. Each UPDATE creates a version snapshot
-- [ ] Responsive layout: mobile bottom nav works, pages render on small viewport: ask for human tester input and first focus group feedback
-
-### LOW PRIORITY / FUTURE
-- [ ] **BUG-4 (CheckMyAppointments hallucination):** LLM invents appointment details. Needs diagnostic data capture + prompt refinement. Deferred pending Phase 6 tool config revamp
+### 🟢 LOW PRIORITY / FUTURE
+- [ ] **BUG-4 (CheckMyAppointments hallucination)**: LLM invents appointment details. Needs diagnostic data + prompt refinement. Deferred pending tool config revamp
+- [ ] Update Graph API `v19.0` → `v25.0`
+- [ ] Publish Meta App to Live Mode
