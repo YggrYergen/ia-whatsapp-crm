@@ -23,7 +23,12 @@ class OpenAIStrategy(LLMStrategy):
     def __init__(self, api_key: str = None, model_id: str = "gpt-5.4-mini"):
         key = api_key or settings.OPENAI_API_KEY
         super().__init__(api_key=key, model_id=model_id)
-        if AsyncOpenAI: self.client = AsyncOpenAI(api_key=self.api_key)
+        if AsyncOpenAI:
+            self.client = AsyncOpenAI(api_key=self.api_key)
+        else:
+            self.client = None
+            logger.error("[OpenAIStrategy] openai package not installed — LLM calls will fail")
+            sentry_sdk.capture_message("OpenAI SDK not installed — AsyncOpenAI is None", level="error")
 
     async def generate_response(
         self, 
@@ -32,8 +37,15 @@ class OpenAIStrategy(LLMStrategy):
         tools: List[Dict[str, Any]],
         tool_choice_override: Optional[Any] = None
     ) -> LLMResponse:
-        if not AsyncOpenAI:
-            return LLMResponse(content="System Setup fault: OpenAI not resolved")
+        if not AsyncOpenAI or not self.client:
+            logger.error("[OpenAIStrategy] Cannot generate response — openai package not installed")
+            sentry_sdk.capture_message("OpenAI generate_response called but SDK not available", level="error")
+            await send_discord_alert(
+                title="💥 OpenAI SDK Missing",
+                description="generate_response() called but openai package is not installed. All LLM calls are failing.",
+                severity="error"
+            )
+            return LLMResponse(content="Error interno del sistema. Por favor intenta de nuevo.")
             
         messages = [{"role": "system", "content": system_prompt}] + message_history
         
@@ -81,22 +93,33 @@ class OpenAIStrategy(LLMStrategy):
                 ]
             
             # C2: Populate usage tracking fields from response.usage
-            # Ref: https://platform.openai.com/docs/api-reference/chat/create — usage object
-            usage = response.usage
-            if usage:
-                dto.prompt_tokens = usage.prompt_tokens
-                dto.completion_tokens = usage.completion_tokens
-                dto.model_used = response.model
-                # Nested details — may be None depending on model/request
-                prompt_details = getattr(usage, 'prompt_tokens_details', None)
-                completion_details = getattr(usage, 'completion_tokens_details', None)
-                dto.cached_tokens = getattr(prompt_details, 'cached_tokens', None) if prompt_details else None
-                dto.reasoning_tokens = getattr(completion_details, 'reasoning_tokens', None) if completion_details else None
-                
-                logger.info(
-                    f"📊 [LLM Usage] model={response.model} "
-                    f"prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
-                    f"cached={dto.cached_tokens or 0} reasoning={dto.reasoning_tokens or 0}"
+            # Wrapped in its own try/except so usage parsing failure doesn't
+            # kill the valid LLM response (content + tool_calls)
+            try:
+                usage = response.usage
+                if usage:
+                    dto.prompt_tokens = usage.prompt_tokens
+                    dto.completion_tokens = usage.completion_tokens
+                    dto.model_used = response.model
+                    # Nested details — may be None depending on model/request
+                    prompt_details = getattr(usage, 'prompt_tokens_details', None)
+                    completion_details = getattr(usage, 'completion_tokens_details', None)
+                    dto.cached_tokens = getattr(prompt_details, 'cached_tokens', None) if prompt_details else None
+                    dto.reasoning_tokens = getattr(completion_details, 'reasoning_tokens', None) if completion_details else None
+                    
+                    logger.info(
+                        f"📊 [LLM Usage] model={response.model} "
+                        f"prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
+                        f"cached={dto.cached_tokens or 0} reasoning={dto.reasoning_tokens or 0}"
+                    )
+            except Exception as usage_err:
+                # Usage parsing failed but the LLM response is still valid — don't crash
+                logger.warning(f"[OpenAIStrategy] Usage parsing failed (non-fatal): {usage_err}")
+                sentry_sdk.capture_exception(usage_err)
+                await send_discord_alert(
+                    title="⚠️ OpenAI Usage Parsing Failed",
+                    description=f"Usage tracking failed (response still valid): {str(usage_err)[:300]}",
+                    severity="warning"
                 )
                 
             return dto
