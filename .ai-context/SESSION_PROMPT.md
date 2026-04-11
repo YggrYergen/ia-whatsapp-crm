@@ -309,6 +309,37 @@ At the END of every session, ensure:
 - **ALWAYS** test locally or in dev environment before staging for production
 - **ALWAYS** create a git commit before AND after significant changes (safety net)
 
+### 🔴 Git Branch & Deployment Architecture
+
+> [!CAUTION]
+> **Pushes to branches trigger AUTOMATIC deployments.** Understand this before pushing ANYTHING.
+
+```
+desarrollo (dev branch)  ──push──►  Cloud Run: DEV backend    +  Cloudflare: DEV frontend
+main       (prod branch) ──push──►  Cloud Run: PROD backend   +  Cloudflare: PROD frontend
+```
+
+| Branch | Backend Deploy Target | Frontend Deploy Target | Database |
+|:---|:---|:---|:---|
+| `desarrollo` | `ia-backend-dev` (Cloud Run, `saas-javiera`) | Dev Cloudflare Pages | Supabase DEV |
+| `main` | `ia-backend` (Cloud Run, `casavitacure-crm`) | Prod Cloudflare Pages | Supabase PROD |
+
+**THE WORKFLOW:**
+1. **ALL new work happens on `desarrollo`** — never commit Sprint work directly to `main`
+2. Test and verify on DEV environment
+3. When a block is tested and stable → merge `desarrollo → main` to deploy to production
+4. **NEVER push untested code to `main`** — it goes LIVE immediately to real clients
+
+**Before pushing to `desarrollo`:**
+- ✅ Code compiles / no syntax errors
+- ✅ No hardcoded prod credentials in dev code
+
+**Before merging `desarrollo → main`:**
+- ✅ All block tasks marked `[x]` in `task.md`
+- ✅ Tested on DEV environment (real WhatsApp messages or simulation)
+- ✅ No regressions on existing features
+- ✅ User has explicitly approved the merge
+
 ### Scope Discipline
 - **ONLY** work on the blocks listed in §1 "What Is Being Done RIGHT NOW"
 - If you discover a problem outside the current scope: **LOG IT** in the relevant tracking file, do NOT fix it now
