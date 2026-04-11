@@ -47,19 +47,24 @@ class OpenAIStrategy(LLMStrategy):
             tool_choice = None
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model_id,
-                messages=messages,
-                tools=tools if tools else None,
-                tool_choice=tool_choice,
-                # B1: Disable parallel tool calls — required for strict: true schemas
-                # Ref: OpenAI Structured Outputs docs — strict mode is incompatible with parallel calls
-                parallel_tool_calls=False if tools else None,
+            # Build API kwargs — parallel_tool_calls must be OMITTED (not null)
+            # when no tools are present. OpenAI API rejects null for this param.
+            # Ref: https://platform.openai.com/docs/api-reference/chat/create
+            api_kwargs = {
+                "model": self.model_id,
+                "messages": messages,
                 # A6: Cost cap — limit output tokens per response
                 # At $4.50/1M output tokens, 500 tokens ≈ $0.00225/response max
-                # Using max_completion_tokens (not deprecated max_tokens) per OpenAI API docs
-                max_completion_tokens=500
-            )
+                "max_completion_tokens": 500,
+            }
+            if tools:
+                api_kwargs["tools"] = tools
+                api_kwargs["tool_choice"] = tool_choice
+                # B1: Disable parallel tool calls — required for strict: true schemas
+                # Ref: OpenAI Structured Outputs docs — strict mode incompatible with parallel calls
+                api_kwargs["parallel_tool_calls"] = False
+            
+            response = await self.client.chat.completions.create(**api_kwargs)
             message = response.choices[0].message
             
             dto = LLMResponse()
