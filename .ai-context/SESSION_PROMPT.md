@@ -256,6 +256,17 @@ At the END of every session, ensure:
 | **Observability** | Sentry + Discord webhooks | [Sentry Python](https://docs.sentry.io/platforms/python/) |
 | **Auth** | Supabase Auth | [Supabase Auth](https://supabase.com/docs/guides/auth) |
 
+### Runtime Environment
+| Aspect | Value |
+|:---|:---|
+| **OS** | Windows |
+| **Shell** | **PowerShell** — NOT bash. `&&` does NOT work. Use `;` to chain commands. |
+| **Path separator** | `\` (backslash) |
+| **No `grep`/`wc`/`sed`** | Use `Select-String`, `Measure-Object`, PowerShell equivalents |
+| **Python** | `python` (not `python3`) |
+| **Package manager** | `pip` / `npm` |
+
+
 ---
 
 ## 🔒 [IMMUTABLE] §9.1 — MCP Tools Available in Environment
