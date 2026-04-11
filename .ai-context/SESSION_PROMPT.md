@@ -312,21 +312,47 @@ At the END of every session, ensure:
 ### 🔴 Git Branch & Deployment Architecture
 
 > [!CAUTION]
-> **Pushes to branches trigger AUTOMATIC deployments.** Understand this before pushing ANYTHING.
+> **Pushes to branches trigger AUTOMATIC deployments.** There is NO manual step. The moment you `git push`, builds start.
+
+#### How the Auto-Deploy Triggers Work
+
+**Backend (Google Cloud Run via Cloud Build):**
+- A **Cloud Build trigger** watches the GitHub repo for pushes
+- Push to `main` → triggers Cloud Build → 3-step pipeline: **Build** (Dockerfile) → **Push** (to Artifact Registry) → **Deploy** (to Cloud Run service)
+- Push to `desarrollo` → same pipeline but targets the DEV Cloud Run service
+- Build context: `Backend/` directory only (changes to `.ai-context/`, `Frontend/`, docs do NOT trigger backend rebuilds, but the trigger still fires — it just builds the same image)
+- Build time: ~2-5 minutes from push to live
+- Service account: `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com`
+
+**Frontend (Cloudflare Pages via Workers Builds):**
+- Cloudflare Pages is connected to the GitHub repo
+- Push to `main` → auto-builds and deploys production frontend
+- Push to `desarrollo` → auto-builds and deploys dev/preview frontend
+- Build uses OpenNext to compile Next.js 15 for Cloudflare Workers runtime
 
 ```
-desarrollo (dev branch)  ──push──►  Cloud Run: DEV backend    +  Cloudflare: DEV frontend
-main       (prod branch) ──push──►  Cloud Run: PROD backend   +  Cloudflare: PROD frontend
+┌──── git push origin desarrollo ────┐     ┌──── git push origin main ────────┐
+│                                     │     │                                   │
+│  Cloud Build (saas-javiera)         │     │  Cloud Build (casavitacure-crm)   │
+│  ├─ Build: Backend/Dockerfile       │     │  ├─ Build: Backend/Dockerfile     │
+│  ├─ Push: → Artifact Registry       │     │  ├─ Push: → Artifact Registry     │
+│  └─ Deploy: → ia-backend-dev        │     │  └─ Deploy: → ia-backend-prod     │
+│                                     │     │                                   │
+│  Cloudflare Workers Builds          │     │  Cloudflare Workers Builds        │
+│  └─ Deploy: → DEV Pages            │     │  └─ Deploy: → PROD Pages          │
+│                                     │     │                                   │
+│  Database: Supabase DEV             │     │  Database: Supabase PROD          │
+└─────────────────────────────────────┘     └───────────────────────────────────┘
 ```
 
-| Branch | Backend Deploy Target | Frontend Deploy Target | Database |
-|:---|:---|:---|:---|
-| `desarrollo` | `ia-backend-dev` (Cloud Run, `saas-javiera`) | Dev Cloudflare Pages | Supabase DEV |
-| `main` | `ia-backend` (Cloud Run, `casavitacure-crm`) | Prod Cloudflare Pages | Supabase PROD |
+| Branch | Backend Service | GCP Project | Frontend | Database |
+|:---|:---|:---|:---|:---|
+| `desarrollo` | `ia-backend-dev` | `saas-javiera` | Dev Cloudflare Pages | Supabase DEV |
+| `main` | `ia-backend-prod` | `casavitacure-crm` | Prod Cloudflare Pages | Supabase PROD |
 
 **THE WORKFLOW:**
 1. **ALL new work happens on `desarrollo`** — never commit Sprint work directly to `main`
-2. Test and verify on DEV environment
+2. Push triggers auto-deploy to DEV — test and verify there
 3. When a block is tested and stable → merge `desarrollo → main` to deploy to production
 4. **NEVER push untested code to `main`** — it goes LIVE immediately to real clients
 
