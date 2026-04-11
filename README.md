@@ -6,9 +6,29 @@
 
 ---
 
-## 0. Estado Actual del Proyecto (2026-04-10 10:50 CLT)
+## 0. Estado Actual del Proyecto (2026-04-11 14:30 CLT)
 
-**Estado global:** 🟢 Phase 5C completada — **WhatsApp LIVE.** Meta webhook conectado, mensajes E2E funcionando (inbound + outbound), System User token permanente instalado. Sistema en validación final (5D).
+**Estado global:** 🔴 **Sprint 1 — Emergency Stabilization.** BUG-6 (response quality) diagnosticado: 7 root causes identificados. 2do cliente (fumigación, Santiago) se onboardea el martes 15 de abril. Planificación completa, Deep Dives A/B/C creados. Ejecución comienza mañana sábado.
+
+> **⚠️ DOCUMENTACIÓN EXTENDIDA:** Los documentos de planificación y arquitectura están en `.ai-context/`:
+> - `master_plan.md` (v5) — Plan maestro con modelo financiero CORREGIDO, roadmap, y decisiones. **⚠️ Pricing corrected en v5.**
+> - `deep_dive_a_response_quality.md` (v3) — 7 root causes de BUG-6, **60+ URLs de docs oficiales exactas**
+> - `deep_dive_b_multi_channel.md` (v3) — BSUID migration, multi-canal, Meta compliance
+> - `deep_dive_c_dashboard_ux.md` (v3) — Dashboard (4 bloques), observability, correlation IDs
+> - `task.md` — **Sprint 1 execution plan** con doc links por cada paso
+> - `implementation_plan.md` — Full implementation history + Sprint 1 overview
+
+### Decisiones Clave Tomadas (2026-04-11)
+
+| Decisión | Elección | Razón |
+|:---|:---|:---|
+| **Modelo LLM default** | ✅ **`gpt-5.4-mini`** PROD ($0.75/$4.50) + `gpt-5.4-nano` DEV/budget ($0.20/$1.25) | Ambos API-compatibles. Nano para tenants simples/baratos. Cap: `max_completion_tokens=500` → ~$0.00225/response. Código actual usa `gpt-4o-mini` (DEPRECATED, arreglar en Sprint 1 Block A). |
+| **Motor de reservas** | Propio (DB-based) + sync opcional a Google Calendar | Multi-industria, no depende de GCal. Tema booking engine diseñado en Deep Dive A |
+| **Provisión WhatsApp** | Tu WABA a corto plazo → WABA por cliente antes del #7 | Compliance Meta: multiples negocios bajo 1 WABA es riesgoso |
+| **Precio básico** | 80K CLP/mo | 10K bajo líder del mercado |
+| **Gemini como alternativa** | Sprint 2 — adapter actualmente mock | $1.50 vs $2.00 output tokens (25% más barato) |
+
+### Estado de Infraestructura
 
 | Pieza | Estado | Detalle |
 |:---|:---|:---|
@@ -19,10 +39,11 @@
 | **BD Producción** | 🟢 Funcional | `nemrjlimrnrusodivtoa`. Secreto: `SUPABASE_SERVICE_ROLE_KEY` |
 | **BD Desarrollo** | 🟢 Funcional | `nzsksjczswndjjbctasu`. Secreto separado: `SUPABASE_SERVICE_ROLE_KEY_DEV` |
 | **Meta/WhatsApp** | 🟢 **LIVE** | Webhook verificado, mensajes E2E, System User token permanente. WABA `2112673849573880`, Phone ID `1041525325713013` |
-| **Calendario (Agenda)** | 🟡 Solo en prod | ⚠️ Desconectado en dev (protección calendario cliente). Ver deuda técnica |
+| **Calendario (Agenda)** | 🟡 Solo en prod | ⚠️ Desconectado en dev. **Decisión:** Build propio booking engine (Sprint 2), GCal solo como sync |
 | **Webhook Simulation Suite** | 🟢 Verificada | 9/9 escenarios pasaron. Scripts en `Backend/scripts/simulation/`. Ver §0.8 |
 | **Rama `main`** | 🟢 Al día | Auto-deploy backend (Cloud Build) + frontend (Workers Builds) |
 | **Rama `desarrollo`** | 🟢 Ecosistema propio | Auto-deploy backend + frontend a infraestructura dev |
+| **Gemini Adapter** | 🔴 Mock | Retorna "Mock structural inference". Implementación real en Sprint 2 |
 
 ### Plan de Go-Live (en ejecución)
 
@@ -68,27 +89,48 @@ FASE 0: Pre-flight ✅ ─► FASE 1: Estabilizar ✅ ─► FASE 2: Monitoreo �
 
 | ID | Bug | Severidad | Detalle |
 |:---|:---|:---|:---|
-| **BUG-5** | Silent Failure Detector (BUG-1 Layer 2) — 95%+ false positives | 🔴 Alta | `TOOL_ACTION_PATTERNS` en `use_cases.py` dispara alertas Sentry/Discord cuando el LLM usa palabras como "agendar", "escalar" en preguntas de calificación normales. Ej: "¿podemos agendar una evaluación?" → false positive. El detector es virtualmente inútil en su estado actual. Requiere reescritura completa o desactivación. |
-| **BUG-6** | Calidad de respuestas inaceptable en producción | 🔴 Alta | En pruebas live con la dueña del primer cliente (jugando como si fuera clienta), las interacciones fueron de muy baja calidad. Requiere diagnóstico: (1) ¿hay respuestas hardcodeadas que interfieren con el flujo natural? (Solo deben existir para graceful degradation de errores técnicos). (2) ¿El system prompt actual produce respuestas útiles? (3) ¿Hay code paths que cortocircuitan la inferencia LLM? Audit completo necesario de `use_cases.py` y todos los puntos donde se genera texto de respuesta. |
+| **BUG-5** | Silent Failure Detector (BUG-1 Layer 2) — 95%+ false positives | 🟡 → **SERÁ DESACTIVADO** | `TOOL_ACTION_PATTERNS` en `use_cases.py` genera 95%+ false positives. **Decisión:** Desactivar completamente (comentar L219-L242). Sprint 1, Day 1. |
+| **BUG-6** | Calidad de respuestas inaceptable en producción | 🔴 **DIAGNOSTICADO — 7 Root Causes** | Full fix spec en [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). **Fix estimado: 4-7 horas.** Sprint 1, Day 1. |
+| **CC-1** | Codebase usa `gpt-4o-mini` **DEPRECATED** | 🔴 → ✅ **RESUELTO** | Cambiar a `gpt-5.4-mini` en 3 archivos. Sprint 1, Block A. |
+| **CC-4** | Graph API v19.0 **DEPRECATED May 21, 2026** | 🔴 **40 días** | Cambiar a v25.0 en `meta_graph_api.py:L8`. Sprint 1, Block A. |
+| **CC-5** | Tool schemas sin `strict: true` | 🔴 **CRÍTICO** | Agregar `strict: true` + `additionalProperties: false` a las 7 tools. Sprint 1, Block B. |
+| **CC-7** | No hay verificación de firma webhook | 🔴 **SEGURIDAD** | `/webhook` acepta POST de cualquiera. Agregar HMAC-SHA256. Sprint 1, Block E. |
+| **CC-8** | No hay rate limit LLM por contacto | 🔴 **COSTO** | Troll = muchas llamadas LLM. Max 20/hora con auto-resume. Sprint 1, Block E. |
+| **CC-9** | Lock `is_processing_llm` sin TTL | 🔴 **SILENCIA** | Timeout = contacto permanentemente silenciado. TTL 90s. Sprint 1, Block E. |
+| **CC-10** | No hay health monitoring | 🟡 | Backend puede crash sin que nadie sepa. UptimeRobot free. Sprint 1, Block E. |
 
-### Backlog Técnico (Phase 6+)
+### Backlog Técnico (Sprints 1-3 — Abril 11 → Mayo 4, 2026)
 
-> **Contexto:** Nuevo tenant llega el martes. Los items marcados 🔴 son bloqueantes o críticos para la viabilidad del producto.
+> **Contexto:** 2do tenant llega el martes 15 abril. 7 tenants objetivo para 4 de mayo. Deep Dives completos en `.ai-context/`.
+> **Sprint 1 v2:** Dashboard MVP diferido a Sprint 2. Prioridad: calidad del bot + resiliencia + onboarding. Instagram y booking engine son **SELLING POINTS** para outreach pero no bloqueantes para el martes.
 
-| Prioridad | Área | Tarea |
-|:---|:---|:---|
-| **🔴 CRÍTICA** | LLM/UX | **Response Quality Audit & Fix**: Diagnóstico completo de por qué las respuestas en producción son malas. Revisar: hardcoded responses fuera de error handling, system prompt effectiveness, code paths que cortocircuitan LLM, context window/history management. Las respuestas deben ser naturales, útiles, y profesionales. |
-| **🔴 CRÍTICA** | LLM/Observability | **BUG-5 Fix: Silent Failure Detector Rewrite**: El Layer 2 detector actual (`TOOL_ACTION_PATTERNS`) es inservible (95%+ false positives). Opciones: (a) desactivar completamente, (b) reescribir con análisis semántico más sofisticado, (c) reemplazar con un enfoque diferente (ej: solo alertar cuando force_escalation=True pero no hay tool_call). |
-| **🔴 CRÍTICA** | Calendar | **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcodeado a CasaVitaCure (`casavitacure-crm`), Calendar IDs como fallback en `google_client.py:L69-72`, OAuth flow construido pero desconectado. Requiere: per-tenant OAuth, tabla `tenant_resources` para N calendarios dinámicos, UI en `/config`. **Bloquea:** calendario en dev, segundo cliente, escalabilidad |
-| **🔴 Alta** | Escalation/UX | **Human Escalation Workflow Completo**: `EscalateHumanTool` actualmente solo setea `bot_active=false`. En la práctica NO SIRVE sin: (1) Highlight visual de chats que necesitan intervención humana en el panel, (2) Sistema de tracking solved/pending para chats escalados, (3) Notificaciones activas a admins/staff del tenant, (4) UX intuitiva para que el staff retome la conversación y reactive el bot cuando termine, (5) Historial de escalaciones. Requiere diseño UX completo antes de implementar. |
-| **🔴 Alta** | CRM/Intelligence | **Customer Intelligence System (reemplaza UpdatePatientScoringTool)**: El scoring de pacientes actual nunca funcionó en la práctica. Lo que se necesita es MUCHO más amplio: (1) Tracking de comportamiento del cliente (visitas, compras, intereses, problemas), (2) Perfil enriquecido con preferencias y historial, (3) Tab/vista de CRM dedicada con datos del cliente (inexistente o no implementada actualmente), (4) **Acciones basadas en datos**: ej. cliente valioso no vuelve en 30 días → notificación + capacidad de re-engagement (feature clave solicitado por primer cliente), (5) Scoring calculado, no solo metadata manual. Requiere: nuevo schema de BD, UI completa, posiblemente tools adicionales que trabajen en conjunto con la actual. **Diseño extenso requerido.** |
-| **🔴 Alta** | Config | **Tenant Assistant Config Revamp**: `/config` como controlador integral (prompt + modelo + tools on/off), sandbox como testing ground seguro, versionado con rollback, toggle de herramientas en tiempo real |
-| **🟡 Alta** | UI/Agenda | **Agenda Visual Revamp**: layout mobile overflow, navegación días/semanas/meses, responsive redesign, gestos touch |
-| **🟡 Media** | Observability | Bot pause notifications: Sentry + Discord + admins/staff del tenant |
-| **🟡 Media** | Observability | Paused chat inbound alerts — actualmente ignora silenciosamente |
-| **🟡 Media** | Backend | Tool Registry tracking: logging de tools registradas, schemas, historial |
-| **🟡 Media** | DB/Backend | Tenant Config Versioning: tabla `tenant_config_versions` con snapshots JSON |
-| **🟢 Baja** | LLM | BUG-4: CheckMyAppointments hallucination — LLM inventa detalles de citas |
+| Sprint | Prioridad | Área | Tarea |
+|:---|:---|:---|:---|
+| **S1** | 🔴 CRÍTICA | LLM | **BUG-6 Fix: Agentic Loop Rewrite** — 7 root causes. Ver `deep_dive_a_response_quality.md`. Resumen: tool results como `role:"tool"`, loop multi-ronda, preservar texto, enriquecer contexto. |
+| **S1** | 🔴 CRÍTICA | LLM | **BUG-5 Disable** — Comentar L219-L242 en `use_cases.py` |
+| **S1** | 🔴 CRÍTICA | Meta | **WhatsApp # Setup 2do cliente** — Comprar SIM, registrar en WABA, configurar display name |
+| **S1** | 🔴 CRÍTICA | Supabase | **Tenant + User setup 2do cliente** — Insert tenant, crear usuario auth, mapping |
+| **S1** | 🔴 Alta | Dashboard | **Dashboard MVP de-mock** — Blocks 1-2 con data real. Ver `deep_dive_c_dashboard_ux.md` |
+| **S1** | 🔴 Alta | Escalation | **Escalation UX mínima** — Badge visual en ContactList, botón "Resolver", filtro pendientes |
+| **S1** | 🟡 Alta | Billing | **usage_logs table** — Tracking de tokens/costo por request. Correlación IDs |
+| **S2** | 🔴 Alta | Multi-Channel | **Instagram DM Integration** — Ver `deep_dive_b_multi_channel.md`. NormalizedMessage, adapter, Send API |
+| **S2** | 🔴 Alta | Booking | **Multi-Squad Booking Engine** — `tenant_resources`, `resource_schedules`, `bookings` tables |
+| **S2** | 🟡 Alta | LLM | **Gemini Adapter Real** — Implementar `google-genai` SDK. Costo output 25% menor ($1.50 vs $2.00/1M) |
+| **S2** | 🟡 Alta | Billing | **Credits System** — `tenant_plans` table, `consume_credits()` function, overage alerts |
+| **S2** | 🟡 Alta | Dashboard | **Dashboard Blocks 3-4** — Oportunidades (30 días inactivos) + Rendimiento (créditos, modelo) |
+| **S2** | 🟡 Media | UX | **Staff comments on AI responses** — Comentarios internos en cada mensaje, system flags |
+| **S2** | 🟡 Media | LLM/Tools | **Daily Briefing Tool** — Generación de resumen diario para owner/admin |
+| **S2** | 🟡 Media | Admin | **SuperAdmin Panel v1** — Overview todos tenants, costos, errores, quick actions |
+| **S3** | 🔴 Alta | Meta | **Meta App Review (Tech Provider)** — Video demo, permisos `whatsapp_business_management` |
+| **S3** | 🟡 Alta | Multi-Channel | **Facebook Messenger Integration** — Reutilizar 90% de Instagram adapter |
+| **S3** | 🟡 Alta | CRM | **Customer Intelligence v1** — Perfiles enriquecidos, detección inactividad 30 días |
+| **S3** | 🟡 Media | Admin | **FinOps Dashboard** — Revenue vs cost por tenant, márgenes |
+| **S3** | 🟡 Media | UX | **Notifications System** — Bell icon in-app, tipos: escalación, error, resumen |
+| **S3** | 🟢 Media | Config | **Sandbox Testing** — Modo preview de cambios en system prompt sin afectar live |
+| **---** | **---** | **---** | **---** |
+| **🔴 LEGACY** | Calendar | **Calendar Multi-Tenant Refactor** — Reemplazado por booking engine propio (Sprint 2). GCal será sync opcional |
+| **🔴 LEGACY** | CRM | **Customer Intelligence (UpdatePatientScoringTool)** — Reemplazado por diseño más amplio en Sprint 3 |
+| **🔴 LEGACY** | Config | **Tenant Config Revamp** — Parcialmente cubierto por Sprint 2 (model selection, tools toggle) |
 
 
 
@@ -526,8 +568,10 @@ La barra inferior (action bar) del sandbox tiene 5 botones primarios + inline no
 | Custom LLM CTA | "Solicitar Custom LLM" | — (marketing) |
 
 **Modelos disponibles por provider:**
-- OpenAI: `o4-mini`, `gpt-5-mini`, `gpt-4o-mini` (legacy)
+- OpenAI: `gpt-5.4-mini` (recomendado), `gpt-5.4-nano` (budget), ~~`gpt-4o-mini` (DEPRECATED)~~
 - Gemini: `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`
+
+> **⚠️ NOTA:** El dropdown del frontend aún muestra `gpt-4o-mini` como opción. Actualizar con los modelos actuales (ver `.ai-context/deep_dive_a_response_quality.md` §1).
 
 ### `/admin-feedback` — Tabla de Resultados de Auditoría
 

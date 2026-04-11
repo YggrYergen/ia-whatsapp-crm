@@ -4,7 +4,21 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE ser documentada EN ESE MOMENTO con: (1) qué se hizo, (2) por qué funciona, (3) links a los docs oficiales que lo respaldan. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
-## Status: Phase 0-5C COMPLETE ✅ | Phase 5D IN PROGRESS 🔴 | Live testing: response quality inaceptable, BUG-5 (L2 detector 95%+ false positives), BUG-6 (calidad respuestas)
+> **⚠️ LEY DE DOCUMENTACIÓN (v5 — 2026-04-11):** Todos los Deep Dives v3 contienen **60+ URLs de documentación oficial exacta**. Cada paso de ejecución tiene su link. **CONSULTAR antes de implementar.**
+> - [Deep Dive A v3 — Response Quality](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — 11+ OpenAI doc URLs
+> - [Deep Dive B v3 — Multi-Channel](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) — 15+ Meta/WhatsApp doc URLs
+> - [Deep Dive C v3 — Dashboard + Observability](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — 15+ Infrastructure doc URLs
+> - [Master Plan v5](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md) — Corrected financials, model decision
+
+## Status: Phase 0-5C COMPLETE ✅ | Phase 5D IN PROGRESS 🔴 | Sprint 1 PLANNED ⭐
+
+> [!CAUTION]
+> **CRITICAL CORRECTIONS (2026-04-11 v5 Research):**
+> 1. **Codebase uses DEPRECATED `gpt-4o-mini`** in 3 files — must change to `gpt-5.4-mini` or `gpt-5.4-nano` ASAP
+> 2. **Pricing was WRONG** — `gpt-5.4-mini` is $0.75/$4.50/1M, NOT $0.25/$2.00. Margins: 73% not 80% at 7 tenants
+> 3. **BSUID already active** in webhooks (April 2026) — add `bsuid` column to contacts
+> 4. **Graph API v19.0 DEPRECATED May 21, 2026** — update to v25.0 in `meta_graph_api.py`
+> 5. **Tool schemas lack `strict: true`** — LLM can hallucinate parameters
 
 ---
 
@@ -317,7 +331,7 @@ The `/chats` route has **two completely separate UI modes** controlled by contac
 
 `/config` (outside (panel) layout) features:
 - LLM Provider dropdown (OpenAI / Gemini) -> dynamically changes model list
-- LLM Model dropdown (o4-mini, gpt-5-mini, gpt-4o-mini / gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview)
+- LLM Model dropdown (gpt-5.4-mini [Recomendado], gpt-5.4-nano [Económico] / gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview)
 - System prompt textarea with character counter (X / 2000) -- see BUG-2
 - Google Calendar connection status + connect/disconnect buttons
 - "Solicitar Custom LLM" CTA
@@ -789,14 +803,81 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 - [x] Direct Meta Graph API test call returned `200` with `wa_id` confirmation
 
 **Critical issues found in live testing 🔴:**
-- [ ] **BUG-6: Response Quality**: Owner tested as client — interactions were of unacceptable quality. Responses not natural, not useful, sometimes confusing. Root cause needs full audit: hardcoded responses outside error handling? System prompt issues? Code paths short-circuiting LLM?
-- [ ] **BUG-5: Silent Failure Detector**: Layer 2 `TOOL_ACTION_PATTERNS` has 95%+ false positives. Triggers on normal qualifying questions ("podemos agendar"). Must be disabled or completely rewritten.
-- [ ] **Escalation workflow**: `EscalateHumanTool` sets `bot_active=false` but lacks: visual chat highlighting, solved/pending tracking, admin notifications, staff UX for takeover/reactivation. NOT FUNCTIONAL IN PRACTICE.
-- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked in practice. Needs complete rethinking as a Customer Intelligence System: behavior tracking, enriched profiles, action triggers (e.g. 30-day no-return re-engagement). KEY FEATURE for first client.
+- [ ] **BUG-6: Response Quality**: 7 root causes diagnosed. Fix spec: [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). Key docs: [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs).
+- [ ] **BUG-5: Silent Failure Detector**: 95%+ false positives. **Decisión: Desactivar completamente.**
+- [ ] **Escalation workflow**: NON-FUNCTIONAL in practice. Missing: chat highlighting, tracking, notifications, staff UX.
+- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked. Full CIS needed.
+
+**Critical Corrections (v5 Research) 🔴:**
+- [ ] **CC-1:** Model string `gpt-4o-mini` DEPRECATED in 3 files. Change to `gpt-5.4-mini`. [Models](https://platform.openai.com/docs/models)
+- [ ] **CC-3:** Add `bsuid` column to contacts. BSUIDs active NOW. [Deep Dive B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md)
+- [ ] **CC-4:** Graph API `v19.0` → `v25.0`. Deprecated May 21. [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
+- [ ] **CC-5:** Add `strict: true` to all tool schemas. [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
 
 **Still pending 🟡:**
-- [ ] API Version Update: Code uses Graph API `v19.0`, Meta latest is `v25.0`. Change in `meta_graph_api.py` line 8.
-- [ ] Publish App to Live Mode: App currently in Development mode.
+- [ ] API Version Update: Code uses Graph API `v19.0`, Meta latest is `v25.0`. [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
+- [ ] Publish App to Live Mode: App currently in Development mode. [App Review](https://developers.facebook.com/docs/app-review)
 - [ ] Calendar booking E2E via real WhatsApp conversation
 - [ ] Sentry cleanup: resolve/dismiss false positive warnings
 - [ ] System declared production-ready 🚀 (Resilient MVP)
+
+---
+
+## Sprint 1: Emergency Stabilization (Apr 12-15, 2026) — REVISED v2
+
+> **⭐ ACTIVE SPRINT.** Goal: Fix BUG-6 + BUG-5, add resilience layer, onboard 2nd tenant.
+> **Strategy (user-approved):** Deploy quick wins FIRST. Dashboard MVP → Sprint 2. Time → prompts + resilience.
+> **Model decision: `gpt-5.4-mini`** for PROD, `gpt-5.4-nano` for dev/budget (both API-compatible).
+> **Full execution plan with per-step doc links:** See [task.md §Sprint 1](file:///d:/WebDev/IA/.ai-context/task.md).
+> **Deep Dives with 60+ doc URLs:** See `.ai-context/deep_dive_a|b|c*.md` (v3, fully cited).
+
+> [!CAUTION]
+> **MANDATORY:** Before implementing ANY block below, the implementing agent MUST open and review ALL linked documentation for that block. Every URL exists because it contains information critical to correct implementation. Skipping doc review = guaranteed implementation errors.
+
+### Day-by-Day Overview (REVISED)
+
+| Day | Focus | Key Docs | Key Changes from v1 |
+|:---|:---|:---|:---|
+| **Sat Apr 12** | Block A → **DEPLOY IMMEDIATELY** → Blocks B-H | [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs), [Chat API](https://platform.openai.com/docs/api-reference/chat/create), [Models](https://platform.openai.com/docs/models), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching), [asgi-correlation-id](https://github.com/snok/asgi-correlation-id), [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog), [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/), [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits) | Added: resilience layer (6 tasks in Block E) |
+| **Sun Apr 13** | System prompts (3-4h), Escalation UX, Provisioning script | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python), [Next.js 15](https://nextjs.org/docs) | **REPLACED:** Dashboard MVP → prompt quality + provisioning script |
+| **Mon Apr 14** | Tenant #2 via script, E2E testing, Meta audit | [Phone Number Management](https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started) | Added: Meta audit, shadow-forward verification |
+| **Tue Apr 15** | Onboarding 🚀, monitor, post-onboarding | [Meta App Review](https://developers.facebook.com/docs/app-review), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching), [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates) | Added: rescue template, prompt refinement with client |
+
+### Execution Blocks (Blocks A-Q)
+
+> [!IMPORTANT]
+> **Each block's "Key Docs" column lists ALL official documentation that MUST be reviewed before starting that block.** The implementing agent MUST open each URL and confirm understanding before writing any code. This is non-negotiable.
+
+| Block | Task | Est. | Day | Key Docs (MUST review before implementing) |
+|:---|:---|:---|:---|:---|
+| **A** | Quick wins + cost cap + **DEPLOY** | 30 min | Sat AM | [OpenAI Models](https://platform.openai.com/docs/models), [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog), [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) |
+| B | `strict: true` tool schemas (all 7 tools) | 1 hr | Sat | [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) §"Supported schemas", [Deep Dive A §3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
+| C | Adapter: preserve text + usage tracking | 30 min | Sat | [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) (response/usage objects), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
+| **D** | **Agentic loop rewrite** (role:tool, multi-round, parallel) | **3-5 hr** | Sat | [Function Calling](https://platform.openai.com/docs/guides/function-calling) §"Multi-turn" **CRITICAL**, [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create), [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
+| **E** | **Resilience: webhook sig, rate limit, lock TTL, shadow-forward, health, cache** | **90 min** | Sat | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages), [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits), [cachetools](https://pypi.org/project/cachetools/) |
+| F | Observability: correlation IDs + Sentry tags + logging | 30 min | Sat | [asgi-correlation-id](https://github.com/snok/asgi-correlation-id), [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/), [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) |
+| G | DB: `bsuid` column + index | 15 min | Sat | [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) (BSUID format), [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) |
+| H | Test & deploy Day 1 | 30 min | Sat PM | — |
+| **I** | **System prompt engineering** (CasaVitaCure + fumigation draft) | **3-4 hr** | Sun | [OpenAI Prompt Engineering](https://platform.openai.com/docs/guides/prompt-engineering), [Function Calling](https://platform.openai.com/docs/guides/function-calling) |
+| J | Escalation UX minimal | 2 hr | Sun | [Next.js 15](https://nextjs.org/docs) |
+| K | Tenant provisioning script | 1 hr | Sun | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
+| L | Simple status page (replaces Dashboard MVP) | 30 min | Sun | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
+| M | Fumigation tenant setup | 2 hr | Mon | [Phone Number Management](https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
+| N | Full E2E testing | 3 hr | Mon | All above — integration verification |
+| O | Meta audit (permissions, webhooks, token, mTLS) | 30 min | Mon | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started), [WhatsApp Business Management](https://developers.facebook.com/docs/whatsapp/business-management-api) |
+| P | Go-live 🚀 | — | Tue | [Meta App Review](https://developers.facebook.com/docs/app-review) |
+| Q | Post-onboarding: prompt refinement + rescue template | 1 hr | Tue PM | [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
+
+### Deferred to Sprint 2
+
+| Item | Sprint 2 Priority |
+|:---|:---|
+| Dashboard MVP (Blocks 1-2) | 🔴 First thing Sprint 2 |
+| Instagram DM | 🔴 SELLING POINT |
+| Multi-squad booking | 🔴 SELLING POINT |
+| `gpt-5.4-nano` dev testing | 🟡 After mini stable |
+
+**Detailed task breakdown with per-step doc links:** See [task.md §Sprint 1](file:///d:/WebDev/IA/.ai-context/task.md).
+
+
+

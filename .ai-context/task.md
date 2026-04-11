@@ -4,6 +4,58 @@
 
 > **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE documentarse EN ESE MOMENTO con: qué se hizo, por qué funciona, links a docs oficiales. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
 
+> **⚠️ LEY DE DOCUMENTACIÓN (v5):** CADA paso de implementación tiene un link a la documentación oficial correspondiente en los Deep Dives v3. **CONSULTAR el Deep Dive ANTES de implementar cada paso.** Los Deep Dives están en `.ai-context/`:
+> - [`deep_dive_a_response_quality.md`](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — BUG-6 fix, OpenAI API, strict mode, prompt caching
+> - [`deep_dive_b_multi_channel.md`](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) — WhatsApp, BSUID, Instagram, Meta compliance
+> - [`deep_dive_c_dashboard_ux.md`](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — Dashboard, Sentry, correlation IDs, observability
+> - [`master_plan.md`](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md) — Financials, roadmap, decisions
+
+---
+
+## 🔴 CRITICAL CORRECTIONS FOUND (2026-04-11 Research Session — v5)
+
+> [!CAUTION]
+> The following critical issues were discovered during 50+ web searches. They affect pricing, model selection, and compliance.
+
+| # | Issue | Impact | Action | Status |
+|:---|:---|:---|:---|:---|
+| **CC-1** | **Codebase defaults to DEPRECATED `gpt-4o-mini`** in 3 files | Using retired model, may stop working anytime | Change to `gpt-5.4-mini` in `core/models.py:L9`, `openai_adapter.py:L23`, `main.py:L219` | ✅ Decision: `gpt-5.4-mini` PROD |
+| **CC-2** | **Pricing was WRONG** — `gpt-5.4-mini` is $0.75/$4.50, NOT $0.25/$2.00 | Mitigated with `max_completion_tokens=500` cap (~$0.00225/response) | With cap: ~$5-8/tenant/mo → **88-90% margins**. Nano ($0.20/$1.25) for dev/budget tenants | ✅ Mitigated |
+| **CC-3** | **BSUID already active** in webhooks (April 2026) | Contact lookup may break for username-enabled users | Add `bsuid` column to contacts table, update webhook handler | ❌ Sprint 1 |
+| **CC-4** | **Graph API v19.0 DEPRECATED May 21, 2026** | 40 days until API calls may fail | Update `meta_graph_api.py:L8` to `v25.0` | ❌ Sprint 1 |
+| **CC-5** | **All tool schemas lack `strict: true`** | LLM can hallucinate parameters, wrong types | Add `strict: true` + `additionalProperties: false` to all tools | ❌ Sprint 1 |
+| **CC-6** | **New mTLS cert since March 31, 2026** | Webhook signature verification may have issues | Verify Cloud Run handles new cert | ❓ Check |
+| **CC-7** | **No webhook signature verification** | `/webhook` accepts POST from ANYONE — cost/security risk | Add HMAC-SHA256 check with `X-Hub-Signature-256` + `hmac.compare_digest` | ❌ Sprint 1 |
+| **CC-8** | **No LLM rate limit per contact** | Troll/excited user = 50 LLM calls in 2 min = $5+ | Add `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20`, auto-resume + notify | ❌ Sprint 1 |
+| **CC-9** | **`is_processing_llm` lock has no TTL** | OpenAI timeout = permanently silenced contact | Force-release if `updated_at > 90 seconds ago` | ❌ Sprint 1 |
+| **CC-10** | **No health monitoring** | Backend can crash without anyone knowing | UptimeRobot free tier, SMS/push alert on failure | ❌ Sprint 1 |
+| **CC-11** | **No conversation shadow-forward** | We can't see problems until clients complain | Forward full bot+user interactions to our WhatsApp | ❌ Sprint 1 |
+| **CC-12** | **Tenant config fetched on every request** | 1,400+ DB queries/day for data that changes monthly | In-memory cache with 3-min TTL, LRU eviction | ❌ Sprint 1 |
+
+### 🔵 MODEL RESEARCH FINDINGS (2026-04-11)
+
+> **Decision: `gpt-5.4-mini` for production, `gpt-5.4-nano` for dev/budget.** Both configurable live per tenant.
+
+| Feature | `gpt-5.4-mini` | `gpt-5.4-nano` | Compatible? |
+|:---|:---|:---|:---|
+| **Pricing** | $0.75 / $4.50 / 1M | $0.20 / $1.25 / 1M | ✅ Same API |
+| **Cached input** | $0.075 / 1M (90% off) | $0.02 / 1M (90% off) | ✅ Both support |
+| **Context window** | 400K tokens | 400K tokens | ✅ Identical |
+| **Max output** | 128K tokens | 128K tokens | ✅ Identical |
+| **`strict: true`** | ✅ Full support | ✅ Full support | ✅ Both require `additionalProperties: false` |
+| **Parallel tool calls** | ✅ Multi-tool complex | ✅ Simple/predictable | ⚠️ Both support but nano better with fewer tools |
+| **Function calling** | ✅ Complex multi-step | ✅ Dependable, simple | ⚠️ Nano less reliable with ambiguous inputs |
+| **Prompt caching** | ✅ Automatic | ✅ Automatic | ✅ Both — system prompt must be first, ≥1024 tokens |
+| **API endpoint** | Chat Completions | Chat Completions | ✅ Same endpoint, just change model string |
+| **`tool_choice`** | ✅ `auto`/`none`/specific | ✅ `auto`/`none`/specific | ✅ Identical |
+| **Best for** | Nuanced conversations, messy inputs | Classification, routing, short tasks | — |
+
+> **Key insight:** Both share the EXACT same API format. Swapping model is literally changing one string. Our adapter code works for both without modification. `gpt-5.4-nano` is NOT recommended for primary customer-facing conversations (may struggle with nuance/ambiguity), but perfect for: subagent tasks, data extraction, classification, or tenants who want the cheapest option and have simple use cases.
+
+> **Implementation:** Add both to the frontend Config dropdown. Backend already reads `tenant.llm_model` — just ensure the model string is passed to OpenAI correctly. Frontend options: `gpt-5.4-mini` (Recomendado), `gpt-5.4-nano` (Económico).
+
+> 📚 Docs: [OpenAI Models](https://platform.openai.com/docs/models), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs), [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching)
+
 ---
 
 ## Phase 0: Pre-flight ✅
@@ -537,16 +589,21 @@ Docs consulted:
 - [x] Permanent System User token installed (no expiration)
 
 **🔴 Critical — must fix before product is usable:**
-- [ ] **BUG-6: Response Quality**: Owner played as client — interactions were of unacceptable quality ("sadly hilarious"). Full audit needed: hardcoded responses outside error handling? System prompt issues? Code paths short-circuiting LLM? Rule: ONLY valid hardcoded responses are for graceful degradation of technical failures.
-- [ ] **BUG-5: Silent Failure Detector (L2)**: `TOOL_ACTION_PATTERNS` has 95%+ false positives. Fires on every normal conversation where LLM says "agendar" or "escalar" in qualifying questions. Completely inservible. Must be disabled or rewritten from scratch.
+- [ ] **BUG-6: Response Quality**: Owner played as client — interactions were of unacceptable quality. **7 root causes diagnosed.** Full fix spec in [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). Key docs: [OpenAI Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching).
+- [ ] **BUG-5: Silent Failure Detector (L2)**: `TOOL_ACTION_PATTERNS` has 95%+ false positives. **Decisión: Desactivar completamente.** Comment out L219-L242 in `use_cases.py`.
 - [ ] **Escalation workflow**: Tool technically works (`bot_active=false`) but is NON-FUNCTIONAL in practice. Missing: chat highlighting, tracking, notifications, staff takeover UX, reactivation, history.
-- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked. Need full Customer Intelligence System: behavior tracking, enriched profiles, action triggers (30-day no-return re-engagement = key feature for first client).
+- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked. Need full Customer Intelligence System.
+
+**🔴 Critical Correction — must fix ASAP:**
+- [ ] **CC-1: Model string deprecated** — Code uses `gpt-4o-mini` which is **RETIRED**. Change in 3 files. See [OpenAI Models](https://platform.openai.com/docs/models).
+- [ ] **CC-3: BSUID column** — Add `bsuid text` column to `contacts`. BSUIDs already appearing in webhooks. See [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md).
+- [ ] **CC-4: Graph API v19.0 → v25.0** — v19.0 **deprecated May 21, 2026** (40 days). Change in `meta_graph_api.py:L8`. See [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog).
+- [ ] **CC-5: strict: true on all tools** — Required for schema compliance. See [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs).
 
 **🟡 Still pending:**
 - [ ] Calendar booking E2E via real WhatsApp
 - [ ] Sentry dashboard audit — clean up false positive warnings
-- [ ] Publish Meta App to Live mode (required for non-tester clients)
-- [ ] Update Graph API version `v19.0` → `v25.0` in `meta_graph_api.py`
+- [ ] Publish Meta App to Live mode — Required for non-tester clients. See [Meta App Review](https://developers.facebook.com/docs/app-review).
 - [ ] System declared production-ready 🚀 (Resilient MVP)
 
 ---
@@ -558,44 +615,255 @@ Docs consulted:
 
 ### 🔴 CRITICAL — Must Fix for Product Viability
 
-- [!!!] **Response Quality Audit & Fix (BUG-6)**: Full diagnostic of why production responses are bad. Audit every code path in `use_cases.py` that generates response text. Identify and eliminate hardcoded responses outside of error handling. Only valid hardcoded responses: LLM timeout, tool crash, network error. All other responses MUST come from LLM with tenant system prompt. Includes system prompt tuning with real conversation data.
+- [!!!] **Response Quality Audit & Fix (BUG-6)**: 7 root causes diagnosed. Full spec: [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). Docs: [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs), [Chat API](https://platform.openai.com/docs/api-reference/chat/create).
 
-- [!!!] **BUG-5 Fix: Silent Failure Detector Rewrite**: Current `TOOL_ACTION_PATTERNS` in `use_cases.py` Layer 2 is inservible (95%+ false positives). Options: (a) disable completely, (b) semantic rewrite, (c) different approach (e.g., only alert when `force_escalation=True` but no `tool_call`). Noise is drowning real alerts in Sentry/Discord.
+- [!!!] **BUG-5 Fix: Disable TOOL_ACTION_PATTERNS**: Comment L219-L242 in `use_cases.py`. 95%+ false positives drowning real alerts.
 
-- [!!!] **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcoded to CasaVitaCure (`casavitacure-crm`), Calendar IDs fallback in `google_client.py:L69-72`, OAuth flow built but disconnected. Requires: per-tenant OAuth, `tenant_resources` table for N calendars, UI in `/config`. **Blocks:** dev calendar, second client, scalability.
+- [!!!] **Calendar Multi-Tenant Architecture Refactor**: Service Account hardcoded to CasaVitaCure. Requires per-tenant OAuth, `tenant_resources` table. Docs: [Google Calendar API](https://developers.google.com/calendar/api/v3/reference/events), [FreeBusy](https://developers.google.com/calendar/api/v3/reference/freebusy).
 
 ### 🔴 HIGH PRIORITY — Required Features (not just fixes)
 
-- [ ] **Human Escalation Workflow Completo**: `EscalateHumanTool` currently only sets `bot_active=false`. In practice this is USELESS without:
-  1. Visual highlighting of chats needing human intervention in the panel
-  2. Solved/pending tracking system for escalated chats
-  3. Active notifications to admins/staff as configured by tenant
-  4. Intuitive UX for staff to take over conversation AND reactivate bot when done
-  5. Escalation history and audit trail
-  - Requires FULL UX design before implementation. More requirements likely to surface during design.
+- [ ] **Human Escalation Workflow Completo**: `EscalateHumanTool` currently only sets `bot_active=false`. Needs: visual highlighting, tracking, notifications, staff takeover UX, history.
 
-- [ ] **Customer Intelligence System (replaces UpdatePatientScoringTool)**: Patient scoring NEVER WORKED in practice AND the concept is insufficient. What's needed:
-  1. **Behavior tracking**: visits, purchases, interests, problems, conversation history analysis
-  2. **Enriched customer profile**: preferences, purchase history, service history, notes
-  3. **Dedicated CRM tab/view**: Current scoring UI is either not implemented or nonexistent. Needs solid thought to be helpful.
-  4. **Action triggers**: e.g., valuable customer hasn't returned in 30 days → notification + re-engagement capability (*KEY FEATURE requested by first client with high conversion rate requirement*)
-  5. **Calculated scoring**: Not just manual metadata — intelligent, data-driven scoring
-  - May need additional tools beyond current `UpdatePatientScoringTool`. If multiple tools, extensive design needed for how they work together.
-  - Requires: new DB schema, complete UI, possibly multiple LLM tools, integration with notification system.
-  - **Extensive design required before implementation.**
+- [ ] **Customer Intelligence System (replaces UpdatePatientScoringTool)**: Behavior tracking, enriched profiles, action triggers (30-day re-engagement).
 
 - [ ] **Tenant Assistant Config Revamp**: `/config` as integral controller (prompt + model + tools on/off), sandbox as safe testing ground, versioning with rollback, real-time tool toggle
 
 ### 🟡 MEDIUM PRIORITY
 
 - [ ] **Agenda Visual Revamp**: mobile layout overflow, day/week/month navigation, responsive redesign, touch gestures
-- [ ] **Bot Pause Notifications**: Every bot pause (by human, by EscalateHumanTool, by any system rule) → Sentry + Discord + in-app notification to admins/staff as configured by tenant
-- [ ] **Paused Chat Inbound Alerts**: If a paused chat receives messages from client, notify via Discord, Sentry, and to admins/staff. Currently bot silently ignores (`use_cases.py:94-96`)
+- [ ] **Bot Pause Notifications**: Every bot pause → Sentry + Discord + in-app notification
+- [ ] **Paused Chat Inbound Alerts**: Paused chat receives messages → notify staff (`use_cases.py:94-96`)
 - [ ] **Tool Registry Tracking**: Full logging of registered tools, schemas, and execution history
-- [ ] **Tenant Config Versioning (DB schema)**: `tenant_config_versions` table — audit trail for all changes to system_prompt, llm_provider, llm_model, active_tools
-- [ ] Responsive layout: mobile bottom nav, small viewport rendering, human tester input needed
+- [ ] **Tenant Config Versioning**: `tenant_config_versions` table — audit trail
+- [ ] Responsive layout: mobile bottom nav, small viewport rendering
 
 ### 🟢 LOW PRIORITY / FUTURE
-- [ ] **BUG-4 (CheckMyAppointments hallucination)**: LLM invents appointment details. Needs diagnostic data + prompt refinement. Deferred pending tool config revamp
-- [ ] Update Graph API `v19.0` → `v25.0`
-- [ ] Publish Meta App to Live Mode
+- [ ] **BUG-4 (CheckMyAppointments hallucination)**: LLM invents appointment details. Deferred pending tool config revamp
+
+---
+
+## 🚀 SPRINT 1: Emergency Stabilization (Apr 12-15, 2026) — REVISED v2
+
+> **Goal:** Fix BUG-6 + BUG-5, add resilience layer, onboard 2nd tenant (fumigation).
+> **Strategy change (user-approved):** Deploy quick wins FIRST for immediate prod improvement. Dashboard MVP → Sprint 2. Time saved → system prompt engineering + resilience.
+> **Every step has its documentation link (📚). CONSULT BEFORE IMPLEMENTING.**
+
+> [!CAUTION]
+> **MANDATORY:** Before implementing ANY block below, the implementing agent MUST open and review ALL 📚-linked documentation for that block. Every URL exists because it contains information critical to correct implementation. Skipping doc review = guaranteed implementation errors. This directive applies even if you think you know how to do it — the docs contain version-specific nuances that prevent subtle bugs.
+
+
+### Day 1 (Sat Apr 12): Core LLM + Resilience 🔥
+
+#### Block A: Quick Wins → DEPLOY IMMEDIATELY (30 min)
+> **Rationale:** CasaVitaCure is experiencing bad responses RIGHT NOW. Every hour without Block A = client forming "this doesn't work" opinion. Ship these alone = immediate improvement.
+
+- [ ] **A1. Fix model string** — Change `gpt-4o-mini` → `gpt-5.4-mini` in 3 files
+  - Files: `core/models.py:L9`, `openai_adapter.py:L23`, `main.py:L219`
+  - Also update frontend Config dropdown: `gpt-5.4-mini` (Recomendado), `gpt-5.4-nano` (Económico), remove `gpt-4o-mini`
+  - 📚 [OpenAI Models page](https://platform.openai.com/docs/models)
+- [ ] **A2. Remove `.lower()`** in `use_cases.py:L64` — destroys name casing
+- [ ] **A3. Disable BUG-5** — Comment `TOOL_ACTION_PATTERNS` block (L219-L242 in `use_cases.py`)
+- [ ] **A4. Increase history limit** — Change from 20 to 30 messages in `use_cases.py`
+- [ ] **A5. Graph API v19.0 → v25.0** — Change version in `meta_graph_api.py:L8`
+  - 📚 [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog)
+- [ ] **A6. Add `max_completion_tokens=500`** to LLM call — cost cap per response
+  - At $4.50/1M output, 500 tokens = ~$0.00225/response max
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create)
+- [ ] **A7. 🚀 DEPLOY Block A** → merge to `main`, verify Cloud Build
+- [ ] **A8. 🧪 LIVE TEST** — Send real WhatsApp message, compare quality to yesterday
+
+#### Block B: Tool Schema Migration to `strict: true` (1 hour)
+- [ ] **B1. Migrate all 7 tools** to `strict: true` + `additionalProperties: false`
+  - File: `Backend/app/modules/scheduling/tools.py`
+  - All optional params → `"type": ["string", "null"]` and add to `required`
+  - 📚 [Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs) — READ §"Supported schemas"
+  - 📚 [Deep Dive A §3 Phase 3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — tool-by-tool migration checklist
+
+#### Block C: OpenAI Adapter Enhancement (30 min)
+- [ ] **C1. Preserve text content** when tool_calls present
+  - File: `openai_adapter.py`
+  - Currently discards `message.content` when `message.tool_calls` exists
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — response object shape
+- [ ] **C2. Add usage tracking fields** to LLMResponse
+  - Fields: `prompt_tokens`, `completion_tokens`, `cached_tokens`, `reasoning_tokens`, `model_used`
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — `usage` object
+  - 📚 [Prompt Caching Guide](https://platform.openai.com/docs/guides/prompt-caching) — `prompt_tokens_details.cached_tokens`
+
+#### Block D: Agentic Loop Rewrite (3-5 hours) ⭐ MOST CRITICAL
+- [ ] **D1. Rewrite tool execution loop** in `use_cases.py`
+  - Multi-round: `MAX_TOOL_ROUNDS = 5`
+  - Proper `role: "tool"` with matching `tool_call_id` (currently uses `role: "user"`!)
+  - Parallel tool execution: `asyncio.gather(*tool_tasks)`
+  - Error recovery: EVERY tool_call MUST get a `role: "tool"` response
+  - Usage tracking: log all fields from `response.usage`
+  - 📚 [Function Calling Guide](https://platform.openai.com/docs/guides/function-calling) — **CRITICAL: read "Multi-turn" section**
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — message format
+  - 📚 [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — full rewrite spec
+
+#### Block E: Resilience Layer (90 min) 🛡️ NEW
+> **Added from strategic review.** These prevent disasters, not add features.
+
+- [ ] **E1. Webhook signature verification** — HMAC-SHA256 with `X-Hub-Signature-256`
+  - Use `hmac.compare_digest()` (timing-safe)
+  - Requires `META_APP_SECRET` env var
+  - WITHOUT this, anyone on the internet can trigger LLM calls on your API
+  - 📚 [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests)
+  - 📚 [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks)
+- [ ] **E2. LLM rate limit per contact** — `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20`
+  - Check counter before calling OpenAI
+  - After limit: polite "por favor espera" message + auto-resume when limit refreshes
+  - **Must notify us** (Discord/Sentry) when triggered so we can investigate
+  - Counter stored in memory dict (warm instance) or contacts table
+- [ ] **E3. Processing lock TTL** — Fix `is_processing_llm` time bomb
+  - If `is_processing_llm = true` AND `updated_at > 90 seconds ago` → force-release
+  - Check at start of every incoming message
+  - Log when force-release happens (Sentry warning)
+- [ ] **E4. Conversation shadow-forwarding** — Send FULL interaction to our WhatsApp
+  - Both user message AND bot response forwarded
+  - Format: `[TenantName] 👤 User: {msg}\n🤖 Bot: {response}`
+  - Forward to designated admin phone number (configurable per deployment)
+  - 📚 [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages)
+- [ ] **E5. Health monitoring** — Set up UptimeRobot (free tier)
+  - Monitor: `GET /api/debug-ping` every 5 minutes
+  - Alert: SMS/push notification to your phone on failure
+  - 📚 [UptimeRobot](https://uptimerobot.com/)
+- [ ] **E6. Tenant config cache** — In-memory with 3-min TTL
+  - Use `cachetools.TTLCache(maxsize=50, ttl=180)` or simple dict + timestamp
+  - Memory estimate: ~50 tenants × ~5KB each = ~250KB (negligible vs 512MB Cloud Run limit)
+  - Invalidate on config update via `/config` endpoint
+  - 📚 [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits)
+  - 📚 [cachetools PyPI](https://pypi.org/project/cachetools/)
+
+#### Block F: Observability (30 min)
+- [ ] **F1. Add `asgi-correlation-id` middleware**
+  - File: `main.py`
+  - Add BEFORE Sentry middleware
+  - 📚 [asgi-correlation-id GitHub](https://github.com/snok/asgi-correlation-id)
+  - 📚 [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — setup code example
+- [ ] **F2. Add Sentry tags** — `tenant_id` + `correlation_id` on every request
+  - 📚 [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/) — `set_tag`
+- [ ] **F3. Logging config** with correlation ID filter
+  - 📚 [asgi-correlation-id GitHub](https://github.com/snok/asgi-correlation-id) — logging config example
+
+#### Block G: Database (15 min)
+- [ ] **G1. Add `bsuid` column** to contacts table
+  - `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bsuid text;`
+  - `CREATE INDEX IF NOT EXISTS idx_contacts_bsuid ON contacts(bsuid) WHERE bsuid IS NOT NULL;`
+  - 📚 [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) — BSUID format
+  - 📚 [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) — BSUID webhook payload example
+
+#### Block H: Test & Deploy Day 1 (30 min)
+- [ ] **H1. Run simulation suite** — all 9 scenarios must pass
+- [ ] **H2. Test strict mode** — send conversations that trigger each tool
+- [ ] **H3. Deploy to production** — merge to `main`, verify Cloud Build
+- [ ] **H4. Live test** — real WhatsApp conversation, verify quality improvement + shadow-forward working
+
+### Day 2 (Sun Apr 13): System Prompts + Escalation UX + Provisioning
+
+> **Strategy change:** Dashboard MVP moved to Sprint 2. This day now focuses on what actually determines Tuesday's success: the quality of the AI's responses (system prompts) and the ability to set up tenant #2 quickly.
+
+#### Block I: System Prompt Engineering (3-4 hours) 🎯 PRODUCT-DEFINING
+> **The system prompt IS the product.** A perfect agentic loop with a generic prompt = mediocre product. A mediocre loop with a brilliant prompt = "wow, this saves me time."
+
+- [ ] **I1. CasaVitaCure prompt refinement** — Analyze real conversations from last week
+  - Add few-shot examples based on actual good/bad interactions
+  - Tune tone, verbosity, and proactivity
+  - Test with 5+ varied scenarios via WhatsApp
+- [ ] **I2. Fumigation prompt DRAFT** — First version based on what we know
+  - Include: services, pricing ranges, "usted" tone, Santiago metro coverage
+  - ⚠️ **This is a DRAFT** — will need correction WITH tenant #2 involved during/after onboarding
+  - Get business data from client (services, prices, hours, zones) — **TONIGHT ideally**
+- [ ] **I3. System prompt template** — Create reusable structure for future tenants
+  - Sections: identity, tone, services, tools available, escalation rules, few-shot examples
+
+#### Block J: Escalation UX Minimal (2 hours)
+- [ ] **J1. Visual badge** on ContactList for `bot_active=false` contacts
+- [ ] **J2. "Resolver" button** to reactivate bot on escalated chats
+- [ ] **J3. Filter** — show pending escalations first
+
+#### Block K: Tenant Provisioning Script (1 hour)
+> **This is what turns "2 hours of careful manual work" into "20 minutes."**
+
+- [ ] **K1. Build `create_tenant.py`** script
+  ```bash
+  python create_tenant.py \
+    --name "FumigaMax" \
+    --phone "+56912345678" \
+    --ws_phone_id "1234567890" \
+    --system_prompt_file "./prompts/fumigation.txt" \
+    --admin_email "cliente@fumigamax.cl" \
+    --llm_model "gpt-5.4-mini"
+  ```
+  - Creates tenant row in Supabase
+  - Creates auth user + tenant mapping
+  - Validates inputs
+  - Outputs summary of what was created
+  - 📚 [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python)
+
+#### Block L: Simple Status Page (30 min)
+> **Replacement for full Dashboard MVP.** One number beats no number.
+
+- [ ] **L1. Minimal dashboard** — Replace mock with real count: "Mensajes hoy: 42, Escalaciones pendientes: 0, Último mensaje: hace 3 min"
+  - Single Supabase query, 30-second polling
+  - No Realtime subscription needed (that's Sprint 2)
+
+### Day 3 (Mon Apr 14): 2nd Tenant Provisioning + E2E Testing
+
+#### Block M: Fumigation Tenant Setup (2 hours)
+- [ ] **M1. Buy SIM** + register WhatsApp Business number
+- [ ] **M2. Register number** in your WABA
+  - 📚 [Phone Number Management](https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers)
+- [ ] **M3. Run provisioning script** — `create_tenant.py` with fumigation data
+- [ ] **M4. Subscribe webhook** to new phone number's `messages` field
+  - 📚 [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks)
+- [ ] **M5. Refine system prompt** with tenant input (if received)
+
+#### Block N: Full E2E Testing (3 hours)
+- [ ] **N1. CasaVitaCure E2E** — Full conversation: greeting → availability → booking → confirmation
+- [ ] **N2. Fumigation E2E** — Full conversation: service inquiry → quote → appointment request
+- [ ] **N3. Cross-tenant isolation** — Messages from tenant A don't appear in tenant B
+- [ ] **N4. Error paths** — Test tool failures, LLM timeout, rate limit trigger
+- [ ] **N5. Shadow-forward audit** — Verify all conversations arrive on our phone
+- [ ] **N6. Sentry audit** — Clean up false positives, verify real errors captured
+
+#### Block O: Meta Audit (30 min)
+> **Cannot afford to lose WhatsApp service.** Quick check of full Meta setup.
+
+- [ ] **O1. Verify App permissions** — `whatsapp_business_messaging` active
+- [ ] **O2. Verify webhook fields** subscribed: `messages`, `message_template_status_update`
+- [ ] **O3. Verify System User token** — never-expiring, correct permissions
+- [ ] **O4. Check mTLS cert** — Cloud Run handles new March 31 cert?
+  - 📚 [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started)
+
+### Day 4 (Tue Apr 15): Onboarding Day 🚀
+
+#### Block P: Go-Live
+- [ ] **P1. Publish Meta App** to Live Mode (if not done)
+  - 📚 [Meta App Review](https://developers.facebook.com/docs/app-review)
+- [ ] **P2. Client walkthrough** — Show dashboard, explain escalation UX
+- [ ] **P3. Monitor** — Watch Sentry + Discord + shadow-forwards for 2 hours post-launch
+- [ ] **P4. Verify usage tracking** — Check `cached_tokens` field in logs
+  - 📚 [Prompt Caching Guide](https://platform.openai.com/docs/guides/prompt-caching)
+
+#### Block Q: Post-Onboarding (same day, after client leaves)
+- [ ] **Q1. Refine fumigation prompt** based on client feedback and first real conversations
+- [ ] **Q2. Prepare WhatsApp template** for conversation rescue (submit for Meta approval)
+  - Message: "Hola, somos [Negocio]. Nuestro asistente tuvo un inconveniente técnico. Nuestro equipo técnico ya está trabajando en resolverlo y es nuestra máxima prioridad. Un miembro de nuestro equipo te contactará en breve. Disculpa las molestias."
+  - 📚 [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates)
+- [ ] **Q3. Update all documentation** — Record what worked, what didn't, lessons learned
+
+---
+
+## 📋 DEFERRED TO SPRINT 2 (Apr 16-22, 2026)
+
+> Items deliberately moved from Sprint 1 to focus on Tuesday's success.
+
+| Item | Original Sprint 1 Block | Why Deferred | Sprint 2 Priority |
+|:---|:---|:---|:---|
+| Dashboard MVP (Blocks 1-2) | Day 2 Blocks H-I | Tenants judge product by bot quality, not dashboard | 🔴 First thing Sprint 2 |
+| Supabase Realtime subscription | Day 2 Block I | Requires dashboard first | 🔴 With dashboard |
+| Dashboard indexes | Day 1 Block F2 | Only needed when dashboard is live | 🟡 With dashboard |
+| Instagram DM integration | Backlog S2 | 🔴 **SELLING POINT** for outreach but not needed Tuesday | 🔴 Sprint 2 priority |
+| Multi-squad booking engine | Backlog S2 | 🔴 **SELLING POINT** — needed for fumigation scaling | 🔴 Sprint 2 priority |
+| `gpt-5.4-nano` dev testing | New | Need to verify compatibility in practice | 🟡 After mini is stable |
