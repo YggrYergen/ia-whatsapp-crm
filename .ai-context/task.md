@@ -693,13 +693,16 @@ Docs consulted:
   - 📚 [Deep Dive A §3 Phase 3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — tool-by-tool migration checklist
 
 #### Block C: OpenAI Adapter Enhancement (30 min)
-- [ ] **C1. Preserve text content** when tool_calls present
+- [x] **C1. Preserve text content** when tool_calls present ✅ (2026-04-11)
   - File: `openai_adapter.py`
-  - Currently discards `message.content` when `message.tool_calls` exists
-  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — response object shape
-- [ ] **C2. Add usage tracking fields** to LLMResponse
-  - Fields: `prompt_tokens`, `completion_tokens`, `cached_tokens`, `reasoning_tokens`, `model_used`
-  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — `usage` object
+  - Fixed: content now ALWAYS captured from response (was silently discarded in if/else)
+  - Per OpenAI docs: content and tool_calls CAN coexist in the same response
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — verified via web search
+- [x] **C2. Add usage tracking fields** to LLMResponse ✅ (2026-04-11)
+  - Added to `router.py` LLMResponse: `prompt_tokens`, `completion_tokens`, `cached_tokens`, `reasoning_tokens`, `model_used`
+  - Populated in `openai_adapter.py` from `response.usage` with safe getattr chains for nested details
+  - Compact usage log on every LLM call: `📊 [LLM Usage] model=... prompt=... completion=... cached=... reasoning=...`
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — verified via web search
   - 📚 [Prompt Caching Guide](https://platform.openai.com/docs/guides/prompt-caching) — `prompt_tokens_details.cached_tokens`
 
 #### Block D: Agentic Loop Rewrite (3-5 hours) ⭐ MOST CRITICAL

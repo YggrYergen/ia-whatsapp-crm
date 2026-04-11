@@ -6,10 +6,24 @@ from app.core.models import TenantContext
 from app.core.exceptions import ProviderNotRegisteredError
 
 class LLMResponse(BaseModel):
-    """Data Transfer Object explicit definition bounding inference return payloads safely."""
+    """Data Transfer Object explicit definition bounding inference return payloads safely.
+    
+    Per OpenAI Chat Completions API docs:
+    - content and tool_calls CAN coexist in the same response
+    - usage object contains token counts for cost tracking
+    - prompt_tokens_details.cached_tokens shows prompt cache hits
+    - completion_tokens_details.reasoning_tokens shows chain-of-thought tokens
+    Ref: https://platform.openai.com/docs/api-reference/chat/create
+    """
     content: str = ""
     has_tool_calls: bool = False
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    # C2: Usage tracking fields for cost monitoring + usage_logs table
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    cached_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
+    model_used: Optional[str] = None
 
 class LLMStrategy(ABC):
     def __init__(self, api_key: str, model_id: str):

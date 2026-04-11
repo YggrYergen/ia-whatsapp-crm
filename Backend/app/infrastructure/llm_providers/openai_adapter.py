@@ -67,15 +67,37 @@ class OpenAIStrategy(LLMStrategy):
             response = await self.client.chat.completions.create(**api_kwargs)
             message = response.choices[0].message
             
+            # C1: ALWAYS preserve text content — content and tool_calls can coexist
+            # Per OpenAI docs: the model may provide explanatory text alongside tool calls.
+            # Previously this was an if/else that silently discarded content when tool_calls existed.
             dto = LLMResponse()
+            dto.content = message.content or ""
+            
             if message.tool_calls:
                 dto.has_tool_calls = True
                 dto.tool_calls = [
                     {"id": tool.id, "name": tool.function.name, "arguments": tool.function.arguments}
                     for tool in message.tool_calls
                 ]
-            else:
-                dto.content = message.content or ""
+            
+            # C2: Populate usage tracking fields from response.usage
+            # Ref: https://platform.openai.com/docs/api-reference/chat/create — usage object
+            usage = response.usage
+            if usage:
+                dto.prompt_tokens = usage.prompt_tokens
+                dto.completion_tokens = usage.completion_tokens
+                dto.model_used = response.model
+                # Nested details — may be None depending on model/request
+                prompt_details = getattr(usage, 'prompt_tokens_details', None)
+                completion_details = getattr(usage, 'completion_tokens_details', None)
+                dto.cached_tokens = getattr(prompt_details, 'cached_tokens', None) if prompt_details else None
+                dto.reasoning_tokens = getattr(completion_details, 'reasoning_tokens', None) if completion_details else None
+                
+                logger.info(
+                    f"📊 [LLM Usage] model={response.model} "
+                    f"prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
+                    f"cached={dto.cached_tokens or 0} reasoning={dto.reasoning_tokens or 0}"
+                )
                 
             return dto
         except Exception as e:

@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Block A DONE on DEV ✅ — Awaiting PROD merge approval → then execute Blocks B-H
-SESSION BLOCKS:  A (✅ DEV-verified), B, C, D, E, F, G, H
-LAST COMMIT:     d09e836 (desarrollo) — Block A quick wins
+SESSION GOAL:    Blocks A+B DONE ✅ — Observability hardened ✅ — Executing Block C
+SESSION BLOCKS:  A (✅ DEPLOYED), B (✅ DEPLOYED), C (← NOW), D, E, F, G, H
+LAST COMMIT:     17ee882 (desarrollo) — Block B strict schemas + parallel_tool_calls fix
 ```
 
 ---
@@ -39,28 +39,36 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 - ✅ Deep research session (50+ web searches): model pricing corrected, BSUID migration identified, Graph API deprecation found, 12 critical corrections documented (CC-1 to CC-12)
 - ✅ Sprint 1 v2 plan approved: Dashboard MVP deferred to Sprint 2, replaced with resilience layer + system prompt engineering
 - ✅ Model decision finalized: `gpt-5.4-mini` for PROD, `gpt-5.4-nano` for DEV/budget, `max_completion_tokens=500` cost cap
-- ✅ **Block A executed & verified on DEV** (2026-04-11 18:00 CLT):
+- ✅ **Block A executed & deployed** (2026-04-11):
   - A1: Model `gpt-4o-mini` → `gpt-5.4-mini` in 3 backend files + frontend dropdown + tests
   - A2: Removed `.lower()` on text_body — casing preserved (verified: "Te llamas Tomás" in logs)
   - A3: Disabled BUG-5 (TOOL_ACTION_PATTERNS) — 0 false alerts in DEV logs
   - A4: History limit 20 → 30 messages
   - A5: Graph API v19.0 → v25.0 (v19 dies May 21, 2026)
   - A6: `max_completion_tokens=500` cost cap added
-  - DEV revision `ia-backend-dev-00005-klk` — 0 exceptions, 3 test messages successful
-  - ⏳ Awaiting user approval to merge `desarrollo → main` for PROD deploy
+- ✅ **Observability Hardening** (2026-04-11):
+  - All 7 tools in `tools.py` wrapped with try/except + Sentry + Discord + diagnostic context
+  - Infrastructure: supabase_client, proactive_worker, google_oauth_router, discord_notifier self-instrumented
+  - §6 Observability-First Rule added as IMMUTABLE to SESSION_PROMPT
+  - 10 blind spots eliminated (5/7 tools had ZERO error handling previously)
+- ✅ **Block B executed & deployed** (2026-04-11):
+  - B1: All 7 tool schemas migrated to `strict: true` + `additionalProperties: false`
+  - 4 optional params converted to nullable: `duration_minutes`, `phone`, `patient_phone`, `clinical_notes`
+  - `parallel_tool_calls=False` added to OpenAI adapter (required for strict mode per docs)
+  - ⚠️ Hotfix: `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK sends null as JSON null
+  - Verified: escalation tool works ✅, booking tool hits expected GCal 403 on DEV (by design — no calendar in dev)
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Block A — ✅ DONE on DEV, awaiting PROD merge:**
-- A1-A6: All code changes applied and verified (see "Completed" above)
-- A7: ⏳ Merge to `main` blocked until user approves
-- A8: ⏳ Live WhatsApp test after PROD deploy
+**Block A — ✅ DEPLOYED to DEV**
+**Block B — ✅ DEPLOYED to DEV** (strict schemas verified via WhatsApp test)
+**Observability Hardening — ✅ DEPLOYED** (§6 rule established)
 
-**Block B — `strict: true` tool schemas (1 hr) ← NEXT:**
-- Migrate all 7 tool schemas to `strict: true` mode
-- Load `deep_dive_a` §3 Phase 3 before starting
+**Block C — OpenAI adapter enhancement (30 min) ← NOW:**
+- C1: Preserve text content when tool_calls present
+- C2: Add usage tracking fields to LLMResponse
+- Must read OpenAI API docs before implementing (§4)
 
-**Block B — `strict: true` tool schemas (1 hr)**
-**Block C — OpenAI adapter enhancement (30 min)**
+**Remaining blocks:**
 **Block D — Agentic loop rewrite (3-5 hrs) ⭐ MOST CRITICAL**
 **Block E — Resilience layer: webhook sig, rate limit, lock TTL, shadow-forward, health, cache (90 min)**
 **Block F — Observability: correlation IDs + Sentry tags (30 min)**
@@ -76,9 +84,11 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 ### Known Blockers & Risks
 - ⚠️ `META_APP_SECRET` env var needed for Block E1 (webhook signature verification) — must be retrieved from Meta App Dashboard → Settings → Basic
 - ⚠️ Block D (agentic loop) is the highest-risk block — 3-5 hours estimated, involves rewriting the core message processing flow
-- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Resolved on DEV, awaiting PROD merge**
+- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to DEV**
 - ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
 - ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
+- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
+- ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
 
 ---
 
@@ -108,7 +118,7 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | CC-1 | Codebase uses deprecated `gpt-4o-mini` | ✅ Fixed (DEV) | Block A1: 3 backend + frontend + tests |
 | CC-3 | BSUID migration needed for contact lookups | 🔴 | Block G1: add column + index |
 | CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
-| CC-5 | Tool schemas missing `strict: true` | 🔴 | Block B1: all 7 tools |
+| CC-5 | Tool schemas missing `strict: true` | ✅ Fixed (DEV) | Block B1: all 7 tools + `parallel_tool_calls=False` |
 | CC-7 | No webhook signature verification | 🔴 SECURITY | Block E1: HMAC-SHA256 |
 | CC-8 | No LLM rate limit per contact | 🔴 COST | Block E2: 20/hour max |
 | CC-9 | `is_processing_llm` lock has no TTL | 🔴 SILENCES | Block E3: 90s TTL |
