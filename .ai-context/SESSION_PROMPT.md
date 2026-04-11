@@ -248,7 +248,58 @@ If after genuine diagnosis the root cause cannot be identified:
 
 ---
 
-## 🔒 [IMMUTABLE] §6 — The No-Assumptions Testing Rule
+## 🔒 [IMMUTABLE] §6 — The Observability-First Rule
+
+> [!CAUTION]
+> **EVERY code change MUST include Sentry + Discord instrumentation.** If an error can happen, we MUST know about it instantly. Silent failures are production killers.
+
+### The Rule
+When writing or modifying ANY code that could fail (API calls, DB operations, tool execution, external services, data parsing):
+
+1. **Wrap in try/except** — Every call to an external service or potentially-failing operation MUST be wrapped.
+2. **Log to `logger`** — Include the function/tool name, tenant_id (if available), and relevant input parameters for fast diagnosis.
+3. **Capture in `sentry_sdk`** — Use `sentry_sdk.capture_exception(e)` for errors, `sentry_sdk.capture_message()` for warnings. Use `sentry_sdk.set_context()` to attach diagnostic data (tool name, tenant_id, kwargs).
+4. **Alert via `send_discord_alert()`** — Every error-level exception must also fire a Discord alert with:
+   - A descriptive title including the component name and tenant_id
+   - A description with the relevant parameters + first 300 chars of the error
+   - The `error=e` kwarg for automatic traceback attachment
+   - Appropriate `severity` ("error", "warning", "info")
+5. **Even gracefully handled errors must report** — If you catch an error and return a fallback value, STILL report to Sentry + Discord. The fact that the user didn't see a crash doesn't mean we shouldn't know about it.
+
+### The Pattern (Copy This)
+```python
+try:
+    result = await some_operation(param1, param2)
+    return result
+except Exception as e:
+    tenant_id = tenant.id if tenant else "unknown"
+    logger.error(f"[ComponentName] Operation failed for tenant={tenant_id}: {e}")
+    sentry_sdk.set_context("component_context", {"component": "name", "tenant_id": tenant_id, "param1": param1})
+    sentry_sdk.capture_exception(e)
+    await send_discord_alert(
+        title=f"❌ ComponentName Failed | Tenant {tenant_id}",
+        description=f"param1={param1}\nError: {str(e)[:300]}",
+        severity="error", error=e
+    )
+    return fallback_value  # Graceful degradation
+```
+
+### Explicitly Forbidden
+- ❌ `except Exception: pass` → **NEVER swallow errors silently**
+- ❌ `except Exception as e: logger.error(e)` alone → **MUST also Sentry + Discord**
+- ❌ Bare function calls without try/except on external services → **ALWAYS wrap**
+- ❌ Early returns without reporting (e.g., `if not tenant: return error`) → **MUST log + Sentry**
+
+### Required Imports (in every file that handles errors)
+```python
+import sentry_sdk
+from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+from app.infrastructure.telemetry.logger_service import logger
+```
+
+---
+
+## 🔒 [IMMUTABLE] §7 — The No-Assumptions Testing Rule
 
 > [!IMPORTANT]
 > **Changes are NOT complete until they are TESTED and VERIFIED.** Code that compiles is not code that works.
@@ -272,7 +323,7 @@ After implementing any change:
 
 ---
 
-## 🔒 [IMMUTABLE] §7 — Progress & Documentation Preservation Rules
+## 🔒 [IMMUTABLE] §8 — Progress & Documentation Preservation Rules
 
 > [!CAUTION]
 > **Information loss is IRREVERSIBLE.** Once a decision, finding, or implementation detail is lost from the docs, it is gone forever. The next session will not know it existed.

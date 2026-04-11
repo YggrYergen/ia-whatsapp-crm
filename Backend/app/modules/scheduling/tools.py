@@ -30,8 +30,20 @@ class CheckAvailabilityTool(AITool):
         tenant = kwargs.get("tenant_context")
         date_str = kwargs.get("date_str")
         duration_minutes = kwargs.get("duration_minutes", 30)
-        res = await SchedulingService.check_availability(tenant, date_str, duration_minutes)
-        return json.dumps(res)
+        try:
+            res = await SchedulingService.check_availability(tenant, date_str, duration_minutes)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[CheckAvailabilityTool] Failed for tenant={tenant_id}, date={date_str}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "duration": duration_minutes})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ CheckAvailabilityTool Failed | Tenant {tenant_id}",
+                description=f"date={date_str}, duration={duration_minutes}min\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error checking availability: {str(e)}"})
 
 class CheckMyAppointmentsTool(AITool):
     name = "get_my_appointments"
@@ -55,8 +67,21 @@ class CheckMyAppointmentsTool(AITool):
         tenant = kwargs.get("tenant_context")
         caller_phone = kwargs.get("caller_phone", "")
         caller_role = kwargs.get("caller_role", "cliente")
-        res = await SchedulingService.get_appointments(tenant, kwargs.get("date_str"), caller_phone, caller_role)
-        return json.dumps(res)
+        date_str = kwargs.get("date_str")
+        try:
+            res = await SchedulingService.get_appointments(tenant, date_str, caller_phone, caller_role)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[CheckMyAppointmentsTool] Failed for tenant={tenant_id}, date={date_str}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "caller_phone": caller_phone})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ CheckMyAppointmentsTool Failed | Tenant {tenant_id}",
+                description=f"date={date_str}, phone={caller_phone}\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error listing appointments: {str(e)}"})
 
 class BookAppointmentTool(AITool):
     name = "book_round_robin"
@@ -82,8 +107,25 @@ class BookAppointmentTool(AITool):
         }
     async def execute(self, **kwargs) -> str:
         tenant = kwargs.get("tenant_context")
-        res = await SchedulingService.book_appointment(tenant, kwargs.get("date_str"), kwargs.get("time_str"), kwargs.get("duration_minutes", 30), kwargs.get("user_name", "Desconocido"), kwargs.get("phone", "unknown"))
-        return json.dumps(res)
+        date_str = kwargs.get("date_str")
+        time_str = kwargs.get("time_str")
+        user_name = kwargs.get("user_name", "Desconocido")
+        phone = kwargs.get("phone", "unknown")
+        duration = kwargs.get("duration_minutes", 30)
+        try:
+            res = await SchedulingService.book_appointment(tenant, date_str, time_str, duration, user_name, phone)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[BookAppointmentTool] Failed for tenant={tenant_id}, {date_str} {time_str}, patient={user_name}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "time_str": time_str, "user_name": user_name, "phone": phone})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ BookAppointmentTool Failed | Tenant {tenant_id}",
+                description=f"date={date_str} {time_str}, patient={user_name}, phone={phone}\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error booking appointment: {str(e)}"})
 
 class UpdateAppointmentTool(AITool):
     name = "update_appointment"
@@ -107,8 +149,26 @@ class UpdateAppointmentTool(AITool):
         }
     async def execute(self, **kwargs) -> str:
         tenant = kwargs.get("tenant_context")
-        res = await SchedulingService.update_appointment(tenant, kwargs.get("date_str"), kwargs.get("time_str"), kwargs.get("new_date"), kwargs.get("new_time"), kwargs.get("phone"), kwargs.get("user_name"))
-        return json.dumps(res)
+        date_str = kwargs.get("date_str")
+        time_str = kwargs.get("time_str")
+        new_date = kwargs.get("new_date")
+        new_time = kwargs.get("new_time")
+        phone = kwargs.get("phone")
+        user_name = kwargs.get("user_name")
+        try:
+            res = await SchedulingService.update_appointment(tenant, date_str, time_str, new_date, new_time, phone, user_name)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[UpdateAppointmentTool] Failed for tenant={tenant_id}, {date_str} {time_str} → {new_date} {new_time}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "time_str": time_str, "new_date": new_date, "new_time": new_time, "phone": phone})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ UpdateAppointmentTool Failed | Tenant {tenant_id}",
+                description=f"{date_str} {time_str} → {new_date} {new_time}, phone={phone}\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error updating appointment: {str(e)}"})
 
 class DeleteAppointmentTool(AITool):
     name = "delete_appointment"
@@ -135,15 +195,28 @@ class DeleteAppointmentTool(AITool):
         caller_phone = kwargs.get("caller_phone", "")
         caller_role = kwargs.get("caller_role", "cliente")
         time_str = kwargs.get("time_str", "00:00")
+        date_str = kwargs.get("date_str")
         
         # ZERO-TRUST + RBAC (Role-Based Access Control)
         if caller_role in ["admin", "staff"]:
             target_phone = kwargs.get("phone", "")
         else:
             target_phone = caller_phone
-            
-        res = await SchedulingService.cancel_appointment(tenant, kwargs.get("date_str"), time_str, target_phone)
-        return json.dumps(res)
+        
+        try:
+            res = await SchedulingService.cancel_appointment(tenant, date_str, time_str, target_phone)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[DeleteAppointmentTool] Failed for tenant={tenant_id}, {date_str} {time_str}, phone={target_phone}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "time_str": time_str, "target_phone": target_phone, "caller_role": caller_role})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ DeleteAppointmentTool Failed | Tenant {tenant_id}",
+                description=f"date={date_str} {time_str}, phone={target_phone}, role={caller_role}\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error cancelling appointment: {str(e)}"})
 
 class EscalateHumanTool(AITool):
     name = "request_human_escalation"
@@ -183,9 +256,21 @@ class EscalateHumanTool(AITool):
                     severity="error",
                     error=e
                 )
-                
-        res = await SchedulingService.request_human_escalation(tenant, patient_phone, reason)
-        return json.dumps(res)
+        
+        try:
+            res = await SchedulingService.request_human_escalation(tenant, patient_phone, reason)
+            return json.dumps(res)
+        except Exception as e:
+            tenant_id = tenant.id if tenant else "unknown"
+            logger.error(f"[EscalateTool] Escalation service failed for {patient_phone}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "patient_phone": patient_phone, "reason": reason[:100]})
+            sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"❌ EscalateTool: Escalation Failed | {patient_phone}",
+                description=f"phone={patient_phone}, reason={reason[:200]}\nError: {str(e)[:300]}",
+                severity="error", error=e
+            )
+            return json.dumps({"status": "error", "message": f"Error during escalation: {str(e)}"})
 
 class UpdatePatientScoringTool(AITool):
     name = "update_patient_scoring"
@@ -213,7 +298,10 @@ class UpdatePatientScoringTool(AITool):
         score = kwargs.get("score")
         notes = kwargs.get("clinical_notes", "")
         
-        if not tenant: return json.dumps({"status": "error", "message": "No tenant context"})
+        if not tenant:
+            logger.warning(f"[ScoringTool] Called without tenant context for phone={phone}")
+            sentry_sdk.capture_message(f"ScoringTool called without tenant context, phone={phone}", level="warning")
+            return json.dumps({"status": "error", "message": "No tenant context"})
         
         from app.infrastructure.database.supabase_client import SupabasePooler
         try:
@@ -230,11 +318,13 @@ class UpdatePatientScoringTool(AITool):
             return json.dumps({"status": "success", "message": f"Score {score} actualizado para {phone}"})
         except Exception as e:
             logger.error(f"[ScoringTool] Failed to update score for {phone}: {e}")
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant.id, "phone": phone, "score": score})
             sentry_sdk.capture_exception(e)
             await send_discord_alert(
                 title=f"❌ ScoringTool: Update Failed | {phone}",
-                description=f"Failed to update score for {phone}: {str(e)[:300]}",
+                description=f"phone={phone}, score={score}, tenant={tenant.id}\nError: {str(e)[:300]}",
                 severity="error",
                 error=e
             )
             return json.dumps({"status": "error", "message": str(e)})
+
