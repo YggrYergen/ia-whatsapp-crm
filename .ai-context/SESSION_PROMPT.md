@@ -258,7 +258,61 @@ At the END of every session, ensure:
 
 ---
 
+## 🔒 [IMMUTABLE] §9.1 — MCP Tools Available in Environment
+
+> [!IMPORTANT]
+> The Antigravity environment has **Model Context Protocol (MCP) servers** connected that provide direct access to infrastructure. These are POWERFUL — use them for diagnostics, queries, and deployments, but NEVER run destructive operations without user approval.
+
+### Available MCP Servers
+
+#### 1. `cloudrun` — Google Cloud Run Management
+Access to deploy, inspect, and manage Cloud Run services.
+
+| Tool | Use For |
+|:---|:---|
+| `list_projects` | See all GCP projects |
+| `list_services` | See all Cloud Run services in a project |
+| `get_service` | Inspect a specific service (URL, status, config) |
+| `get_service_log` | **CRITICAL FOR DEBUGGING** — get logs and errors from a service |
+| `deploy_local_folder` | Deploy code to Cloud Run |
+| `deploy_container_image` | Deploy a container image |
+
+#### 2. `supabase-mcp-server` — Supabase Database Management
+Direct SQL access to BOTH production and development databases.
+
+| Tool | Use For |
+|:---|:---|
+| `list_projects` | See all Supabase projects (PROD + DEV) |
+| `list_tables` | Inspect schema (use `verbose: true` for columns/FKs) |
+| `execute_sql` | Run SELECT queries for diagnostics |
+| `apply_migration` | Run DDL changes (CREATE TABLE, ALTER, etc.) |
+| `get_logs` | Get service logs (api, postgres, auth, edge-function, etc.) |
+| `get_advisors` | Check for security/performance issues |
+| `list_migrations` | See migration history |
+
+### ⚠️ CRITICAL: Production vs Development
+
+> [!CAUTION]
+> There are TWO Supabase projects. **ALWAYS confirm which one you're targeting before running ANY query.**
+
+| Environment | Purpose | Safety Level |
+|:---|:---|:---|
+| **PRODUCTION** | Live client data (CasaVitaCure + future tenants) | 🔴 **READ-ONLY unless explicitly approved** |
+| **DEVELOPMENT** | Testing, experimentation, safe to modify | 🟢 Free to query and modify |
+
+### MCP Safety Rules
+1. **NEVER** run `DELETE`, `DROP`, `TRUNCATE`, or `UPDATE` on production without explicit user approval
+2. **ALWAYS** use `list_projects` first to identify the correct project ID — do NOT guess
+3. **ALWAYS** use `list_tables` with `verbose: true` before writing migrations — verify the current schema
+4. **Prefer `execute_sql`** for diagnostics (SELECT queries) — it's safe and fast
+5. **Use `apply_migration`** (not `execute_sql`) for DDL operations — it creates a proper migration record
+6. **Use `get_service_log`** as the FIRST debugging step when Cloud Run issues are suspected
+7. **Run `get_advisors`** after any DDL changes to catch missing RLS policies or security issues
+
+---
+
 ## 🔒 [IMMUTABLE] §10 — Emergency Procedures
+
 
 ### If Production Is Down
 1. Check Cloud Run logs FIRST: `gcloud run services logs read ia-backend --region=us-central1`
