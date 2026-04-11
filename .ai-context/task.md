@@ -658,19 +658,28 @@ Docs consulted:
 #### Block A: Quick Wins → DEPLOY IMMEDIATELY (30 min)
 > **Rationale:** CasaVitaCure is experiencing bad responses RIGHT NOW. Every hour without Block A = client forming "this doesn't work" opinion. Ship these alone = immediate improvement.
 
-- [ ] **A1. Fix model string** — Change `gpt-4o-mini` → `gpt-5.4-mini` in 3 files
+- [x] **A1. Fix model string** — Changed `gpt-4o-mini` → `gpt-5.4-mini` in 3 backend files + frontend dropdown ✅ (2026-04-11)
   - Files: `core/models.py:L9`, `openai_adapter.py:L23`, `main.py:L219`
-  - Also update frontend Config dropdown: `gpt-5.4-mini` (Recomendado), `gpt-5.4-nano` (Económico), remove `gpt-4o-mini`
-  - 📚 [OpenAI Models page](https://platform.openai.com/docs/models)
-- [ ] **A2. Remove `.lower()`** in `use_cases.py:L64` — destroys name casing
-- [ ] **A3. Disable BUG-5** — Comment `TOOL_ACTION_PATTERNS` block (L219-L242 in `use_cases.py`)
-- [ ] **A4. Increase history limit** — Change from 20 to 30 messages in `use_cases.py`
-- [ ] **A5. Graph API v19.0 → v25.0** — Change version in `meta_graph_api.py:L8`
+  - Frontend: replaced o4-mini/gpt-5-mini/gpt-4o-mini with `gpt-5.4-mini` (Recomendado) + `gpt-5.4-nano` (Económico)
+  - Tests: `conftest.py` + `test_llm_factory.py` updated
+  - 📚 [OpenAI Models page](https://platform.openai.com/docs/models) — ⚠️ 403 behind auth, verified via web search
+  - Production DB already had `gpt-5.4-mini` (no migration needed)
+- [x] **A2. Remove `.lower()`** in `use_cases.py:L64` — preserves name casing ✅ (2026-04-11)
+  - Added `text_body_lower` local var for clinical keyword matching only
+- [x] **A3. Disable BUG-5** — Commented `TOOL_ACTION_PATTERNS` detection block ✅ (2026-04-11)
+  - Left `TOOL_ACTION_PATTERNS` dict definition (for future reference)
+  - Will be replaced by smarter detection in Block D (agentic loop rewrite)
+- [x] **A4. Increase history limit** — 20 → 30 messages in `use_cases.py` ✅ (2026-04-11)
+- [x] **A5. Graph API v19.0 → v25.0** — Changed `meta_graph_api.py:L8` ✅ (2026-04-11)
+  - v19.0 deprecated May 21, 2026 (confirmed via web search)
   - 📚 [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog)
-- [ ] **A6. Add `max_completion_tokens=500`** to LLM call — cost cap per response
-  - At $4.50/1M output, 500 tokens = ~$0.00225/response max
-  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create)
-- [ ] **A7. 🚀 DEPLOY Block A** → merge to `main`, verify Cloud Build
+- [x] **A6. Add `max_completion_tokens=500`** to LLM call ✅ (2026-04-11)
+  - Using `max_completion_tokens` (not deprecated `max_tokens`) per OpenAI API docs
+  - At $4.50/1M output, 500 tokens ≈ $0.00225/response max
+  - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — ⚠️ 403 behind auth, verified via web search
+- [/] **A7. 🚀 DEPLOY Block A** — Commit `d09e836` pushed to `desarrollo` ⏳
+  - DEV auto-deploy triggered (~6 min build time)
+  - ⏳ Awaiting DEV verification before merge to `main`
 - [ ] **A8. 🧪 LIVE TEST** — Send real WhatsApp message, compare quality to yesterday
 
 #### Block B: Tool Schema Migration to `strict: true` (1 hour)
