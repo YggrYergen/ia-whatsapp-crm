@@ -199,103 +199,234 @@ class ProcessMessageUseCase:
                 tool_choice_override = {"type": "function", "function": {"name": "request_human_escalation"}}
                 logger.info("🔒 [ORCH] force_escalation=True → tool_choice forced to 'request_human_escalation'")
 
-            response_dto = await llm_strategy.generate_response(
-                system_prompt=system_prompt,
-                message_history=history,
-                tools=tools_schema,
-                tool_choice_override=tool_choice_override
-            )
-            
             # ============================================================
-            # BUG-1 Layer 4: Enhanced logging — full response details
+            # BLOCK D: Multi-Turn Agentic Loop (2026-04-11)
+            # 
+            # Protocol: OpenAI Function Calling multi-turn conversation
+            # Ref: https://platform.openai.com/docs/guides/function-calling
+            #
+            # Flow per round:
+            #   1. LLM returns assistant message (text and/or tool_calls)
+            #   2. If tool_calls: append assistant msg to history, execute
+            #      tools, append role:"tool" with matching tool_call_id
+            #   3. Loop back to LLM with updated history
+            #   4. If no tool_calls: extract reply text and break
+            #
+            # Safety:
+            #   - MAX_TOOL_ROUNDS caps tool execution rounds (prevents infinite loops)
+            #   - Every tool_call MUST get a role:"tool" response (API breaks otherwise)
+            #   - parallel_tool_calls=False (Block B) → exactly 1 tool per LLM turn
+            #   - tool_choice_override only applies to round 0 (force_escalation)
+            #
+            # Observability (§6): 10 failure points, all instrumented.
             # ============================================================
-            logger.info(f"✅ [ORCH] LLM Reply received. ToolCalls={response_dto.has_tool_calls} | ContentPreview='{(response_dto.content or '')[:150]}'")
+            MAX_TOOL_ROUNDS = 3
+            reply_text = ""
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            rounds_executed = 0
 
-            # ============================================================
-            # BUG-1 Layer 2: Post-LLM Silent Failure Detection
-            # Detect the "Silence Pattern": LLM text implies a tool action
-            # (e.g., "voy a notificar a un agente") but has_tool_calls=False.
-            # This is a critical guardrail — log to Sentry + Discord.
-            # ============================================================
-            # ============================================================
-            # BUG-5 FIX: TOOL_ACTION_PATTERNS detection DISABLED
-            # (2026-04-11) — 95%+ false positives in production.
-            # The detector triggered on normal LLM qualifying questions
-            # (e.g. "podemos agendar una evaluación") drowning real
-            # alerts in Sentry/Discord noise. Completely disabled.
-            # Will be replaced by a more sophisticated approach in
-            # the agentic loop rewrite (Block D).
-            # ============================================================
-            # if not response_dto.has_tool_calls and response_dto.content:
-            #     content_lower = response_dto.content.lower()
-            #     for tool_name, patterns in TOOL_ACTION_PATTERNS:
-            #         if any(p in content_lower for p in patterns):
-            #             ... (BUG-5 false positive detector — disabled)
-            #             break
+            for round_num in range(MAX_TOOL_ROUNDS + 1):  # +1 allows a final text-only response
+                # Determine tools availability — strip tools on final safety round
+                round_tools = tools_schema if round_num < MAX_TOOL_ROUNDS else None
+                # tool_choice_override only applies on round 0 (e.g. force_escalation)
+                round_tool_choice = tool_choice_override if round_num == 0 else None
 
-            reply_text = response_dto.content or ""
-            if response_dto.has_tool_calls:
-                results = []
-                for t in response_dto.tool_calls:
-                    logger.info(f"🛠️ [ORCH] Executing tool: {t['name']}")
-                    args = json.loads(t["arguments"]) if isinstance(t["arguments"], str) else t["arguments"]
-                    args.update({"tenant_context": tenant, "patient_phone": patient_phone, "caller_phone": patient_phone, "caller_role": contact_role})
+                try:
+                    response_dto = await llm_strategy.generate_response(
+                        system_prompt=system_prompt,
+                        message_history=history,
+                        tools=round_tools,
+                        tool_choice_override=round_tool_choice
+                    )
+                except Exception as llm_err:
+                    # Error point #1: LLM API call fails (429, 500, timeout, etc.)
+                    # The adapter already has Sentry+Discord instrumentation and re-raises.
+                    # We catch here to provide a graceful fallback reply.
+                    logger.error(f"💥 [ORCH] LLM call failed on round {round_num+1}: {llm_err}")
+                    sentry_sdk.set_context("agentic_loop", {
+                        "round": round_num + 1,
+                        "max_rounds": MAX_TOOL_ROUNDS,
+                        "tenant_id": str(tenant.id),
+                        "patient_phone": patient_phone,
+                    })
+                    sentry_sdk.capture_exception(llm_err)
+                    await send_discord_alert(
+                        title=f"💥 LLM Call Failed in Loop | Round {round_num+1} | Tenant {tenant.id}",
+                        description=f"Phone: {patient_phone}\nError: {str(llm_err)[:300]}",
+                        severity="error", error=llm_err
+                    )
+                    reply_text = "Disculpa, tuve un inconveniente técnico. ¿Podrías intentar de nuevo en un momento?"
+                    break
+
+                rounds_executed = round_num + 1
+
+                # Accumulate usage tracking (C2)
+                total_prompt_tokens += response_dto.prompt_tokens or 0
+                total_completion_tokens += response_dto.completion_tokens or 0
+
+                logger.info(
+                    f"✅ [ORCH] Round {rounds_executed}/{MAX_TOOL_ROUNDS} — "
+                    f"ToolCalls={response_dto.has_tool_calls} | "
+                    f"ContentPreview='{(response_dto.content or '')[:120]}'"
+                )
+
+                # ── No tool calls → final text response, we're done ──
+                if not response_dto.has_tool_calls:
+                    reply_text = response_dto.content or ""
+                    break
+
+                # ── Tool calls present → execute and loop ──
+
+                # STEP 1: Append the assistant's tool_call message to history
+                # Per OpenAI docs: the assistant message with tool_calls MUST
+                # be in history before the role:"tool" responses.
+                assistant_tool_msg = {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": tc["arguments"] if isinstance(tc["arguments"], str) else json.dumps(tc["arguments"])
+                            }
+                        }
+                        for tc in response_dto.tool_calls
+                    ]
+                }
+                # C1: Preserve any content the assistant sent alongside tool_calls
+                if response_dto.content:
+                    assistant_tool_msg["content"] = response_dto.content
+                history.append(assistant_tool_msg)
+
+                # STEP 2: Execute each tool and append role:"tool" response
+                has_crash = False
+                has_business_error = False
+
+                for tc in response_dto.tool_calls:
+                    tool_name = tc["name"]
+                    tool_call_id = tc.get("id")
+
+                    # Error point #9: tool_call_id missing (should be impossible but guard)
+                    if not tool_call_id:
+                        logger.error(f"❌ [ORCH] tool_call_id missing for tool '{tool_name}' — generating fallback ID")
+                        sentry_sdk.capture_message(
+                            f"tool_call_id missing for '{tool_name}' | Tenant {tenant.id}",
+                            level="error"
+                        )
+                        await send_discord_alert(
+                            title=f"❌ Missing tool_call_id: {tool_name} | Tenant {tenant.id}",
+                            description=f"OpenAI response had no tool_call_id. Generated fallback. Phone: {patient_phone}",
+                            severity="error"
+                        )
+                        tool_call_id = f"fallback_{tool_name}_{round_num}"
+
+                    logger.info(f"🛠️ [ORCH] Round {rounds_executed}/{MAX_TOOL_ROUNDS} — executing: {tool_name} (call_id={tool_call_id[:20]}...)")
+
+                    # Parse arguments
                     try:
-                        res = await tool_registry.execute_tool(t["name"], **args)
-                        results.append(f"Tool {t['name']} result: {res}")
-                        # BUG-1 Layer 4: Log tool result for traceability
-                        logger.info(f"✅ [ORCH] Tool '{t['name']}' result: {str(res)[:300]}")
+                        # Error point #5: json.loads fails (should be impossible with strict:true)
+                        args = json.loads(tc["arguments"]) if isinstance(tc["arguments"], str) else tc["arguments"]
+                    except (json.JSONDecodeError, TypeError) as parse_err:
+                        logger.error(f"❌ [ORCH] Failed to parse tool arguments for '{tool_name}': {parse_err}")
+                        sentry_sdk.set_context("argument_parse_error", {
+                            "tool_name": tool_name,
+                            "raw_arguments": str(tc.get("arguments", ""))[:500],
+                            "tenant_id": str(tenant.id),
+                        })
+                        sentry_sdk.capture_exception(parse_err)
+                        await send_discord_alert(
+                            title=f"❌ Tool Arg Parse Error: {tool_name} | Tenant {tenant.id}",
+                            description=f"Failed to parse arguments: {str(parse_err)[:200]}\nRaw: {str(tc.get('arguments', ''))[:200]}",
+                            severity="error", error=parse_err
+                        )
+                        result_str = json.dumps({
+                            "status": "error",
+                            "message": f"EXCEPTION: Failed to parse arguments for {tool_name}: {str(parse_err)}"
+                        })
+                        has_crash = True
+                        # CRITICAL: Always append role:"tool" even on parse failure
+                        history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": result_str
+                        })
+                        continue
+
+                    # Inject runtime context that tools need but aren't in schema
+                    args.update({
+                        "tenant_context": tenant,
+                        "patient_phone": patient_phone,
+                        "caller_phone": patient_phone,
+                        "caller_role": contact_role
+                    })
+
+                    try:
+                        # Error point #2+3: Tool not found or execution crash
+                        # Both are handled inside tool_registry.execute_tool with Sentry+Discord
+                        result_str = await tool_registry.execute_tool(tool_name, **args)
+                        logger.info(f"✅ [ORCH] Tool '{tool_name}' result: {str(result_str)[:300]}")
+
                         # ============================================================
                         # BUG-3: Detect tool-level status:error responses
-                        # These are NOT Python exceptions — the tool ran but
-                        # returned an error (e.g. "no appointment found").
+                        # These are NOT Python exceptions — the tool ran but returned
+                        # an error (e.g. "no appointment found", GCal 403).
                         # ALWAYS report to Sentry + Discord for observability.
                         # ============================================================
-                        res_str = str(res)
-                        if '"status": "error"' in res_str or '"status":"error"' in res_str:
-                            logger.warning(f"⚠️ [ORCH] Tool '{t['name']}' returned status:error — alerting Sentry/Discord")
+                        if '"status": "error"' in result_str or '"status":"error"' in result_str:
+                            has_business_error = True
+                            logger.warning(f"⚠️ [ORCH] Tool '{tool_name}' returned status:error — alerting Sentry/Discord")
                             sentry_sdk.set_context("tool_error", {
-                                "tool_name": t['name'],
-                                "result": res_str[:500],
+                                "tool_name": tool_name,
+                                "result": result_str[:500],
                                 "tenant_id": str(tenant.id),
                                 "patient_phone": patient_phone,
                                 "contact_role": contact_role,
+                                "round": rounds_executed,
                             })
                             sentry_sdk.capture_message(
-                                f"Tool '{t['name']}' returned error | Tenant {tenant.id}",
+                                f"Tool '{tool_name}' returned error | Tenant {tenant.id}",
                                 level="warning"
                             )
                             await send_discord_alert(
-                                title=f"⚠️ Tool Error: {t['name']} | Tenant {tenant.id}",
-                                description=f"Tool returned error status.\nPhone: {patient_phone}\nRole: {contact_role}\nResult: {res_str[:300]}",
+                                title=f"⚠️ Tool Error: {tool_name} | Tenant {tenant.id}",
+                                description=f"Tool returned error status.\nPhone: {patient_phone}\nRole: {contact_role}\nRound: {rounds_executed}\nResult: {result_str[:300]}",
                                 severity="warning"
                             )
-                    except Exception as e: 
-                        results.append(f"Tool {t['name']} EXCEPTION: {e}")
-                        sentry_sdk.capture_exception(e)
-                        await send_discord_alert(title=f"💥 Tool Crash: {t['name']} | Tenant {tenant.id}", description=str(e), severity="error", error=e)
-                
-                # ============================================================
-                # BUG-3 Fix: Tool Result Error Injection (Synthesis Pass)
-                # Distinguish between:
-                #   - "business errors" (tool ran OK but e.g. "no appointment
-                #     found") → LLM should relay naturally
-                #   - "technical crashes" (Python exception) → LLM should
-                #     tell patient a human was requested
-                # ============================================================
-                has_business_error = any(
-                    ('"status": "error"' in r or '"status":"error"' in r) and "EXCEPTION:" not in r
-                    for r in results
-                )
-                has_crash = any("EXCEPTION:" in r for r in results)
-                
-                history.append({"role": "user", "content": f"[Resultados]: {results}"})
-                
-                if has_crash:
-                    # Technical crash: escalate to human
-                    logger.warning(f"⚠️ [ORCH] Tool CRASHED — injecting human-escalation instruction")
+
+                    except Exception as tool_exec_err:
+                        # Error point #3: Tool execution crashes (Python exception)
+                        # tool_registry already captures to Sentry+Discord, but we
+                        # also need to set the error result for the role:"tool" message
+                        logger.error(f"💥 [ORCH] Tool '{tool_name}' crashed: {tool_exec_err}")
+                        result_str = json.dumps({
+                            "status": "error",
+                            "message": f"EXCEPTION: Tool {tool_name} crashed: {str(tool_exec_err)}"
+                        })
+                        has_crash = True
+                        sentry_sdk.capture_exception(tool_exec_err)
+                        await send_discord_alert(
+                            title=f"💥 Tool Crash: {tool_name} | Tenant {tenant.id}",
+                            description=f"Round: {rounds_executed}\nPhone: {patient_phone}\nError: {str(tool_exec_err)[:300]}",
+                            severity="error", error=tool_exec_err
+                        )
+
+                    # STEP 3: ALWAYS append role:"tool" with matching tool_call_id
+                    # CRITICAL: OpenAI API breaks if any tool_call doesn't get a response.
+                    # This MUST happen whether the tool succeeded, returned error, or crashed.
                     history.append({
-                        "role": "user", 
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": result_str
+                    })
+
+                # STEP 4: Inject system instructions for error cases
+                # These guide the LLM's synthesis of tool results
+                if has_crash:
+                    logger.warning(f"⚠️ [ORCH] Tool CRASHED in round {rounds_executed} — injecting human-escalation instruction")
+                    history.append({
+                        "role": "user",
                         "content": "[INSTRUCCIÓN SISTEMA]: Uno o más herramientas tuvieron un FALLO TÉCNICO. "
                                    "Informa al paciente amablemente que hubo un inconveniente técnico al procesar su solicitud, "
                                    "que ya se notificó a un miembro del equipo humano para que intervenga en la conversación, "
@@ -304,18 +435,44 @@ class ProcessMessageUseCase:
                                    "NO digas que la acción se realizó correctamente."
                     })
                 elif has_business_error:
-                    # Business error: just relay the tool's message naturally
-                    logger.info(f"ℹ️ [ORCH] Tool returned business-level error — LLM will relay naturally")
+                    logger.info(f"ℹ️ [ORCH] Tool returned business-level error in round {rounds_executed} — LLM will relay naturally")
                     history.append({
-                        "role": "user", 
+                        "role": "user",
                         "content": "[INSTRUCCIÓN SISTEMA]: Los resultados anteriores contienen respuestas de error del sistema. "
                                    "Transmite la información al paciente de forma natural y amable, usando el mensaje de error como contexto. "
                                    "NO digas que la acción se realizó correctamente si el resultado indica que no se pudo completar. "
                                    "Continúa la conversación normalmente."
                     })
-                
-                final_dto = await llm_strategy.generate_response(system_prompt=system_prompt, message_history=history, tools=None)
-                reply_text = final_dto.content or "Error final."
+
+                # Loop continues → next iteration calls LLM with updated history
+                # (the LLM will see the tool results and either respond with text or call another tool)
+
+            else:
+                # Error point #6: for/else — MAX_TOOL_ROUNDS exhausted (loop never broke)
+                logger.warning(f"⚠️ [ORCH] MAX_TOOL_ROUNDS ({MAX_TOOL_ROUNDS}) exhausted for tenant {tenant.id}")
+                sentry_sdk.set_context("max_rounds_exhausted", {
+                    "tenant_id": str(tenant.id),
+                    "patient_phone": patient_phone,
+                    "rounds_executed": rounds_executed,
+                    "max_rounds": MAX_TOOL_ROUNDS,
+                })
+                sentry_sdk.capture_message(
+                    f"Max tool rounds exhausted ({MAX_TOOL_ROUNDS}) | Tenant {tenant.id}",
+                    level="warning"
+                )
+                await send_discord_alert(
+                    title=f"⚠️ Max Tool Rounds | Tenant {tenant.id}",
+                    description=f"LLM kept calling tools for {MAX_TOOL_ROUNDS} rounds without producing a final response.\nPhone: {patient_phone}",
+                    severity="warning"
+                )
+                if not reply_text:
+                    reply_text = "Disculpa, tuve un inconveniente procesando tu solicitud. ¿Podrías intentar de nuevo?"
+
+            # Log accumulated usage across all rounds
+            logger.info(
+                f"📊 [ORCH] Pipeline usage — rounds={rounds_executed} "
+                f"total_prompt={total_prompt_tokens} total_completion={total_completion_tokens}"
+            )
 
             if not reply_text: reply_text = "Lo siento, tuve un problema. ¿En qué te ayudo?"
 

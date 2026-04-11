@@ -707,7 +707,7 @@ Docs consulted:
 
 #### Block D: Agentic Loop Rewrite (3-5 hours) ⭐ MOST CRITICAL
 - [ ] **D1. Rewrite tool execution loop** in `use_cases.py`
-  - Multi-round: `MAX_TOOL_ROUNDS = 5`
+  - Multi-round: `MAX_TOOL_ROUNDS = 3`
   - Proper `role: "tool"` with matching `tool_call_id` (currently uses `role: "user"`!)
   - Parallel tool execution: `asyncio.gather(*tool_tasks)`
   - Error recovery: EVERY tool_call MUST get a `role: "tool"` response
@@ -715,6 +715,7 @@ Docs consulted:
   - 📚 [Function Calling Guide](https://platform.openai.com/docs/guides/function-calling) — **CRITICAL: read "Multi-turn" section**
   - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — message format
   - 📚 [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — full rewrite spec
+  **CRITICAL NOTE:** This is a very sensitive implementation so you need to follow the rules from SESSION_PROMPT.md by the letter, or else we'll be stuck for real. ALSO DEEP THOUGH need to be put on the desing of this, there are many ways this could cause silent errors and a HUGE combination of errors. AFTER ALL THAT THOUGHT is done, you NEED TO THOROUGHLY IMPLEMENT the sentry + discrod notification system to catch EACH AND EVERY POSSIBLE ERROR. 
 
 #### Block E: Resilience Layer (90 min) 🛡️ NEW
 > **Added from strategic review.** These prevent disasters, not add features.

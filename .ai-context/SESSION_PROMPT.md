@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A+B DONE ✅ — Observability hardened ✅ — Executing Block C
-SESSION BLOCKS:  A (✅ DEPLOYED), B (✅ DEPLOYED), C (← NOW), D, E, F, G, H
-LAST COMMIT:     17ee882 (desarrollo) — Block B strict schemas + parallel_tool_calls fix
+SESSION GOAL:    Blocks A+B+C DONE ✅ — Observability hardened ✅ — DB fixes applied ✅ — Block D (CRITICAL)
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (← NOW ⭐), E, F, G, H
+LAST COMMIT:     35b9917 (desarrollo) — Block C adapter + observability gaps
 ```
 
 ---
@@ -57,19 +57,26 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - `parallel_tool_calls=False` added to OpenAI adapter (required for strict mode per docs)
   - ⚠️ Hotfix: `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK sends null as JSON null
   - Verified: escalation tool works ✅, booking tool hits expected GCal 403 on DEV (by design — no calendar in dev)
+- ✅ **Block C executed & deployed** (2026-04-11):
+  - C1: Content now ALWAYS preserved from LLM response (was silently discarded with tool_calls)
+  - C2: Usage tracking (prompt/completion/cached/reasoning tokens + model) added to LLMResponse DTO
+  - 3 observability gaps fixed: SDK missing alert, usage parsing isolation, constructor warning
+- ✅ **Supabase DEV DB fixes** (2026-04-11):
+  - Added `messages_delete_own` RLS policy (ENVIAR PRUEBA button was silently failing to delete)
+  - Added `contacts` to `supabase_realtime` publication (bot_active changes weren't reaching frontend)
+  - Both verified via SQL queries against dev DB
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Block A — ✅ DEPLOYED to DEV**
-**Block B — ✅ DEPLOYED to DEV** (strict schemas verified via WhatsApp test)
-**Observability Hardening — ✅ DEPLOYED** (§6 rule established)
+**Blocks A, B, C — ✅ ALL DEPLOYED to DEV**
+**Observability + DB fixes — ✅ APPLIED**
 
-**Block C — OpenAI adapter enhancement (30 min) ← NOW:**
-- C1: Preserve text content when tool_calls present
-- C2: Add usage tracking fields to LLMResponse
-- Must read OpenAI API docs before implementing (§4)
+**Block D — Agentic loop rewrite (3-5 hrs) ⭐ MOST CRITICAL ← NOW:**
+- D1: Multi-round tool loop with proper `role: "tool"` messages
+- Currently uses `role: "user"` for tool results — WRONG per OpenAI docs
+- Must read Deep Dive A §3 Phase 4 + Function Calling Guide before starting
+- ⚠️ `parallel_tool_calls=False` (Block B) means only 1 tool per LLM turn — design accordingly
 
 **Remaining blocks:**
-**Block D — Agentic loop rewrite (3-5 hrs) ⭐ MOST CRITICAL**
 **Block E — Resilience layer: webhook sig, rate limit, lock TTL, shadow-forward, health, cache (90 min)**
 **Block F — Observability: correlation IDs + Sentry tags (30 min)**
 **Block G — DB: `bsuid` column + index (15 min)**
