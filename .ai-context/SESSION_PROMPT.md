@@ -10,11 +10,11 @@
 ## ✏️ [MODIFIABLE] §0 — Session Identity
 
 ```
-SESSION DATE:    [YYYY-MM-DD]
-CURRENT SPRINT:  [Sprint N]
-CURRENT DAY:     [Day N of Sprint]
-SESSION GOAL:    [One-sentence goal for today]
-SESSION BLOCKS:  [Block letters from task.md, e.g., "A, B, C"]
+SESSION DATE:    2026-04-11
+CURRENT SPRINT:  Sprint 1
+CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
+SESSION GOAL:    Deploy Block A quick wins IMMEDIATELY for instant prod improvement, then execute Blocks B-H
+SESSION BLOCKS:  A, B, C, D, E, F, G, H
 ```
 
 ---
@@ -24,19 +24,51 @@ SESSION BLOCKS:  [Block letters from task.md, e.g., "A, B, C"]
 > Update this section before every session. It is the agent's primary situational awareness.
 
 ### What This Project Is
-[1-3 sentences: what the product does, who uses it, what stage it's at]
+AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assistant on WhatsApp that handles customer conversations, books appointments, escalates to humans, and tracks customer intelligence. Currently live with 1 client (CasaVitaCure, wellness center), onboarding 2nd client (fumigation business) on Tuesday April 15. Goal: 7 paying clients by May 4.
 
 ### What Has Been Done (Completed)
-[Bullet list of completed milestones, key decisions made, and critical findings discovered. Include dates.]
+- ✅ Full backend (FastAPI) + frontend (Next.js 15) deployed to Cloud Run + Cloudflare Pages
+- ✅ WhatsApp Cloud API integration working (send/receive messages, webhooks)
+- ✅ OpenAI LLM integration with 7 tools (scheduling, scoring, escalation)
+- ✅ Supabase multi-tenant database (tenants, contacts, messages, bookings)
+- ✅ Google Calendar integration (hardcoded to CasaVitaCure — needs multi-tenant refactor, deferred)
+- ✅ Sentry + Discord observability (basic — needs correlation IDs)
+- ✅ Dev/prod environment separation (independent Cloud Run + Supabase instances)
+- ✅ Phase 5D live testing with first client — identified BUG-5 (95% false positive alerts) and BUG-6 (unacceptable response quality)
+- ✅ Deep research session (50+ web searches): model pricing corrected, BSUID migration identified, Graph API deprecation found, 12 critical corrections documented (CC-1 to CC-12)
+- ✅ Sprint 1 v2 plan approved: Dashboard MVP deferred to Sprint 2, replaced with resilience layer + system prompt engineering
+- ✅ Model decision finalized: `gpt-5.4-mini` for PROD, `gpt-5.4-nano` for DEV/budget, `max_completion_tokens=500` cost cap
 
 ### What Is Being Done RIGHT NOW (This Session)
-[Exact tasks for this session. Reference specific Blocks from task.md. Include estimated time per block.]
+**Block A — Quick Wins (30 min) → DEPLOY IMMEDIATELY:**
+- A1: Change `gpt-4o-mini` → `gpt-5.4-mini` in 3 files
+- A2: Remove `.lower()` in `use_cases.py:L64`
+- A3: Disable BUG-5 (comment `TOOL_ACTION_PATTERNS` L219-L242)
+- A4: Increase history limit 20→30
+- A5: Graph API v19.0→v25.0
+- A6: Add `max_completion_tokens=500`
+- A7: DEPLOY to production
+- A8: Live test via WhatsApp
+
+**Block B — `strict: true` tool schemas (1 hr)**
+**Block C — OpenAI adapter enhancement (30 min)**
+**Block D — Agentic loop rewrite (3-5 hrs) ⭐ MOST CRITICAL**
+**Block E — Resilience layer: webhook sig, rate limit, lock TTL, shadow-forward, health, cache (90 min)**
+**Block F — Observability: correlation IDs + Sentry tags (30 min)**
+**Block G — DB: `bsuid` column + index (15 min)**
+**Block H — Test & deploy Day 1 (30 min)**
 
 ### What Comes Next (After This Session)
-[What the next session(s) will tackle. This prevents scope creep — if something is "next session," it is OFF LIMITS today.]
+- Day 2 (Sun): Blocks I (system prompt engineering 3-4h), J (escalation UX), K (provisioning script), L (status page)
+- Day 3 (Mon): Blocks M (fumigation tenant setup), N (E2E testing), O (Meta audit)
+- Day 4 (Tue): Blocks P (go-live 🚀), Q (post-onboarding)
+- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking, gpt-5.4-nano testing
 
 ### Known Blockers & Risks
-[Any active bugs, unresolved questions, or environmental issues that could impact today's work.]
+- ⚠️ `META_APP_SECRET` env var needed for Block E1 (webhook signature verification) — must be retrieved from Meta App Dashboard → Settings → Basic
+- ⚠️ Block D (agentic loop) is the highest-risk block — 3-5 hours estimated, involves rewriting the core message processing flow
+- ⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief
+- ⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)
 
 ---
 
@@ -46,14 +78,33 @@ SESSION BLOCKS:  [Block letters from task.md, e.g., "A, B, C"]
 
 | Decision | Choice | Date | Rationale |
 |:---|:---|:---|:---|
-| [e.g., Production LLM model] | [e.g., gpt-5.4-mini] | [2026-04-11] | [Brief reason] |
-| ... | ... | ... | ... |
+| Production LLM model | `gpt-5.4-mini` ($0.75/$4.50/1M) | 2026-04-11 | Best tool calling + agentic performance. Both mini and nano share exact same API. |
+| Dev/budget LLM model | `gpt-5.4-nano` ($0.20/$1.25/1M) | 2026-04-11 | For simple tenants or dev testing. API-compatible with mini. |
+| Cost cap | `max_completion_tokens=500` per response | 2026-04-11 | Caps output cost at ~$0.00225/response. Maintains 88-90% margins. |
+| Dashboard MVP | Deferred to Sprint 2 | 2026-04-11 | Time invested in system prompts + resilience instead. Bot quality > dashboard. |
+| Sprint 1 strategy | Deploy Block A first, then iterate | 2026-04-11 | Client experiencing bad responses NOW. Every hour without fix = reputation damage. |
+| Instagram/booking | Sprint 2 priority (SELLING POINTS) | 2026-04-11 | Not needed for Tuesday, but critical for sales outreach. |
+| Fumigation prompt | DRAFT in Sprint 1, refine WITH client | 2026-04-11 | Can't perfect a prompt without the business owner's input. |
+| Shadow-forwarding | Include BOTH user messages AND bot responses | 2026-04-11 | Full interaction visibility for quality monitoring. |
+| Rate limit behavior | Auto-resume when limit refreshes + notify us | 2026-04-11 | Don't permanently block contacts, just throttle + alert. |
+| Config cache | 3-min TTL, ~250KB for 50 tenants | 2026-04-11 | Negligible memory vs 512MB Cloud Run limit. |
+| WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |
 |:---|:---|:---|:---|
-| [e.g., BUG-6] | [Description] | [Status] | [File/Block reference] |
-| ... | ... | ... | ... |
+| BUG-5 | Silent Failure Detector 95%+ false positives | 🟡 → Disable | Block A3: comment L219-L242 `use_cases.py` |
+| BUG-6 | Response quality unacceptable in production | 🔴 7 Root Causes | Blocks A-D: model, tools, adapter, agentic loop |
+| CC-1 | Codebase uses deprecated `gpt-4o-mini` | 🔴 | Block A1: 3 files |
+| CC-3 | BSUID migration needed for contact lookups | 🔴 | Block G1: add column + index |
+| CC-4 | Graph API v19.0 deprecated May 21, 2026 | 🔴 | Block A5: `meta_graph_api.py:L8` |
+| CC-5 | Tool schemas missing `strict: true` | 🔴 | Block B1: all 7 tools |
+| CC-7 | No webhook signature verification | 🔴 SECURITY | Block E1: HMAC-SHA256 |
+| CC-8 | No LLM rate limit per contact | 🔴 COST | Block E2: 20/hour max |
+| CC-9 | `is_processing_llm` lock has no TTL | 🔴 SILENCES | Block E3: 90s TTL |
+| CC-10 | No health monitoring | 🟡 | Block E5: UptimeRobot |
+| CC-11 | No conversation shadow-forward | 🟡 | Block E4: to admin phone |
+| CC-12 | Tenant config fetched every request | 🟡 | Block E6: 3-min cache |
 
 ---
 
@@ -78,6 +129,46 @@ SESSION BLOCKS:  [Block letters from task.md, e.g., "A, B, C"]
 
 > [!IMPORTANT]
 > Every block in `task.md` has 📚-linked documentation URLs. Those URLs are NOT decorative. They contain version-specific implementation details, edge cases, and required behaviors that CANNOT be guessed. OPEN AND READ THEM.
+
+### ⚠️ Context Loading Strategy — CRITICAL FOR SESSION PERFORMANCE
+
+> [!WARNING]
+> **DO NOT load all `.ai-context/` files at once.** The deep dives alone are 40+ URLs each. Loading everything upfront causes context window pressure, degraded reasoning, and "lost in the middle" failures. Use phased loading instead.
+
+#### Phase 1: Session Start (ALWAYS load these)
+```
+1. SESSION_PROMPT.md          ← You're reading this. Contains all rules.
+2. task.md §Sprint 1          ← The execution playbook. Lines ~646-865.
+3. README.md §0 + §0.9       ← Architecture + active bugs. Lines 1-110.
+4. master_plan.md §0 + §2    ← Business context + financial model. Skim rest.
+```
+
+#### Phase 2: Per-Block Loading (load ONLY when starting that block)
+| Block(s) | Load This Deep Dive | Why |
+|:---|:---|:---|
+| **A** (quick wins) | Nothing extra — task.md has everything | Simple config changes |
+| **B** (strict tools) | `deep_dive_a` §3 Phase 3 | Tool-by-tool migration checklist |
+| **C** (adapter) | `deep_dive_a` §3 Phase 2 | Response object shape details |
+| **D** (agentic loop) ⭐ | `deep_dive_a` §3 Phase 4 — **READ FULLY** | Complete rewrite specification |
+| **E** (resilience) | `deep_dive_b` §1 (webhooks) | Webhook signature + BSUID format |
+| **F** (observability) | `deep_dive_c` §3 | Correlation ID setup code example |
+| **G** (DB migration) | `deep_dive_b` §1 (BSUID) | BSUID webhook payload example |
+| **H** (test & deploy) | Nothing extra | Integration testing |
+| **I** (system prompts) | Nothing extra | Creative work, not API-dependent |
+| **J-Q** | Relevant deep dive sections as needed | Day 2-4 blocks |
+
+#### Phase 3: Documentation URLs (load per-step)
+When you reach a step with a 📚 link in `task.md`:
+1. Open the URL via `read_url_content` or `search_web`
+2. Extract the relevant section (don't load the entire page into context)
+3. Implement based on what you read
+4. Move to the next step
+
+#### If the session gets "confused" or quality degrades:
+1. **STOP.** Do not push through.
+2. Ask the user to start a new session with a fresh context
+3. Capture current state in `execution_tracker.md` BEFORE ending
+4. The new session starts from Phase 1 with updated §0-§2
 
 ---
 
