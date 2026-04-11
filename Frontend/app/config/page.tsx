@@ -143,9 +143,8 @@ export default function ConfigPanel() {
                                         <SelectContent className="rounded-2xl border-slate-100 shadow-2xl">
                                             {tenant.llm_provider === 'openai' ? (
                                                 <>
-                                                    <SelectItem value="o4-mini" className="font-bold">o4-mini (Reasoning/CoT)</SelectItem>
-                                                    <SelectItem value="gpt-5-mini" className="font-bold">GPT-5 Mini (Fast Reasoning)</SelectItem>
-                                                    <SelectItem value="gpt-4o-mini" className="font-bold text-slate-400">GPT-4o Mini (Legacy)</SelectItem>
+                                                    <SelectItem value="gpt-5.4-mini" className="font-bold">GPT-5.4 Mini (Recomendado)</SelectItem>
+                                                    <SelectItem value="gpt-5.4-nano" className="font-bold">GPT-5.4 Nano (Económico)</SelectItem>
                                                 </>
                                             ) : (
                                                 <>

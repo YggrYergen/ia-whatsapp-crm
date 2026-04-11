@@ -13,7 +13,7 @@ def test_factory_instantiation(mock_tenant_context):
     strategy = LLMFactory.create(tenant_context=mock_tenant_context, overriding_api_key="mocked_key")
     
     assert isinstance(strategy, MockStrategy)
-    assert strategy.model_id == "gpt-4o-mini"
+    assert strategy.model_id == "gpt-5.4-mini"
     assert strategy.api_key == "mocked_key"
 
 def test_factory_not_registered(mock_tenant_context):

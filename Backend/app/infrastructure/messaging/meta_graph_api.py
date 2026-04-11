@@ -3,9 +3,13 @@ import sentry_sdk
 from app.infrastructure.telemetry.logger_service import logger
 
 class MetaGraphAPIClient:
-    """Async Adapter for WhatsApp Cloud API v19.0 with Singleton Pooling Limits."""
+    """Async Adapter for WhatsApp Cloud API v25.0 with Singleton Pooling Limits.
     
-    BASE_URL = "https://graph.facebook.com/v19.0"
+    Ref: https://developers.facebook.com/docs/graph-api/changelog/version25.0
+    v19.0 deprecated May 21, 2026. Updated 2026-04-11.
+    """
+    
+    BASE_URL = "https://graph.facebook.com/v25.0"
     _http_client: httpx.AsyncClient = None
 
     @classmethod

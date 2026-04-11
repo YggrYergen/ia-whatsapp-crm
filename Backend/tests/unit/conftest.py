@@ -6,8 +6,8 @@ def mock_tenant_context():
     return TenantContext(
         id="tenant_123",
         name="Test Clinic",
-        phone_number_id="11223344",
-        staff_notification_number="+123456789",
-        active_llm_provider="openai",
-        active_llm_model="gpt-4o-mini"
+        ws_phone_id="11223344",
+        ws_token="mock_token",
+        llm_provider="openai",
+        llm_model="gpt-5.4-mini"
     )

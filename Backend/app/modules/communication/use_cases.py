@@ -61,7 +61,7 @@ class ProcessMessageUseCase:
                 
             message = changes["messages"][0]
             patient_phone = message.get("from")
-            text_body = message.get("text", {}).get("body", "").lower()
+            text_body = message.get("text", {}).get("body", "")
             
             logger.info(f"📩 [ORCH] Message from {patient_phone}: '{text_body}'")
 
@@ -104,7 +104,8 @@ class ProcessMessageUseCase:
                     await send_discord_alert(title=f"❌ Contact Creation Error | Tenant {tenant.id}", description=str(e), severity="error", error=e)
             
             clinical_keywords = ["dolor", "fibrosis", "sangrado", "emergencia", "urgencia", "infectado"]
-            force_escalation = any(kw in text_body for kw in clinical_keywords)
+            text_body_lower = text_body.lower()  # Only for keyword matching, preserve original casing
+            force_escalation = any(kw in text_body_lower for kw in clinical_keywords)
             if force_escalation:
                 logger.warning(f"🚨 [ORCH] Clinical keyword detected!")
 
@@ -145,7 +146,7 @@ class ProcessMessageUseCase:
                 history = []
                 if contact_id:
                     logger.info("📚 [ORCH] Fetching history...")
-                    hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(20).execute()
+                    hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(30).execute()
                     if hist_res.data:
                         for m in reversed(hist_res.data):
                             sr = m["sender_role"]
@@ -216,30 +217,21 @@ class ProcessMessageUseCase:
             # (e.g., "voy a notificar a un agente") but has_tool_calls=False.
             # This is a critical guardrail — log to Sentry + Discord.
             # ============================================================
-            if not response_dto.has_tool_calls and response_dto.content:
-                content_lower = response_dto.content.lower()
-                for tool_name, patterns in TOOL_ACTION_PATTERNS:
-                    if any(p in content_lower for p in patterns):
-                        logger.warning(f"🚨 [ORCH] SILENT FAILURE DETECTED: LLM text implies '{tool_name}' but has_tool_calls=False")
-                        sentry_sdk.set_context("silent_failure", {
-                            "expected_tool": tool_name,
-                            "llm_content": response_dto.content[:500],
-                            "has_tool_calls": False,
-                            "tenant_id": str(tenant.id),
-                            "contact_id": str(contact_id) if contact_id else "unknown",
-                            "patient_phone": patient_phone,
-                            "force_escalation": force_escalation,
-                        })
-                        sentry_sdk.capture_message(
-                            f"LLM Silent Failure: implied '{tool_name}' without calling it",
-                            level="warning"
-                        )
-                        await send_discord_alert(
-                            title=f"🚨 LLM Silent Failure: {tool_name}",
-                            description=f"LLM text implied tool action but didn't call it.\nTenant: {tenant.id}\nPhone: {patient_phone}\nContent: {response_dto.content[:200]}",
-                            severity="warning"
-                        )
-                        break
+            # ============================================================
+            # BUG-5 FIX: TOOL_ACTION_PATTERNS detection DISABLED
+            # (2026-04-11) — 95%+ false positives in production.
+            # The detector triggered on normal LLM qualifying questions
+            # (e.g. "podemos agendar una evaluación") drowning real
+            # alerts in Sentry/Discord noise. Completely disabled.
+            # Will be replaced by a more sophisticated approach in
+            # the agentic loop rewrite (Block D).
+            # ============================================================
+            # if not response_dto.has_tool_calls and response_dto.content:
+            #     content_lower = response_dto.content.lower()
+            #     for tool_name, patterns in TOOL_ACTION_PATTERNS:
+            #         if any(p in content_lower for p in patterns):
+            #             ... (BUG-5 false positive detector — disabled)
+            #             break
 
             reply_text = response_dto.content or ""
             if response_dto.has_tool_calls:

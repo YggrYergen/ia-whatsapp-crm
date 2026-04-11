@@ -20,7 +20,7 @@ class OpenAIStrategy(LLMStrategy):
     Ref: https://platform.openai.com/docs/guides/function-calling
     """
     
-    def __init__(self, api_key: str = None, model_id: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str = None, model_id: str = "gpt-5.4-mini"):
         key = api_key or settings.OPENAI_API_KEY
         super().__init__(api_key=key, model_id=model_id)
         if AsyncOpenAI: self.client = AsyncOpenAI(api_key=self.api_key)
@@ -51,7 +51,11 @@ class OpenAIStrategy(LLMStrategy):
                 model=self.model_id,
                 messages=messages,
                 tools=tools if tools else None,
-                tool_choice=tool_choice
+                tool_choice=tool_choice,
+                # A6: Cost cap — limit output tokens per response
+                # At $4.50/1M output tokens, 500 tokens ≈ $0.00225/response max
+                # Using max_completion_tokens (not deprecated max_tokens) per OpenAI API docs
+                max_completion_tokens=500
             )
             message = response.choices[0].message
             

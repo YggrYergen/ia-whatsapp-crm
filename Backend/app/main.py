@@ -216,7 +216,7 @@ def create_app() -> FastAPI:
             from app.core.models import TenantContext
             tenant_data = res.data[0]
             tenant_data.setdefault('llm_provider', 'openai')
-            tenant_data.setdefault('llm_model', 'gpt-4o-mini')
+            tenant_data.setdefault('llm_model', 'gpt-5.4-mini')
             tenant_data.setdefault('system_prompt', 'Eres Javiera...')
             tenant_data.setdefault('ws_phone_id', '123456789')
             tenant_data.setdefault('ws_token', 'mock_token')
