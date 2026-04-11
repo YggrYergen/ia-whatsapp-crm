@@ -52,6 +52,9 @@ class OpenAIStrategy(LLMStrategy):
                 messages=messages,
                 tools=tools if tools else None,
                 tool_choice=tool_choice,
+                # B1: Disable parallel tool calls — required for strict: true schemas
+                # Ref: OpenAI Structured Outputs docs — strict mode is incompatible with parallel calls
+                parallel_tool_calls=False if tools else None,
                 # A6: Cost cap — limit output tokens per response
                 # At $4.50/1M output tokens, 500 tokens ≈ $0.00225/response max
                 # Using max_completion_tokens (not deprecated max_tokens) per OpenAI API docs

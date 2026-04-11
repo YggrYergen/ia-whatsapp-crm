@@ -16,13 +16,15 @@ class CheckAvailabilityTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "date_str": {"type": "string", "description": "Fecha YYYY-MM-DD"},
-                        "duration_minutes": {"type": "integer", "description": "Duración de la cita (30 o 60 min)"}
+                        "duration_minutes": {"type": ["integer", "null"], "description": "Duración de la cita en minutos (30 o 60). Null = 30 min por defecto."}
                     },
-                    "required": ["date_str"]
+                    "required": ["date_str", "duration_minutes"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -54,12 +56,14 @@ class CheckMyAppointmentsTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "date_str": {"type": "string", "description": "Fecha a consultar YYYY-MM-DD"}
                     },
-                    "required": ["date_str"]
+                    "required": ["date_str"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -92,6 +96,7 @@ class BookAppointmentTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -101,7 +106,8 @@ class BookAppointmentTool(AITool):
                         "user_name": {"type": "string", "description": "Nombre del paciente"},
                         "phone": {"type": "string", "description": "Teléfono del paciente"}
                     },
-                    "required": ["date_str", "time_str", "duration_minutes", "user_name", "phone"]
+                    "required": ["date_str", "time_str", "duration_minutes", "user_name", "phone"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -136,14 +142,19 @@ class UpdateAppointmentTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "date_str": {"type": "string"}, "time_str": {"type": "string"},
-                        "new_date": {"type": "string"}, "new_time": {"type": "string"},
-                        "phone": {"type": "string"}, "user_name": {"type": "string"}
+                        "date_str": {"type": "string", "description": "Fecha original YYYY-MM-DD"},
+                        "time_str": {"type": "string", "description": "Hora original HH:MM"},
+                        "new_date": {"type": "string", "description": "Nueva fecha YYYY-MM-DD"},
+                        "new_time": {"type": "string", "description": "Nueva hora HH:MM"},
+                        "phone": {"type": "string", "description": "Teléfono del paciente"},
+                        "user_name": {"type": "string", "description": "Nombre del paciente"}
                     },
-                    "required": ["date_str", "time_str", "new_date", "new_time", "phone", "user_name"]
+                    "required": ["date_str", "time_str", "new_date", "new_time", "phone", "user_name"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -179,14 +190,16 @@ class DeleteAppointmentTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "date_str": {"type": "string", "description": "YYYY-MM-DD"}, 
                         "time_str": {"type": "string", "description": "HH:MM"}, 
-                        "phone": {"type": "string", "description": "Solo utilízalo si un agente del staff te pide borrar la cita de un tercero."}
+                        "phone": {"type": ["string", "null"], "description": "Teléfono de un tercero. Solo si un agente staff pide borrar la cita de otro. Null si el cliente borra su propia cita."}
                     },
-                    "required": ["date_str", "time_str"] 
+                    "required": ["date_str", "time_str", "phone"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -227,12 +240,15 @@ class EscalateHumanTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "reason": {"type": "string"}, "patient_phone": {"type": "string"}
+                        "reason": {"type": "string", "description": "Razón por la que se necesita intervención humana"},
+                        "patient_phone": {"type": ["string", "null"], "description": "Teléfono del paciente. Null si no se conoce."}
                     },
-                    "required": ["reason"]
+                    "required": ["reason", "patient_phone"],
+                    "additionalProperties": False
                 }
             }
         }
@@ -281,14 +297,16 @@ class UpdatePatientScoringTool(AITool):
             "function": {
                 "name": self.name,
                 "description": self.description,
+                "strict": True,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "phone": {"type": "string", "description": "Teléfono del paciente"},
                         "score": {"type": "integer", "description": "Puntaje calculado (4 a 20)"},
-                        "clinical_notes": {"type": "string", "description": "Resumen breve de hallazgos clínicos"}
+                        "clinical_notes": {"type": ["string", "null"], "description": "Resumen breve de hallazgos clínicos. Null si no hay notas."}
                     },
-                    "required": ["phone", "score"]
+                    "required": ["phone", "score", "clinical_notes"],
+                    "additionalProperties": False
                 }
             }
         }

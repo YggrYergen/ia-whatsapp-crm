@@ -683,10 +683,13 @@ Docs consulted:
 - [ ] **A8. 🧪 LIVE TEST** — Send real WhatsApp message, compare quality to yesterday
 
 #### Block B: Tool Schema Migration to `strict: true` (1 hour)
-- [ ] **B1. Migrate all 7 tools** to `strict: true` + `additionalProperties: false`
+- [x] **B1. Migrate all 7 tools** to `strict: true` + `additionalProperties: false` ✅ (2026-04-11)
   - File: `Backend/app/modules/scheduling/tools.py`
-  - All optional params → `"type": ["string", "null"]` and add to `required`
-  - 📚 [Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs) — READ §"Supported schemas"
+  - All optional params → `"type": ["string", "null"]` and added to `required`
+  - Nullable fields: `duration_minutes` (CheckAvailability), `phone` (Delete), `patient_phone` (Escalate), `clinical_notes` (Scoring)
+  - Added `parallel_tool_calls=False` to OpenAI adapter — required for strict mode per docs
+  - All 7 tools also wrapped with try/except + Sentry + Discord (done in observability hardening)
+  - 📚 [Structured Outputs Guide](https://platform.openai.com/docs/guides/structured-outputs) — §"Supported schemas" — verified via web search
   - 📚 [Deep Dive A §3 Phase 3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — tool-by-tool migration checklist
 
 #### Block C: OpenAI Adapter Enhancement (30 min)
