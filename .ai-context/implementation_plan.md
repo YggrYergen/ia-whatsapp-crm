@@ -301,7 +301,7 @@ Following the official docs ([Sentry Alerts](https://docs.sentry.io/product/aler
 2. **Sentry Bot** (official Sentry integration) — fires automatically for ALL new issues and reopened issues captured by `sentry_sdk`
 
 **GCP Project ID:** `saas-javiera` (NOT `tuasistentevirtual` — that's the Sentry org name)  
-**Cloud Run Production URL:** `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app`
+**Cloud Run Production URL:** `https://ia-backend-prod-645489345350.us-central1.run.app` (migrated from europe-west1 on 2026-04-11)
 
 **Partially tested (user confirmed 2026-04-09):**
 - ✅ Dashboard loads
@@ -708,10 +708,10 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 
    | Field | What to type |
    |---|---|
-   | **Callback URL** | `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook` |
+   | **Callback URL** | `https://ia-backend-prod-645489345350.us-central1.run.app/webhook` |
    | **Verify Token** | *(paste the WHATSAPP_VERIFY_TOKEN value from Step 6)* |
 
-   > **⚠️ TRIPLE CHECK the Callback URL:** It must be EXACTLY `https://ia-backend-prod-ftyhfnvyla-ew.a.run.app/webhook` — no trailing slash, no `/api/` prefix, and it's `https` not `http`.
+   > **⚠️ TRIPLE CHECK the Callback URL:** It must be EXACTLY `https://ia-backend-prod-645489345350.us-central1.run.app/webhook` — no trailing slash, no `/api/` prefix, and it's `https` not `http`.
 
 5. **Click "Verify and Save"**
 

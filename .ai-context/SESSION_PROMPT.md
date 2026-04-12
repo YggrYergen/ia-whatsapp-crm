@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A-H DONE ✅ — MERGED TO PRODUCTION — Live E2E test pending (user)
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (✅ merge+deploy — H4 live pending)
-LAST COMMIT:     c7069cc (main) — desarrollo merged to main (fast-forward)
+SESSION GOAL:    Blocks A-H ALL COMPLETE ✅ — PROD LIVE on us-central1 — WhatsApp E2E verified
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (✅ ALL — including H4 live test)
+LAST COMMIT:     030ef94 (main) — HMAC fix + debug cleanup, synced desarrollo↔main
 ```
 
 ---
@@ -104,14 +104,14 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - Phase 2 (lookup swap) is SEPARATE task before June 2026
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Blocks A, B, C, D, E, F, G — ✅ ALL DEPLOYED to DEV**
+**ALL Blocks A-H — ✅ COMPLETE AND DEPLOYED TO PRODUCTION**
 **Observability + DB fixes — ✅ APPLIED**
 
-**Block H — Test & deploy Day 1 (30 min)**
-- [ ] **H1. Run simulation suite** — all 9 scenarios must pass
-- [ ] **H2. Test strict mode** — send conversations that trigger each tool
-- [ ] **H3. Deploy to production** — merge to `main`, verify Cloud Build
-- [ ] **H4. Live test** — real WhatsApp conversation, verify quality improvement + shadow-forward working
+**Block H — Test & deploy Day 1 — ✅ ALL COMPLETE (2026-04-11)**
+- [x] **H1. Run simulation suite** — 9/9 passed
+- [x] **H2. Test strict mode** — validated
+- [x] **H3. Deploy to production** — merged, deployed, verified
+- [x] **H4. Live test** — ✅ DONE — HMAC bug found & fixed, PROD migrated to us-central1, WhatsApp messages flowing
 
 ### What Comes Next (After This Session)
 - Day 2 (Sun): Blocks I (system prompt engineering 3-4h), J (escalation UX), K (provisioning script), L (status page)
@@ -122,12 +122,16 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 ### Known Blockers & Risks
 - ~~⚠️ `META_APP_SECRET` env var needed for Block E1~~ → **Stored in Google Secret Manager, set on both DEV + PROD**
 - ~~⚠️ Block D (agentic loop) is the highest-risk block~~ → **DONE ✅ — tested via sandbox, all 5 tests passed**
-- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to DEV**
+- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to PROD**
 - ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
+- ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` on META_APP_SECRET — `.strip()` added**
+- ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **PROD migrated to us-central1 (2026-04-11)**
 - ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
 - ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
 - ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
 - ⚠️ Shadow-forwarding (E4) uses tenant's WABA phone → admin number. Requires active 24h conversation window on admin's WhatsApp. If window expired, forward silently fails (non-blocking).
+- ⚠️ **Cloud Build trigger** on `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` auto-deploys from `main` push. ALWAYS push to main before expecting PROD to have new code.
+- ⚠️ **Old europe-west1 `ia-backend-prod` still exists** — delete after confirming us-central1 stable for 24h.
 
 ---
 
@@ -150,6 +154,8 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
 | BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap, nullable phone, tool updates) is separate task. |
 | BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
+| PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies (Supabase us-east-2, OpenAI US, Meta US) are in the US. Europe added 600-1000ms per request. |
+| Secret Manager values | Always `.strip()` before use | 2026-04-11 | GCP Secret Manager stores values with trailing `\r\n`. Caused HMAC mismatch (34 chars vs 32). |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |
@@ -456,10 +462,10 @@ At the END of every session, ensure:
 └─────────────────────────────────────┘     └───────────────────────────────────┘
 ```
 
-| Branch | Backend Service | GCP Project | Frontend | Database |
+| Branch | Backend Service | Region | Frontend | Database |
 |:---|:---|:---|:---|:---|
-| `desarrollo` | `ia-backend-dev` | `saas-javiera` | Dev Cloudflare Pages | Supabase DEV |
-| `main` | `ia-backend-prod` | `casavitacure-crm` | Prod Cloudflare Pages | Supabase PROD |
+| `desarrollo` | `ia-backend-dev` | `us-central1` | Dev Cloudflare Pages | Supabase DEV |
+| `main` | `ia-backend-prod` | `us-central1` | Prod Cloudflare Pages | Supabase PROD |
 
 **THE WORKFLOW:**
 1. **ALL new work happens on `desarrollo`** — never commit Sprint work directly to `main`
@@ -585,7 +591,7 @@ Direct SQL access to BOTH production and development databases.
 
 
 ### If Production Is Down
-1. Check Cloud Run logs FIRST: `gcloud run services logs read ia-backend --region=us-central1`
+1. Check Cloud Run logs FIRST: `gcloud run services logs read ia-backend-prod --region=us-central1 --project=saas-javiera`
 2. Check Sentry for the latest error
 3. Check Discord for automated alerts
 4. If the issue is in the latest deploy: **ROLLBACK** using the previous Cloud Run revision

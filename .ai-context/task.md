@@ -847,9 +847,30 @@ Docs consulted:
   - Env vars preserved: `META_APP_SECRET`, `SHADOW_FORWARD_PHONE`, all others ✅
   - Startup logs clean: no import errors, no crashes
   - Rollback target if needed: `ia-backend-prod-00086-7vn`
-- [ ] **H4. Live test** — pending user's real WhatsApp message to PROD bot
-  - User sends message to `56964243998`
-  - Verify: quality response, shadow-forward to `56931374341`, no Sentry errors
+- [x] **H4. Live test** — ✅ COMPLETE (2026-04-11 ~23:00 CLT)
+  - **HMAC Bug Found & Fixed:**
+    - Real WhatsApp webhook → 401 Unauthorized on all POST /webhook
+    - Root cause: `META_APP_SECRET` in Google Secret Manager stored with trailing `\r\n` (34 chars vs expected 32)
+    - HMAC-SHA256 computation used 34-char key → signature mismatch → rejected
+    - Diagnosis: added temporary debug logging (`secret_len=34`), compared against locally computed HMAC
+    - Fix: `app_secret = (settings.META_APP_SECRET or "").strip()` in `security.py:67`
+    - Verified: DEV HMAC test → 200 OK; PROD webhooks → all 200 OK
+    - Commits: `fec49c7` (fix), `0d93f94` (debug), `030ef94` (cleanup)
+  - **Cloud Build Trigger Discovery:**
+    - `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` auto-deploys from `main` pushes
+    - Our manual `gcloud run deploy` was overridden by trigger deploying old code
+    - Lesson: ALWAYS `git push origin main` before expecting PROD code to update
+  - **PROD Region Migration:**
+    - Migrated `ia-backend-prod` from `europe-west1` → `us-central1` (2026-04-11)
+    - Reason: all dependencies (Supabase us-east-2, OpenAI US, Meta US) are US-based; europe added 600-1000ms per request
+    - New URL: `https://ia-backend-prod-645489345350.us-central1.run.app`
+    - Meta webhook URL updated to new endpoint
+    - UptimeRobot updated for new PROD backend
+    - Old europe-west1 service still exists — delete after 24h stability confirmation
+  - **Model Config Fix:**
+    - Tenant was using deprecated `gpt-4o` → updated to `gpt-5.4-mini` in PROD DB
+    - Combined with region move = dramatic latency improvement
+  - WhatsApp messages: ✅ flowing, bot responding, HMAC verified
 
 ### Day 2 (Sun Apr 13): System Prompts + Escalation UX + Provisioning
 

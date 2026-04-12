@@ -26,7 +26,44 @@
 - [ ] Update .ai-context/implementation_plan.md with new phases
 - [ ] Update .ai-context/task.md with Sprint 1-3 tasks
 
-### Day 2: Saturday April 12 — BUG-6 Core Fix (Response Quality)
+### Day 1 (Evening): Saturday April 11 — Block H Completion & PROD Stabilization
+
+> **Session 2** (ea1aa81e) — 22:30-23:15 CLT
+
+#### Block H: Test & Deploy Day 1 ✅ COMPLETE
+- [x] H1: 9/9 simulation scenarios passed (zero errors)
+- [x] H2: Strict mode validated via H1 scenarios
+- [x] H3: Fast-forward merge `desarrollo → main`, deployed to PROD
+- [x] H4: Live E2E test — **CRITICAL BUGS FOUND AND FIXED:**
+
+**Bug 1: HMAC Webhook 401 (Critical)**
+- Real WhatsApp webhooks → 401 Unauthorized after deploy
+- Root cause: Google Secret Manager stores `META_APP_SECRET` with trailing `\r\n` (34 chars vs 32)
+- HMAC-SHA256 computed with wrong key → signature mismatch
+- Diagnosis: temporary debug logging revealed `secret_len=34`
+- Fix: `.strip()` on secret before HMAC computation (`security.py:67`)
+- Verified: DEV (200 OK), then PROD (all webhooks 200 OK)
+
+**Bug 2: Cloud Build Trigger Override**
+- `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` has Cloud Build trigger on `main`
+- Our manual `gcloud run deploy` was overridden by trigger deploying OLD code from previous push
+- Lesson: ALWAYS `git push origin main` FIRST, then Cloud Build auto-deploys
+
+**Optimization: PROD Region Migration**
+- Moved `ia-backend-prod` from `europe-west1` → `us-central1`
+- Reason: all dependencies (Supabase us-east-2, OpenAI, Meta) are US-based
+- Europe added 600-1000ms per request (5-8 cross-Atlantic DB calls per message)
+- New PROD URL: `https://ia-backend-prod-645489345350.us-central1.run.app`
+- Meta webhook URL updated, UptimeRobot updated
+
+**Optimization: Model Config**
+- Tenant was using deprecated `gpt-4o` instead of `gpt-5.4-mini`
+- Updated in PROD database → dramatic latency improvement
+- Combined with region move = near-instant responses
+
+**Commits:** `fec49c7` → `0d93f94` → `030ef94` (all synced main↔desarrollo)
+
+### Day 2: Sunday April 13 — System Prompts + Escalation UX + Provisioning
 
 > **Primary reference:** [Deep Dive A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md)
 
