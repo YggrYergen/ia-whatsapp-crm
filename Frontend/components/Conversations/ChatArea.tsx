@@ -82,7 +82,7 @@ export default function ChatArea() {
             // Trigger Backend Simulation
             setIsIAProcessing(true)
             try {
-                const baseUrl = 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
+                const baseUrl = 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'
                 const res = await fetch(`${baseUrl}/api/simulate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

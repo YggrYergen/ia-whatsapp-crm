@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/nextjs'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-ew.a.run.app'
+    const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'
     
     const response = await fetch(`${baseUrl}/api/calendar/book`, {
       method: 'POST',
