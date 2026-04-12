@@ -168,18 +168,57 @@
 - [x] Sentry + Discord instrumentation on all failure paths
 - [x] Pre-merge drift check: PASS (messages.note DEV-only, pre-existing, unused)
 
-**Step 5: reasoning_effort experiment 🧪 TESTING**
-- [ ] Add `reasoning_effort="medium"` to `openai_adapter.py` (wrapped in try/except fallback)
-- [ ] Deploy to PROD → test conversational pacing
-- [ ] If API rejects param: remove and evaluate model upgrade path
-- [ ] Ref: [Model comparison deep dive](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/model_comparison_deep_dive.md)
+**Step 5: reasoning_effort experiment ✅ REMOVED → Sprint 2**
+- [x] Diagnosed: OpenAI hard-rejects `reasoning_effort` + `tools` on `/v1/chat/completions` for gpt-5.4-mini
+- [x] Error: "Function tools with reasoning_effort are not supported. Please use /v1/responses instead."
+- [x] Impact: every request was doubling (fail→retry) + spamming Discord (7+ alerts per test)
+- [x] Fix: removed entire experiment (commit `627c93e`). Zero quality impact — param never worked with tools
+- [ ] Sprint 2: Migrate adapter to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively
+- [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/reasoning_effort_diagnostic.md)
+
+**Step 5b: Rapid-fire message batching ✅ DEPLOYED TO DEV** (commit `1f7b250`)
+- [x] Diagnosed: messages 2+ in rapid-fire sequences were persisted to DB but silently dropped from LLM context
+- [x] Fix: re-fetch history AFTER 3s sleep to capture accumulated messages
+- [x] Full observability: Sentry context + Discord alert on failure
+- [x] Graceful degradation: falls back to pre-sleep history on re-fetch failure
 
 **Schema Drift (messages.note):**
 | Column | DEV | PROD | Status |
 |:---|:---|:---|:---|
 | messages.note | ✅ exists | ❌ missing | ⚠️ No code references — safe for now |
 
+#### Day 2 Unsolved Issues — Carried Forward (2026-04-12 ~18:30 CLT)
 
+> **Last updated:** 2026-04-12 18:26 CLT  
+> Items discovered during Day 2 sessions that remain unresolved. Ordered by Tuesday impact.
+
+**🔴 MUST FIX BEFORE TUESDAY**
+
+| # | Issue | Detail | Effort | Block |
+|:---|:---|:---|:---|:---|
+| U-1 | **Mobile frontend BROKEN** | Dashboard + chat UI completely unusable on mobile. Layout overflows, buttons unreachable, chat area doesn't scroll properly. A client would get angry in seconds. | 3-4 hrs | J+L |
+| U-2 | **Escalation UX missing** | No visual badge for `bot_active=false` contacts, no "Resolver" button, no escalation filter. Staff cannot see or handle escalated chats. Could happen in first real client interaction. | 2 hrs | J |
+| U-3 | **PROD calendar UNVERIFIED** | No `book_round_robin` tool call on PROD in 24+ hours. Cannot confirm CasaVitaCure booking actually works. Service account `ia-calendar-bot@` may lack writer permission. | 30 min test | — |
+| U-4 | **Dashboard fake data** | Dashboard shows mock/placeholder numbers. Must replace with real Supabase queries (messages today, escalations pending, last message). | 30 min | L |
+| U-5 | **Fumigation prompt not drafted** | Block I2. Need business data from client (services, prices, hours, zones). At minimum, prepare onboarding checklist of what to ask. | 2 hrs | I2 |
+
+**🟡 SHOULD FIX / VERIFY**
+
+| # | Issue | Detail | Effort | Block |
+|:---|:---|:---|:---|:---|
+| U-6 | **Rapid-fire fix NOT on PROD** | Commit `1f7b250` on `desarrollo` only. PROD still silently drops rapid-fire messages 2+. Needs merge + deploy approval. | 10 min merge | — |
+| U-7 | **wamid extraction null** | `wamid` column exists but all values are `null`. Webhook payload path may differ from expected (`entry[0].changes[0].value.messages[0].id`). Dedup partially broken. | 1 hr diag | — |
+| U-8 | **Prompt Phase 1 skip** | Multiple PROD assistant messages show bot asking "nombre y hora" immediately, skipping 3-question triaje (Phase 1). Prompt v2.1 applied but regression not fully confirmed fixed. | E2E test | — |
+| U-9 | **E2E testing not done** | No systematic end-to-end test of full flow: greeting → triaje → availability check → booking → confirmation. Block N. | 3 hrs | N |
+
+**🟢 SPRINT 2 / NON-BLOCKING**
+
+| # | Issue | Detail | Block |
+|:---|:---|:---|:---|
+| U-10 | **reasoning_effort removed** | OpenAI rejects on chat/completions with tools. Sprint 2: migrate to Responses API. Full diagnostic in Antigravity brain artifact. | S2 |
+| U-11 | **Gemini adapter deprecated SDK** | PROD startup shows `google.generativeai` FutureWarning. No tenant uses Gemini yet. Migrate to `google.genai` when building Gemini adapter in S2. | S2.1 |
+| U-12 | **Ideal rapid-fire pattern** | Current fix is 80/20 (re-fetch after sleep). Ideal: abort in-flight LLM when new messages arrive. Complex, deferred. | S2 |
+| U-13 | **Tenant provisioning script** | Block K. Not critical if AI agent does the SQL, but need onboarding checklist for client data collection. | K |
 
 ### Day 3: Sunday April 13 — Context + Dashboard + Escalation
 
