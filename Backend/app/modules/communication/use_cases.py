@@ -4,6 +4,8 @@ import json
 import pytz
 from datetime import datetime
 from app.core.models import TenantContext
+from app.core.config import settings
+from app.core.rate_limiter import rate_limiter
 from app.infrastructure.messaging.meta_graph_api import MetaGraphAPIClient
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.telemetry.logger_service import logger
@@ -158,9 +160,90 @@ class ProcessMessageUseCase:
                 logger.info("🔇 [ORCH] Bot muted for this contact. Skipping LLM.")
                 return
 
+            # ============================================================
+            # Block E3: Processing Lock TTL — 90-second stale lock release
+            #
+            # If is_processing_llm=True but updated_at is older than 90s,
+            # the previous pipeline likely crashed without releasing the lock.
+            # Force-release it instead of silently dropping the message.
+            # ============================================================
             if is_processing and not is_simulation:
-                logger.info("⏳ [ORCH] Already processing. Skipping.")
-                return
+                stale_lock = False
+                try:
+                    updated_at_str = contact_data.get("updated_at") if contact_data else None
+                    if updated_at_str:
+                        chile_tz_check = pytz.timezone("America/Santiago")
+                        if isinstance(updated_at_str, str):
+                            # Parse ISO format from Supabase
+                            updated_at_dt = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                        else:
+                            updated_at_dt = updated_at_str
+                        now_utc = datetime.now(pytz.utc)
+                        age_seconds = (now_utc - updated_at_dt).total_seconds()
+                        if age_seconds > 90:
+                            stale_lock = True
+                            logger.warning(
+                                f"🔓 [ORCH] STALE LOCK detected: contact {contact_id} locked for {age_seconds:.0f}s (>90s). "
+                                f"Force-releasing."
+                            )
+                            sentry_sdk.capture_message(
+                                f"Stale processing lock force-released | Contact {contact_id} | Age {age_seconds:.0f}s",
+                                level="warning"
+                            )
+                            await send_discord_alert(
+                                title=f"🔓 Stale Lock Force-Released | Tenant {tenant.id}",
+                                description=(
+                                    f"Contact `{contact_id}` was locked for {age_seconds:.0f}s (>90s limit).\n"
+                                    f"Phone: {patient_phone}\n"
+                                    f"Previous pipeline likely crashed without cleanup."
+                                ),
+                                severity="warning"
+                            )
+                except Exception as ttl_err:
+                    logger.error(f"❌ [ORCH] Lock TTL check failed: {ttl_err}")
+                    sentry_sdk.capture_exception(ttl_err)
+                    # If TTL check fails, treat as NOT stale (conservative)
+                
+                if not stale_lock:
+                    logger.info("⏳ [ORCH] Already processing (lock is fresh). Skipping.")
+                    return
+                # If stale_lock=True, we fall through and re-process
+
+            # ============================================================
+            # Block E2: Rate Limit Check — before LLM call
+            # ============================================================
+            try:
+                allowed, remaining, reset_secs = await rate_limiter.check_and_increment(
+                    str(tenant.id), patient_phone
+                )
+                if not allowed:
+                    logger.warning(f"🚫 [ORCH] Rate limited: {patient_phone} | Resets in {reset_secs}s")
+                    # Send polite throttle message directly without LLM
+                    throttle_msg = (
+                        "Estás enviando muchos mensajes. Por favor espera unos minutos "
+                        "antes de escribir de nuevo. ¡Gracias por tu paciencia! 🙏"
+                    )
+                    if not is_simulation:
+                        try:
+                            await MetaGraphAPIClient.send_text_message(
+                                phone_number_id=tenant.ws_phone_id,
+                                to=patient_phone,
+                                text=throttle_msg,
+                                token=tenant.ws_token or "mock"
+                            )
+                        except Exception as throttle_send_err:
+                            logger.error(f"❌ [ORCH] Failed to send throttle msg: {throttle_send_err}")
+                            sentry_sdk.capture_exception(throttle_send_err)
+                    return
+            except Exception as rate_err:
+                logger.error(f"❌ [ORCH] Rate limiter error: {rate_err}")
+                sentry_sdk.capture_exception(rate_err)
+                await send_discord_alert(
+                    title=f"❌ Rate Limiter Error | Tenant {tenant.id}",
+                    description=f"Rate limiter check failed. Proceeding without rate limit.\nError: {str(rate_err)[:300]}",
+                    severity="error", error=rate_err
+                )
+                # Non-fatal: proceed without rate limit if the limiter itself fails
 
             # ============================================================
             # PARALLEL: Set processing lock + fetch history
@@ -597,10 +680,50 @@ class ProcessMessageUseCase:
                             severity="error", error=unset_err
                         )
 
+            # ============================================================
+            # Block E4: Shadow-forward conversation to admin WhatsApp
+            # Sends BOTH user message + bot response to admin number
+            # Uses tenant's own WABA phone (dynamic per tenant, no hardcoded numbers)
+            # NOTE: SHADOW_FORWARD_PHONE is the only fixed part (admin's receiving number)
+            # TODO: When multi-WABA is implemented (Sprint 3-4), this still works because
+            #       it uses tenant.ws_phone_id which is already per-tenant.
+            # ============================================================
+            async def _shadow_forward():
+                shadow_phone = settings.SHADOW_FORWARD_PHONE
+                if not shadow_phone or is_simulation:
+                    return
+                try:
+                    tenant_name = tenant.name or str(tenant.id)[:8]
+                    forward_text = (
+                        f"[{tenant_name}]\n"
+                        f"👤 {patient_phone}: {text_body}\n"
+                        f"🤖 Bot: {reply_text}"
+                    )
+                    # Truncate to WhatsApp's 4096 char limit
+                    if len(forward_text) > 4000:
+                        forward_text = forward_text[:3997] + "..."
+                    await MetaGraphAPIClient.send_text_message(
+                        phone_number_id=tenant.ws_phone_id,
+                        to=shadow_phone,
+                        text=forward_text,
+                        token=tenant.ws_token or "mock"
+                    )
+                    logger.debug(f"📨 [ORCH] Shadow-forwarded to admin {shadow_phone}")
+                except Exception as fwd_err:
+                    # Non-fatal: shadow forwarding failure must not affect the user
+                    logger.error(f"❌ [ORCH] Shadow forward failed: {fwd_err}")
+                    sentry_sdk.capture_exception(fwd_err)
+                    await send_discord_alert(
+                        title=f"❌ Shadow Forward Failed | Tenant {tenant.id}",
+                        description=f"Admin: {shadow_phone}\nError: {str(fwd_err)[:300]}",
+                        severity="error", error=fwd_err
+                    )
+
             await asyncio.gather(
                 _persist_reply(),
                 _send_meta(),
-                _unset_processing()
+                _unset_processing(),
+                _shadow_forward()
             )
             logger.info("✨ [ORCH] Done.")
 

@@ -145,6 +145,49 @@ def create_app() -> FastAPI:
         default_response_class=ORJSONResponse
     )
 
+    # ============================================================
+    # Block E1: Webhook Signature Verification Middleware
+    #
+    # Intercepts POST /webhook and verifies X-Hub-Signature-256
+    # BEFORE FastAPI processes the request body.
+    # All other routes are unaffected.
+    #
+    # Ref: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#event-notifications
+    # ============================================================
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+    from starlette.responses import JSONResponse as StarletteJSONResponse
+    from app.core.security import verify_webhook_signature
+
+    class WebhookSignatureMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: StarletteRequest, call_next):
+            # Only verify POST /webhook (the actual Meta webhook endpoint)
+            if request.method == "POST" and request.url.path == "/webhook":
+                try:
+                    raw_body = await request.body()
+                    signature = request.headers.get("X-Hub-Signature-256")
+                    is_valid = await verify_webhook_signature(raw_body, signature)
+                    if not is_valid:
+                        return StarletteJSONResponse(
+                            status_code=401,
+                            content={"status": "error", "message": "Invalid webhook signature"}
+                        )
+                except Exception as e:
+                    logger.error(f"❌ [SECURITY] Signature middleware crash: {e}")
+                    sentry_sdk.capture_exception(e)
+                    await send_discord_alert(
+                        title="❌ Webhook Signature Middleware Crash",
+                        description=f"Middleware raised exception: {str(e)[:300]}",
+                        severity="error", error=e
+                    )
+                    # Fail OPEN in case of middleware crash (don't block legitimate traffic)
+                    # This is a conscious trade-off: availability > security during middleware bugs
+                    pass
+
+            return await call_next(request)
+
+    app.add_middleware(WebhookSignatureMiddleware)
+
     allowed_origins = [
         "https://dash.tuasistentevirtual.cl",
         "https://ia-whatsapp-crm.tomasgemes.workers.dev",

@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     # Configured as env var in Cloud Run. Falls back to None which disables Sentry.
     SENTRY_DSN: str | None = None
     
+    # Block E1: Meta webhook HMAC-SHA256 signature verification
+    # Get from: Meta App Dashboard → Settings → Basic → App Secret
+    # If None: webhook signature verification is skipped (soft mode, logs warning)
+    META_APP_SECRET: str | None = None
+    
+    # Block E4: Shadow-forward all conversations to admin WhatsApp
+    # Full international number without '+', e.g. '56931374341'
+    # The FROM phone is dynamic per tenant (uses tenant.ws_phone_id + ws_token)
+    SHADOW_FORWARD_PHONE: str | None = None
+    
     GOOGLE_SERVICE_ACCOUNT_JSON: str | None = None
     GOOGLE_OAUTH_CLIENT_ID: str | None = None
     GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
