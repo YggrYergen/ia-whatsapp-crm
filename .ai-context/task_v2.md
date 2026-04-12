@@ -42,7 +42,7 @@ All completed. Full details in `task.md` (archived). Key milestones:
 | **U-3** | PROD calendar UNVERIFIED | No `book_round_robin` tool on PROD in 24+ hrs. Can't confirm CasaVitaCure booking works. | Unknown — need test | ❌ Need test |
 | **U-4** | Dashboard fake data | Mock/placeholder numbers displayed. | Block L not started | ❌ Not started |
 | **U-5** | Fumigation prompt not drafted | Need business data from client: services, prices, hours, zones. | Client data not collected | ❌ Need onboarding checklist |
-| **U-6** | Rapid-fire fix NOT on PROD | `1f7b250` on `desarrollo` only. PROD silently drops rapid-fire msgs 2+. | Not merged | ❌ Needs approval |
+| ~~**U-6**~~ | ~~Rapid-fire fix NOT on PROD~~ | Merged `73789ef`. Cloud Build auto-deployed revision `00003-z77` to us-central1. | Merged ✅ | ✅ DONE |
 | **U-7** | wamid extraction null | `wamid` column exists, all values `null`. Dedup partially broken. | Payload path may differ | ❌ Not diagnosed |
 | **U-8** | Prompt Phase 1 skip | Bot asks "nombre y hora" immediately, skips 3-question triaje. | Prompt v2.1 may not fully fix | ❌ Need E2E test |
 | **U-14** | Booking flow repetition loop | Bot re-asks info already provided (name, zone, time) + demands multiple confirmations. Extremely bothersome. | Unknown: prompt? model tool execution? history? agentic loop? | ❌ Need diagnosis + OpenAI docs |

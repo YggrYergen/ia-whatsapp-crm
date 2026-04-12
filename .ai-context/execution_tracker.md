@@ -176,16 +176,31 @@
 - [ ] Sprint 2: Migrate adapter to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively
 - [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/reasoning_effort_diagnostic.md)
 
-**Step 5b: Rapid-fire message batching ✅ DEPLOYED TO DEV** (commit `1f7b250`)
+**Step 5b: Rapid-fire message batching ✅ MERGED TO PROD** (commit `1f7b250` → merged `73789ef`)
 - [x] Diagnosed: messages 2+ in rapid-fire sequences were persisted to DB but silently dropped from LLM context
 - [x] Fix: re-fetch history AFTER 3s sleep to capture accumulated messages
 - [x] Full observability: Sentry context + Discord alert on failure
 - [x] Graceful degradation: falls back to pre-sleep history on re-fetch failure
+- [x] Merged to main + auto-deployed to PROD (2026-04-12 19:00 CLT)
 
-**Schema Drift (messages.note):**
-| Column | DEV | PROD | Status |
+**Step 6: Infrastructure fixes ✅ COMPLETED** (2026-04-12 ~18:50 CLT)
+- [x] Fixed `messages.note` schema drift — added column to PROD (`apply_migration`)
+- [x] Fixed trigger name drift — renamed PROD `contacts_updated_at_trigger` → `trg_contacts_updated_at`
+- [x] Fixed Cloud Build PROD trigger — was deploying to deleted europe-west1 service, now targets us-central1
+- [x] Pre-merge drift check: PASS (all columns, indexes, triggers match)
+- [x] Merged `desarrollo` → `main` (commit `73789ef`, 7 files, 365 insertions)
+- [x] Cloud Build auto-deploy: ✅ SUCCESS (build `98de7410`, revision `ia-backend-prod-00003-z77`)
+- [x] Cloudflare Workers auto-deploy: ✅ triggered
+- [x] PROD health check: 200 OK
+- [x] User confirmed: assistant answers much better, webhook working
+
+**Schema Drift: ZERO ✅**
+| Item | DEV | PROD | Status |
 |:---|:---|:---|:---|
-| messages.note | ✅ exists | ❌ missing | ⚠️ No code references — safe for now |
+| messages.note | ✅ | ✅ | ✅ FIXED |
+| trigger name | `trg_contacts_updated_at` | `trg_contacts_updated_at` | ✅ FIXED |
+| All contacts cols (13) | ✅ | ✅ | ✅ MATCH |
+| All messages cols (7) | ✅ | ✅ | ✅ MATCH |
 
 #### Day 2 Unsolved Issues — Carried Forward (2026-04-12 ~18:30 CLT)
 
