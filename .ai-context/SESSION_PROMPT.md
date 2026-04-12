@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A+B+C+D+E+F DONE ✅ — Full observability + resilience — Block G next
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (← NOW), H
-LAST COMMIT:     5f7e5e1 (desarrollo) — Block F correlation IDs + Sentry tags
+SESSION GOAL:    Blocks A-G DONE ✅ — Resilience + observability + BSUID complete — Block H next
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (← NOW)
+LAST COMMIT:     d656c02 (desarrollo) — Block G BSUID dormant capture
 ```
 
 ---
@@ -94,12 +94,19 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - F3: Logger updated — `%(correlation_id)s` in both dev (human-readable) and prod (JSON) formats
   - Middleware order: CorrelationId → SentryTags → WebhookSignature → CORS
   - Dependencies: `asgi-correlation-id>=4.3.0` added to `pyproject.toml`
+- ✅ **Block G executed & deployed** (2026-04-11):
+  - G1: DB migration — `bsuid TEXT NULL` column + `UNIQUE(tenant_id, bsuid)` partial index (BOTH DEV + PROD)
+  - G2: BSUID extraction from `message.user_id` with regex validation (`^[A-Z]{2}\..+$`)
+  - G3: BSUID stored on new contact creation (nullable)
+  - G4: BSUID backfill on existing contacts (non-blocking, idempotent)
+  - All failure points instrumented with Sentry + Discord
+  - **DORMANT MODE:** zero behavioral changes — all lookups remain phone-first
+  - Phase 2 (lookup swap) is SEPARATE task before June 2026
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Blocks A, B, C, D, E, F — ✅ ALL DEPLOYED to DEV**
+**Blocks A, B, C, D, E, F, G — ✅ ALL DEPLOYED to DEV**
 **Observability + DB fixes — ✅ APPLIED**
 
-**Block G — BSUID Dormant Capture: DB + Backend (20 min) ← NOW** (Phase 1: store data, zero behavior change)
 **Block H — Test & deploy Day 1 (30 min)**
 
 ### What Comes Next (After This Session)
@@ -146,7 +153,7 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | BUG-5 | Silent Failure Detector 95%+ false positives | ✅ Disabled (DEV) | Block A3: commented L219-L242 `use_cases.py` |
 | BUG-6 | Response quality unacceptable in production | 🟡 Partial (A done) | Blocks B-D remaining: tools, adapter, agentic loop |
 | CC-1 | Codebase uses deprecated `gpt-4o-mini` | ✅ Fixed (DEV) | Block A1: 3 backend + frontend + tests |
-| CC-3 | BSUID dormant capture (Phase 1 of 2) | 🟡 Phase 1 | Block G1-G4: column + index + extract + store + backfill. Phase 2 (lookup swap) before June 2026. |
+| CC-3 | BSUID dormant capture (Phase 1 of 2) | ✅ Phase 1 Done (DEV+PROD) | Block G1-G4: column + index + extract + store + backfill. Phase 2 (lookup swap) before June 2026. |
 | CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
 | CC-5 | Tool schemas missing `strict: true` | ✅ Fixed (DEV) | Block B1: all 7 tools + `parallel_tool_calls=False` |
 | CC-7 | No webhook signature verification | ✅ Fixed (DEV+PROD) | Block E1: HMAC-SHA256 middleware + Secret Manager |
