@@ -980,3 +980,22 @@ Docs consulted:
 | Instagram DM integration | Backlog S2 | 🔴 **SELLING POINT** for outreach but not needed Tuesday | 🔴 Sprint 2 priority |
 | Multi-squad booking engine | Backlog S2 | 🔴 **SELLING POINT** — needed for fumigation scaling | 🔴 Sprint 2 priority |
 | `gpt-5.4-nano` dev testing | New | Need to verify compatibility in practice | 🟡 After mini is stable |
+| Responses API migration | Step 5 (2026-04-12) | OpenAI rejects `reasoning_effort` + tools on chat/completions. `/v1/responses` supports both. Adapter rewrite needed. | 🔴 Enables reasoning + tools |
+| Gemini SDK migration | PROD logs (2026-04-12) | `google.generativeai` deprecated → `google.genai`. No tenant uses Gemini yet. | 🟡 With Gemini adapter (S2.1) |
+| Ideal rapid-fire batching | Step 5b (2026-04-12) | Current fix re-fetches after sleep. Ideal: abort in-flight LLM on new message. Complex. | 🟡 After basic batching proven |
+| wamid extraction investigation | Step 4 (2026-04-12) | `wamid` values are `null` in DB. Payload path may differ. Dedup partially broken. | 🟡 After Tuesday |
+
+---
+
+## 🔴 UNSOLVED ISSUES FROM DAY 2 — CRITICAL FOR TUESDAY (2026-04-12)
+
+> **These must be resolved before Tuesday onboarding.** See `execution_tracker.md` Day 2 Unsolved section for full detail.
+
+- [ ] **U-1: Mobile frontend broken** — Layout/UX unusable on phone. Clients WILL use mobile.
+- [ ] **U-2: Escalation UX (Block J)** — No badge, no resolve button, no filter. Staff blind to escalations.
+- [ ] **U-3: PROD calendar verification** — Must trigger test booking to confirm `book_round_robin` works on PROD.
+- [ ] **U-4: Dashboard fake data (Block L)** — Replace mock numbers with real queries.
+- [ ] **U-5: Fumigation prompt draft** — Need onboarding checklist + first prompt version.
+- [ ] **U-6: Merge rapid-fire fix to PROD** — Dev only right now. Needs user approval to merge.
+- [ ] **U-8: Prompt Phase 1 skip test** — Verify prompt v2.1 actually enforces triaje before scheduling.
+- [ ] **U-14: Booking flow repetition loop** — Assistant re-asks info already provided and demands multiple confirmations before booking. Extremely bothersome. Root cause unclear: prompt, model tool execution pattern, history, or agentic loop. Must check OpenAI docs on tool calling patterns for gpt-5.4-mini.

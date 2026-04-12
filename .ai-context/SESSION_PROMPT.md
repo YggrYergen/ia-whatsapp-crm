@@ -130,12 +130,22 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 - ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
 - ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` on META_APP_SECRET — `.strip()` added**
 - ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **PROD migrated to us-central1 (2026-04-11)**
+- ~~⚠️ Old europe-west1 `ia-backend-prod` still exists~~ → **DELETED (2026-04-12)**
 - ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
 - ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
 - ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
 - ⚠️ Shadow-forwarding (E4) uses tenant's WABA phone → admin number. Requires active 24h conversation window on admin's WhatsApp. If window expired, forward silently fails (non-blocking).
 - ⚠️ **Cloud Build trigger** on `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` auto-deploys from `main` push. ALWAYS push to main before expecting PROD to have new code.
-- ⚠️ **Old europe-west1 `ia-backend-prod` still exists** — delete after confirming us-central1 stable for 24h.
+- 🔴 **PROD calendar booking UNVERIFIED** (2026-04-12) — No `book_round_robin` tool call has been triggered on PROD in 24+ hours. Cannot confirm if CasaVitaCure booking works. Must trigger a test booking to verify before Tuesday.
+- 🔴 **Mobile frontend BROKEN** (2026-04-12) — Dashboard and chat UI completely unusable on mobile. Clients would not be able to use it. Must fix before Tuesday onboarding.
+- 🔴 **Escalation UX missing** (2026-04-12) — Block J not started. No visual badge for escalated contacts, no "resolve" button, no filter. Staff cannot see or handle escalated chats. First client interaction could trigger escalation.
+- 🔴 **Booking flow repetition loop (U-14)** (2026-04-12) — On PROD, assistant re-asks info already provided (name, zone, time) and demands multiple confirmations before booking. Extremely bothersome — will anger clients. Root cause unclear: prompt phrasing, model tool execution limitations on `/v1/chat/completions`, history not surfacing provided info, or agentic loop re-processing. **Must diagnose with OpenAI official docs** on sequential/concurrent tool calling patterns for gpt-5.4-mini.
+- 🟡 **wamid extraction broken** (2026-04-12) — `wamid` values in messages table are `null`. Webhook payload structure may differ from expected. Dedup relies on wamid uniqueness; without it, duplicate messages may still process.
+- 🟡 **Rapid-fire batching on DEV only** (2026-04-12) — Fix committed to `desarrollo` (`1f7b250`) but NOT merged to `main`. PROD still silently drops rapid-fire messages 2+.
+- 🟡 **Gemini adapter deprecation** (2026-04-12) — PROD startup logs show: `google.generativeai` package deprecated, must migrate to `google.genai`. Not blocking (Gemini not used for any tenant), but will break when package is removed.
+- 🟡 **reasoning_effort → Sprint 2** (2026-04-12) — OpenAI hard-rejects `reasoning_effort` + tools on `/v1/chat/completions` for gpt-5.4-mini. Removed entirely. Sprint 2: migrate to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively. Full diagnostic: `reasoning_effort_diagnostic.md` in Antigravity brain.
+- 🟡 **Prompt Phase 1 skip regression** (2026-04-12) — Multiple PROD messages show bot asking "¿Me compartes tu nombre y hora?" immediately, skipping the 3-question triaje (Phase 1). Prompt v2.1 was applied but may not have fully fixed this. Needs E2E test.
+- 🟡 **Dashboard shows fake data** (2026-04-12) — Block L not started. Dashboard still displays mock/placeholder numbers. Must replace with real Supabase queries.
 
 ---
 
@@ -147,7 +157,7 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 |:---|:---|:---|:---|
 | Production LLM model | `gpt-5.4-mini` ($0.75/$4.50/1M) | 2026-04-11 | Best tool calling + agentic performance. Both mini and nano share exact same API. |
 | Dev/budget LLM model | `gpt-5.4-nano` ($0.20/$1.25/1M) | 2026-04-11 | For simple tenants or dev testing. API-compatible with mini. |
-| Cost cap | `max_completion_tokens=500` per response | 2026-04-11 | Caps output cost at ~$0.00225/response. Maintains 88-90% margins. |
+| Cost cap | `max_completion_tokens=2048` per response | 2026-04-12 | Raised from 500 (Block I incident — truncation caused doom loops). Actual avg is 50-150 tokens. |
 | Dashboard MVP | Deferred to Sprint 2 | 2026-04-11 | Time invested in system prompts + resilience instead. Bot quality > dashboard. |
 | Sprint 1 strategy | Deploy Block A first, then iterate | 2026-04-11 | Client experiencing bad responses NOW. Every hour without fix = reputation damage. |
 | Instagram/booking | Sprint 2 priority (SELLING POINTS) | 2026-04-11 | Not needed for Tuesday, but critical for sales outreach. |
@@ -158,6 +168,8 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
 | BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap, nullable phone, tool updates) is separate task. |
 | BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
+| reasoning_effort | REMOVED, Sprint 2 Responses API | 2026-04-12 | Hard-rejected by OpenAI on chat/completions with tools. Responses API supports it. Zero quality change since param never worked. |
+| Rapid-fire batching | Re-fetch history after 3s sleep | 2026-04-12 | 80/20 fix. Ideal solution (abort in-flight LLM) deferred to S2 backlog. |
 | PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies (Supabase us-east-2, OpenAI US, Meta US) are in the US. Europe added 600-1000ms per request. |
 | Secret Manager values | Always `.strip()` before use | 2026-04-11 | GCP Secret Manager stores values with trailing `\r\n`. Caused HMAC mismatch (34 chars vs 32). |
 

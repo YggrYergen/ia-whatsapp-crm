@@ -6,10 +6,9 @@ from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 import sentry_sdk
 
 try:
-    from openai import AsyncOpenAI, BadRequestError
+    from openai import AsyncOpenAI
 except ImportError:
     AsyncOpenAI = None
-    BadRequestError = None
 
 class OpenAIStrategy(LLMStrategy):
     """OpenAI Adapter parsing response logically into standard DTOs.
@@ -24,10 +23,6 @@ class OpenAIStrategy(LLMStrategy):
     def __init__(self, api_key: str = None, model_id: str = "gpt-5.4-mini"):
         key = api_key or settings.OPENAI_API_KEY
         super().__init__(api_key=key, model_id=model_id)
-        # Step 5: reasoning_effort experiment flag.
-        # Starts True — if API rejects the param, flips to False permanently
-        # for this instance's lifetime. Prevents retrying a known-bad param.
-        self._reasoning_supported = True
         if AsyncOpenAI:
             self.client = AsyncOpenAI(api_key=self.api_key)
         else:
@@ -94,50 +89,13 @@ class OpenAIStrategy(LLMStrategy):
                 # B1: Disable parallel tool calls — required for strict: true schemas
                 # Ref: OpenAI Structured Outputs docs — strict mode incompatible with parallel calls
                 api_kwargs["parallel_tool_calls"] = False
-            
-            # Step 5 (Apr 12): reasoning_effort experiment
-            # gpt-5.4-mini defaults to reasoning_effort="none" — zero internal reasoning.
-            # This caused shallow responses: template parroting, no conversational pacing.
-            # Setting to "medium" adds ~300ms latency but enables actual multi-step thinking.
-            # Ref: https://platform.openai.com/docs/api-reference/chat/create
-            # 
-            # SAFETY: Conflicting docs on whether gpt-5.4-mini supports this param.
-            # Some sources confirm support; others warn it may error for "non-reasoning models".
-            # Strategy: try with param first → if API rejects (BadRequestError), retry without.
-            # The _reasoning_supported flag prevents retrying the param on every call after
-            # the first failure — fail once, learn, never try again for this instance's lifetime.
-            if self._reasoning_supported:
-                api_kwargs["reasoning_effort"] = "medium"
-            
-            try:
-                response = await self.client.chat.completions.create(**api_kwargs)
-            except (BadRequestError, Exception) as reasoning_err:
-                # Step 5 safety net: if reasoning_effort caused the error, retry without it
-                if "reasoning_effort" in api_kwargs and (
-                    "reasoning_effort" in str(reasoning_err).lower()
-                    or "reasoning" in str(reasoning_err).lower()
-                ):
-                    self._reasoning_supported = False
-                    logger.warning(
-                        f"⚠️ [LLM] reasoning_effort rejected by API for model={self.model_id}. "
-                        f"Disabling for this instance. Error: {str(reasoning_err)[:200]}"
-                    )
-                    sentry_sdk.capture_message(
-                        f"reasoning_effort unsupported for {self.model_id} — disabling",
-                        level="warning"
-                    )
-                    await send_discord_alert(
-                        title=f"⚠️ reasoning_effort Unsupported | {self.model_id}",
-                        description=(
-                            f"API rejected reasoning_effort param. Retrying without it.\n"
-                            f"Error: {str(reasoning_err)[:200]}"
-                        ),
-                        severity="warning"
-                    )
-                    del api_kwargs["reasoning_effort"]
-                    response = await self.client.chat.completions.create(**api_kwargs)
-                else:
-                    raise  # Re-raise if the error is NOT about reasoning_effort
+
+            # NOTE (Apr 12): reasoning_effort experiment REMOVED.
+            # OpenAI hard-rejects reasoning_effort + tools on /v1/chat/completions
+            # for gpt-5.4-mini. Error: "Please use /v1/responses instead."
+            # Every request was failing → retrying → doubling API calls + spamming Discord.
+            # Sprint 2: migrate to Responses API which supports reasoning.effort + tools natively.
+            response = await self.client.chat.completions.create(**api_kwargs)
             choice = response.choices[0]
             message = choice.message
             finish_reason = choice.finish_reason  # "stop", "length", "tool_calls", etc.

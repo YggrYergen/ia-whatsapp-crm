@@ -471,12 +471,59 @@ class ProcessMessageUseCase:
                 )
                 return
 
+            # ============================================================
+            # RAPID-FIRE MESSAGE BATCHING
+            # When humans send multiple WhatsApp messages quickly (e.g.
+            # "Y" + "Nada" + "Lo extraño"), each triggers a separate
+            # webhook. Messages 2+ are PERSISTED to DB (line ~216) but
+            # their pipelines exit at the lock check (line ~467).
+            # 
+            # The 3-second sleep gives time for rapid-fire messages to
+            # accumulate in the DB. After sleeping, we RE-FETCH history
+            # to capture ALL messages, not just the first one.
+            # Without this, the LLM only sees message 1 and the rest
+            # are silently dropped from the conversation context.
+            # ============================================================
             if not is_simulation:
                 await asyncio.sleep(3)
 
             chile_tz = pytz.timezone("America/Santiago")
             current_time_str = datetime.now(chile_tz).strftime("%Y-%m-%d %H:%M")
 
+            # Re-fetch history AFTER sleep to capture rapid-fire messages
+            # that were persisted to DB by other (lock-blocked) pipelines.
+            try:
+                fresh_history = await _fetch_history()
+                msgs_before = len(history)
+                msgs_after = len(fresh_history)
+                if msgs_after > msgs_before:
+                    logger.info(
+                        f"📨 [ORCH] Rapid-fire batch captured: {msgs_after - msgs_before} new message(s) "
+                        f"arrived during sleep window for contact {contact_id}"
+                    )
+                    sentry_sdk.set_context("rapid_fire_batch", {
+                        "contact_id": str(contact_id),
+                        "tenant_id": str(tenant.id),
+                        "msgs_before_sleep": msgs_before,
+                        "msgs_after_sleep": msgs_after,
+                        "new_messages": msgs_after - msgs_before,
+                    })
+                history = fresh_history
+            except Exception as refetch_err:
+                logger.error(f"❌ [ORCH] History re-fetch after sleep failed: {refetch_err}")
+                sentry_sdk.capture_exception(refetch_err)
+                await send_discord_alert(
+                    title=f"❌ History Re-fetch Failed | Tenant {tenant.id}",
+                    description=(
+                        f"Post-sleep history re-fetch failed for contact {contact_id}.\n"
+                        f"Falling back to pre-sleep history ({len(history)} messages).\n"
+                        f"Error: {str(refetch_err)[:300]}"
+                    ),
+                    severity="error", error=refetch_err
+                )
+                # Non-fatal: continue with the original (stale) history
+
+            # Append current message only if not already in re-fetched history
             if not history or history[-1].get("content", "").lower() != text_body.lower():
                 history.append({"role": "user", "content": text_body})
 
