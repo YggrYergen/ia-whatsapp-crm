@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A+B+C+D+E DONE ✅ — Full resilience layer deployed — Block F next
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (← NOW), G, H
-LAST COMMIT:     2eac872 (desarrollo) — Block E resilience layer
+SESSION GOAL:    Blocks A+B+C+D+E+F DONE ✅ — Full observability + resilience — Block G next
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (← NOW), H
+LAST COMMIT:     5f7e5e1 (desarrollo) — Block F correlation IDs + Sentry tags
 ```
 
 ---
@@ -87,13 +87,19 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - E6: Tenant config cache — `TTLCache(maxsize=50, ttl=180)` in `dependencies.py`
     - Added `cachetools>=5.3.0` to `pyproject.toml`
   - Telemetry totals: security.py 7 Sentry/6 Discord, rate_limiter.py 3/2, dependencies.py 6/4, use_cases.py 31/23
+- ✅ **Block F executed & deployed** (2026-04-11):
+  - F1: `asgi-correlation-id` middleware added (outermost) — generates unique request ID per request
+  - F2: `SentryTagsMiddleware` sets `correlation_id` + `request_path` on every Sentry event
+    - Pipeline also sets `tenant_id` + `correlation_id` for deep tracing
+  - F3: Logger updated — `%(correlation_id)s` in both dev (human-readable) and prod (JSON) formats
+  - Middleware order: CorrelationId → SentryTags → WebhookSignature → CORS
+  - Dependencies: `asgi-correlation-id>=4.3.0` added to `pyproject.toml`
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Blocks A, B, C, D, E — ✅ ALL DEPLOYED to DEV**
+**Blocks A, B, C, D, E, F — ✅ ALL DEPLOYED to DEV**
 **Observability + DB fixes — ✅ APPLIED**
 
-**Block F — Observability: correlation IDs + Sentry tags (30 min) ← NOW**
-**Block G — DB: `bsuid` column + index (15 min)**
+**Block G — DB: `bsuid` column + index (15 min) ← NOW**
 **Block H — Test & deploy Day 1 (30 min)**
 
 ### What Comes Next (After This Session)

@@ -760,15 +760,23 @@ Docs consulted:
   - 📚 [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits)
   - 📚 [cachetools PyPI](https://pypi.org/project/cachetools/)
 
-#### Block F: Observability (30 min)
-- [ ] **F1. Add `asgi-correlation-id` middleware**
-  - File: `main.py`
-  - Add BEFORE Sentry middleware
+#### Block F: Observability (30 min) ✅ (2026-04-11)
+- [x] **F1. Add `asgi-correlation-id` middleware** ✅ (2026-04-11)
+  - File: `main.py` — added as outermost middleware (added last)
+  - Auto-generates UUID4 request ID, stored in context var
+  - Auto-integrates with Sentry (sets `transaction_id`)
+  - Added `X-Request-ID` to CORS `expose_headers`
+  - Added `asgi-correlation-id>=4.3.0` to `pyproject.toml`
   - 📚 [asgi-correlation-id GitHub](https://github.com/snok/asgi-correlation-id)
-  - 📚 [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — setup code example
-- [ ] **F2. Add Sentry tags** — `tenant_id` + `correlation_id` on every request
+- [x] **F2. Add Sentry tags** — `tenant_id` + `correlation_id` on every request ✅ (2026-04-11)
+  - `SentryTagsMiddleware` in `main.py`: sets `correlation_id` + `request_path`
+  - `use_cases.py:L51-62`: sets `tenant_id` + `correlation_id` at pipeline entry
   - 📚 [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/) — `set_tag`
-- [ ] **F3. Logging config** with correlation ID filter
+- [x] **F3. Logging config** with correlation ID filter ✅ (2026-04-11)
+  - `logger_service.py`: Added `CorrelationIdFilter(uuid_length=8, default_value='-')`
+  - Dev format: `%(asctime)s | %(levelname)-8s | [%(correlation_id)s] [%(module)s] | %(message)s`
+  - Prod format: JSON `"correlation_id"` field for Cloud Logging queries
+  - Fallback filter in case `asgi-correlation-id` not installed
   - 📚 [asgi-correlation-id GitHub](https://github.com/snok/asgi-correlation-id) — logging config example
 
 #### Block G: Database (15 min)
