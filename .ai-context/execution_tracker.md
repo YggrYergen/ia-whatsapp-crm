@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-11 14:30 CLT
+> **Last Updated:** 2026-04-12 16:10 CLT
 
 ---
 
@@ -153,11 +153,11 @@
 - [x] Removed [(Log): timestamp] prefix from user messages
 - [x] Truncation circuit breaker: if was_truncated + has_tool_calls → discard + fallback
 
-**Step 3: System prompt rewrite 🧑‍💻 HUMAN IS WORKING ON THE PROMPT**
-- [x] Draft new prompt v2 delivered → see `system_prompt_draft_v2.md` artifact
-- [ ] Human reviewing and customizing the prompt
-- [ ] Apply to DEV tenant first → sandbox test
-- [ ] Apply to PROD after approval (Migration Parity Rule)
+**Step 3: System prompt rewrite ✅ V2 APPLIED TO PROD**
+- [x] Draft new prompt v2 delivered → reviewed, 3 fixes incorporated
+- [x] Applied to PROD tenant `CasaVitaCure` in Supabase `system_prompt` column
+- [x] Fixes: phase gate ⛔, anti-parroting, generic triaje, admin/staff bypass, anti-repetition
+- [ ] Fine-tune pacing: model dumps all questions at once → needs `reasoning_effort` (Step 5)
 
 **Step 4: Webhook dedup + atomic lock ✅ DEPLOYED TO PROD** (commit `614d1c1`)
 - [x] `acquire_processing_lock` RPC (DEV ✅ | PROD ✅ VERIFIED)
@@ -167,6 +167,12 @@
 - [x] Code: Stale lock force-release before atomic acquire
 - [x] Sentry + Discord instrumentation on all failure paths
 - [x] Pre-merge drift check: PASS (messages.note DEV-only, pre-existing, unused)
+
+**Step 5: reasoning_effort experiment 🧪 TESTING**
+- [ ] Add `reasoning_effort="medium"` to `openai_adapter.py` (wrapped in try/except fallback)
+- [ ] Deploy to PROD → test conversational pacing
+- [ ] If API rejects param: remove and evaluate model upgrade path
+- [ ] Ref: [Model comparison deep dive](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/model_comparison_deep_dive.md)
 
 **Schema Drift (messages.note):**
 | Column | DEV | PROD | Status |
@@ -294,11 +300,23 @@
 
 ### Week 1 (Apr 16-20)
 
-- [ ] **S2.1:** Implement real Gemini adapter (cost optimization / fallback)
+- [ ] **S2.1:** Gemini 3.1 Flash-Lite adapter (primary model candidate)
   - File: `Backend/app/infrastructure/llm_providers/gemini_adapter.py`
-  - Use `google-genai` SDK with function calling support
+  - Use `google-genai` SDK with function calling + Pydantic schema support
   - Map Gemini's tool format to our LLMResponse DTO
-  - Prerequisite: Set up Gemini API billing + key
+  - Model: `gemini-3.1-flash-lite` — $0.25/M in, $1.50/M out (3x cheaper than gpt-5.4-mini)
+  - 1M token context window, 2.5x faster TTFT than predecessor
+  - Native thinking capabilities (`thinking_config` param)
+  - Our architecture already supports dual providers (`llm_provider` column)
+  - Test plan: A/B test one tenant on Gemini, one on OpenAI
+  - Prerequisite: Set up Google AI Studio API key + billing
+
+- [ ] **S2.1b:** Config UI enhancements for tenant management
+  - Prompt versioning: save/swap/compare multiple prompts per tenant
+  - Cache invalidation endpoint: `POST /api/admin/invalidate-cache` → instant prompt apply
+  - Wire config UI to call invalidation after saving changes
+  - Model selection dropdown: allow switching models from config tab
+  - Ref: `dependencies.py:31` — `invalidate_tenant_cache()` already exists, just needs an endpoint
 
 - [ ] **S2.2:** Multi-channel DB schema migration
   - Add `channel` column to `messages` table (default 'whatsapp')
