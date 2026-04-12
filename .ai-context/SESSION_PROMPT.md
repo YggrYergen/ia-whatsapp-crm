@@ -108,6 +108,10 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 **Observability + DB fixes — ✅ APPLIED**
 
 **Block H — Test & deploy Day 1 (30 min)**
+- [ ] **H1. Run simulation suite** — all 9 scenarios must pass
+- [ ] **H2. Test strict mode** — send conversations that trigger each tool
+- [ ] **H3. Deploy to production** — merge to `main`, verify Cloud Build
+- [ ] **H4. Live test** — real WhatsApp conversation, verify quality improvement + shadow-forward working
 
 ### What Comes Next (After This Session)
 - Day 2 (Sun): Blocks I (system prompt engineering 3-4h), J (escalation UX), K (provisioning script), L (status page)
