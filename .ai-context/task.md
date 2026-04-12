@@ -822,11 +822,34 @@ Docs consulted:
 > - Update frontend display for BSUID-only contacts (name fallback)
 > - Update simulation suite with BSUID test scenarios
 
-#### Block H: Test & Deploy Day 1 (30 min)
-- [ ] **H1. Run simulation suite** — all 9 scenarios must pass
-- [ ] **H2. Test strict mode** — send conversations that trigger each tool
-- [ ] **H3. Deploy to production** — merge to `main`, verify Cloud Build
-- [ ] **H4. Live test** — real WhatsApp conversation, verify quality improvement + shadow-forward working
+#### Block H: Test & Deploy Day 1 (30 min) ✅ (2026-04-11)
+- [x] **H1. Run simulation suite** — 9/9 scenarios passed ✅ (2026-04-11)
+  - S1 (happy path): 2 rounds, escalation+response, zero errors
+  - S2 (booking): GCal `get_merged_availability` → 19 slots found → *"Sí, lunes a las 09:00 está disponible 😊"*
+  - S3 (escalation): Bot muted correctly (prior escalation persisted)
+  - S4 (clinical keyword): `sangrado` detected → `🚨 Clinical keyword detected!`
+  - S5 (scoring): Processed cleanly
+  - S6 (short "ok"): Processed cleanly
+  - S7 (long message): 2 rounds, escalation for pricing → coherent response
+  - S8 (repeat client): Contact found, muted (idempotent)
+  - S9 (new unknown): New contact created (`86e867cb...`, `bsuid=null` ✅) → greeting response
+  - **Zero ERROR/CRASH/CRITICAL in 100 log lines scanned**
+- [x] **H2. Test strict mode** — validated via H1 scenarios ✅
+  - `get_merged_availability`: called with correct schema in S2
+  - `request_human_escalation`: called in S1, S3, S7
+  - New contact creation with `bsuid` field in S9
+  - `strict: true` schemas accepted by gpt-5.4-mini
+- [x] **H3. Deploy to production** ✅ (2026-04-11)
+  - Fast-forward merge: `desarrollo → main` (25 commits, 1677+/320-)
+  - `gcloud run deploy ia-backend-prod --source=Backend --region=europe-west1 --clear-base-image`
+  - Revision: `ia-backend-prod-00087-hs6` serving 100% traffic
+  - Verified: 200 OK + `X-Request-ID: c22476771d8a42fe941b9d7d35aaa7bb`
+  - Env vars preserved: `META_APP_SECRET`, `SHADOW_FORWARD_PHONE`, all others ✅
+  - Startup logs clean: no import errors, no crashes
+  - Rollback target if needed: `ia-backend-prod-00086-7vn`
+- [ ] **H4. Live test** — pending user's real WhatsApp message to PROD bot
+  - User sends message to `56964243998`
+  - Verify: quality response, shadow-forward to `56931374341`, no Sentry errors
 
 ### Day 2 (Sun Apr 13): System Prompts + Escalation UX + Provisioning
 

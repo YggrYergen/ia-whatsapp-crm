@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A-G DONE ✅ — Resilience + observability + BSUID complete — Block H next
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (← NOW)
-LAST COMMIT:     d656c02 (desarrollo) — Block G BSUID dormant capture
+SESSION GOAL:    Blocks A-H DONE ✅ — MERGED TO PRODUCTION — Live E2E test pending (user)
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (✅ merge+deploy — H4 live pending)
+LAST COMMIT:     c7069cc (main) — desarrollo merged to main (fast-forward)
 ```
 
 ---
