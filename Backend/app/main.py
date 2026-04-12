@@ -225,7 +225,7 @@ def create_app() -> FastAPI:
     app.include_router(webhook_router)
     app.include_router(google_oauth_router)
 
-    @app.get("/api/debug-ping")
+    @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():
         return {"status": "ok", "message": "Backend is alive!"}
 
