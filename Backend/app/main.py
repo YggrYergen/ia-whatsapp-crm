@@ -202,7 +202,50 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
         allow_credentials=True,
+        # Block F1: Allow correlation ID header from frontend requests
+        # Ref: https://github.com/snok/asgi-correlation-id#fastapi
+        expose_headers=["X-Request-ID"],
     )
+
+    # ============================================================
+    # Block F2: Sentry Tags Middleware
+    # Sets tenant_id + correlation_id as Sentry tags on EVERY request.
+    # This makes it trivial to filter all Sentry events by tenant or request.
+    #
+    # Ref: https://docs.sentry.io/platforms/python/integrations/fastapi/
+    # ============================================================
+    from asgi_correlation_id import correlation_id as cid_ctx
+
+    class SentryTagsMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: StarletteRequest, call_next):
+            # Set correlation ID tag on every request
+            request_id = cid_ctx.get() or "-"
+            sentry_sdk.set_tag("correlation_id", request_id)
+
+            # Try to extract tenant_id from the request path or state
+            # This will be populated after the webhook handler parses the payload
+            # For now, set a default that gets overwritten in the use case
+            sentry_sdk.set_tag("request_path", request.url.path)
+
+            response = await call_next(request)
+            return response
+
+    app.add_middleware(SentryTagsMiddleware)
+
+    # ============================================================
+    # Block F1: Correlation ID Middleware
+    # Generates a unique ID for each request. Stored in context var,
+    # accessible via `from asgi_correlation_id import correlation_id`.
+    # Auto-integrates with Sentry (sets transaction_id).
+    #
+    # MUST be the outermost middleware (added last) so the ID is
+    # available to all downstream middleware and handlers.
+    #
+    # Ref: https://github.com/snok/asgi-correlation-id
+    # ============================================================
+    from asgi_correlation_id import CorrelationIdMiddleware
+
+    app.add_middleware(CorrelationIdMiddleware)
 
     logger.info("Strap-loading LLM Abstract Strategies")
     if settings.MOCK_LLM:

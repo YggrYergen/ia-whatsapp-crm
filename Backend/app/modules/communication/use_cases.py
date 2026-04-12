@@ -51,6 +51,15 @@ class ProcessMessageUseCase:
         logger.info(f"🚀 [ORCH] Start for Tenant={tenant.id}")
         # Tag ALL Sentry events in this execution with tenant context
         sentry_sdk.set_tag("tenant_id", str(tenant.id))
+        # Block F2: correlation_id for cross-referencing logs ↔ Sentry events
+        try:
+            from asgi_correlation_id import correlation_id as cid_ctx
+            _cid = cid_ctx.get()
+            if _cid:
+                sentry_sdk.set_tag("correlation_id", _cid)
+                logger.info(f"🔗 [ORCH] correlation_id={_cid}")
+        except Exception:
+            pass  # Not critical — middleware may not be active in tests
         is_simulation = payload.get("is_simulation", False)
         contact_id = None
         

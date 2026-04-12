@@ -705,49 +705,58 @@ Docs consulted:
   - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — verified via web search
   - 📚 [Prompt Caching Guide](https://platform.openai.com/docs/guides/prompt-caching) — `prompt_tokens_details.cached_tokens`
 
-#### Block D: Agentic Loop Rewrite (3-5 hours) ⭐ MOST CRITICAL
-- [ ] **D1. Rewrite tool execution loop** in `use_cases.py`
+#### Block D: Agentic Loop Rewrite (3-5 hours) ⭐ MOST CRITICAL ✅ (2026-04-11)
+- [x] **D1. Rewrite tool execution loop** in `use_cases.py` ✅ (2026-04-11)
   - Multi-round: `MAX_TOOL_ROUNDS = 3`
-  - Proper `role: "tool"` with matching `tool_call_id` (currently uses `role: "user"`!)
-  - Parallel tool execution: `asyncio.gather(*tool_tasks)`
-  - Error recovery: EVERY tool_call MUST get a `role: "tool"` response
-  - Usage tracking: log all fields from `response.usage`
+  - Proper `role: "tool"` with matching `tool_call_id` (was `role: "user"` — FIXED)
+  - Assistant `tool_calls` messages appended to history between rounds
+  - Error recovery: EVERY tool_call gets a `role: "tool"` response (even on tool crash)
+  - Usage tracking: accumulates prompt/completion tokens across all rounds
+  - All 22 failure points instrumented with Sentry + Discord (16 except blocks, 19 Sentry, 20 Discord)
+  - Tested via sandbox: simple greeting ✅, tool calls ✅, escalation ✅, multi-round ✅, regression ✅
   - 📚 [Function Calling Guide](https://platform.openai.com/docs/guides/function-calling) — **CRITICAL: read "Multi-turn" section**
   - 📚 [Chat Completions API Reference](https://platform.openai.com/docs/api-reference/chat/create) — message format
   - 📚 [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — full rewrite spec
-  **CRITICAL NOTE:** This is a very sensitive implementation so you need to follow the rules from SESSION_PROMPT.md by the letter, or else we'll be stuck for real. ALSO DEEP THOUGH need to be put on the desing of this, there are many ways this could cause silent errors and a HUGE combination of errors. AFTER ALL THAT THOUGHT is done, you NEED TO THOROUGHLY IMPLEMENT the sentry + discrod notification system to catch EACH AND EVERY POSSIBLE ERROR. 
+  - ⚠️ `parallel_tool_calls=False` (Block B) means only 1 tool per LLM turn — designed accordingly
 
-#### Block E: Resilience Layer (90 min) 🛡️ NEW
+#### Block E: Resilience Layer (90 min) 🛡️ ✅ (2026-04-11)
 > **Added from strategic review.** These prevent disasters, not add features.
 
-- [ ] **E1. Webhook signature verification** — HMAC-SHA256 with `X-Hub-Signature-256`
-  - Use `hmac.compare_digest()` (timing-safe)
-  - Requires `META_APP_SECRET` env var
-  - WITHOUT this, anyone on the internet can trigger LLM calls on your API
+- [x] **E1. Webhook signature verification** — HMAC-SHA256 with `X-Hub-Signature-256` ✅ (2026-04-11)
+  - `security.py`: `verify_webhook_signature()` with timing-safe `hmac.compare_digest()`
+  - `main.py`: ASGI middleware intercepts POST /webhook only
+  - Soft mode: if `META_APP_SECRET` not configured, logs warning and skips
+  - `META_APP_SECRET` stored in **Google Secret Manager** (both DEV + PROD)
+  - **VERIFIED:** Spoofed POST → 401 + Sentry `PYTHON-14` + Discord `🔒` alert ✅
+  - Telemetry: 7 Sentry calls, 6 Discord alerts
   - 📚 [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests)
   - 📚 [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks)
-- [ ] **E2. LLM rate limit per contact** — `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20`
-  - Check counter before calling OpenAI
+- [x] **E2. LLM rate limit per contact** — `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20` ✅ (2026-04-11)
+  - NEW file: `rate_limiter.py` — in-memory sliding window, auto-prune
+  - Integrated in `use_cases.py` before LLM call
   - After limit: polite "por favor espera" message + auto-resume when limit refreshes
-  - **Must notify us** (Discord/Sentry) when triggered so we can investigate
-  - Counter stored in memory dict (warm instance) or contacts table
-- [ ] **E3. Processing lock TTL** — Fix `is_processing_llm` time bomb
+  - Sentry + Discord alert when triggered
+  - Telemetry: 3 Sentry calls, 2 Discord alerts
+- [x] **E3. Processing lock TTL** — Fix `is_processing_llm` time bomb ✅ (2026-04-11)
+  - DB migration: added `updated_at` column + auto-update trigger to `contacts` table
   - If `is_processing_llm = true` AND `updated_at > 90 seconds ago` → force-release
-  - Check at start of every incoming message
-  - Log when force-release happens (Sentry warning)
-- [ ] **E4. Conversation shadow-forwarding** — Send FULL interaction to our WhatsApp
-  - Both user message AND bot response forwarded
-  - Format: `[TenantName] 👤 User: {msg}\n🤖 Bot: {response}`
-  - Forward to designated admin phone number (configurable per deployment)
+  - Sentry + Discord alert on force-release
+- [x] **E4. Conversation shadow-forwarding** ✅ (2026-04-11)
+  - `_shadow_forward()` added to post-loop `asyncio.gather` in `use_cases.py`
+  - Uses tenant's own `ws_phone_id` + `ws_token` (dynamic per tenant, no hardcoded numbers)
+  - `SHADOW_FORWARD_PHONE=56931374341` set on both DEV + PROD Cloud Run
+  - Format: `[TenantName]\n👤 phone: msg\n🤖 Bot: response`
+  - Non-fatal: failure doesn't affect user experience
   - 📚 [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages)
-- [ ] **E5. Health monitoring** — Set up UptimeRobot (free tier)
-  - Monitor: `GET /api/debug-ping` every 5 minutes
-  - Alert: SMS/push notification to your phone on failure
+- [x] **E5. Health monitoring** — UptimeRobot ✅ (2026-04-11)
+  - `/api/debug-ping` endpoint updated: supports both GET + HEAD (UptimeRobot free tier uses HEAD)
+  - User manually setting up monitors on uptimerobot.com
   - 📚 [UptimeRobot](https://uptimerobot.com/)
-- [ ] **E6. Tenant config cache** — In-memory with 3-min TTL
-  - Use `cachetools.TTLCache(maxsize=50, ttl=180)` or simple dict + timestamp
-  - Memory estimate: ~50 tenants × ~5KB each = ~250KB (negligible vs 512MB Cloud Run limit)
-  - Invalidate on config update via `/config` endpoint
+- [x] **E6. Tenant config cache** — In-memory with 3-min TTL ✅ (2026-04-11)
+  - `dependencies.py` rewritten with `cachetools.TTLCache(maxsize=50, ttl=180)`
+  - Cache key: `ws_phone_id`, `invalidate_tenant_cache()` function for manual busting
+  - Added `cachetools>=5.3.0` to `pyproject.toml`
+  - Telemetry: 6 Sentry calls, 4 Discord alerts
   - 📚 [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits)
   - 📚 [cachetools PyPI](https://pypi.org/project/cachetools/)
 

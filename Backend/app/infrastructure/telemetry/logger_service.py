@@ -2,6 +2,7 @@
 # ⚠️  DOCS FIRST:
 #     - Cloud Logging Structured Logging: https://cloud.google.com/logging/docs/structured-logging
 #     - Python standard logging: https://cloud.google.com/logging/docs/setup/python
+#     - asgi-correlation-id logging: https://github.com/snok/asgi-correlation-id
 #
 #     Per Google Cloud docs, Cloud Run automatically sends stdout/stderr to Cloud Logging.
 #     If the output is a JSON string on a SINGLE LINE, Cloud Logging parses it as structured log.
@@ -11,6 +12,10 @@
 #     combo was interfering with the output format, causing Cloud Logging to display [object Object].
 #     FIX: Use json.dumps() for maximum compatibility and add the StreamHandler directly to the
 #     logger (no QueueHandler in production) to ensure clean single-line JSON output to stdout.
+#
+#     Block F3: Added CorrelationIdFilter from asgi-correlation-id.
+#     The correlation_id is auto-populated by the CorrelationIdMiddleware in main.py.
+#     When no middleware is active (e.g. startup logs), default_value='-' is used.
 # ================================================================================
 import logging
 import logging.handlers
@@ -19,6 +24,26 @@ import sys
 import json
 from datetime import datetime, timezone
 from app.core.config import settings
+
+
+# ============================================================
+# Block F3: Correlation ID logging filter
+# Ref: https://github.com/snok/asgi-correlation-id#configure-logging
+# 
+# This filter adds %(correlation_id)s to every log record.
+# uuid_length=8 gives us short IDs like "773fa688" which are
+# enough for request tracing without cluttering logs.
+# ============================================================
+try:
+    from asgi_correlation_id import CorrelationIdFilter
+    _correlation_filter = CorrelationIdFilter(uuid_length=8, default_value="-")
+except ImportError:
+    # Fallback: if asgi-correlation-id isn't installed, create a no-op filter
+    class _FallbackFilter(logging.Filter):
+        def filter(self, record):
+            record.correlation_id = "-"
+            return True
+    _correlation_filter = _FallbackFilter()
 
 
 class CloudLoggingJSONFormatter(logging.Formatter):
@@ -31,6 +56,8 @@ class CloudLoggingJSONFormatter(logging.Formatter):
       - message: The log message text
       - timestamp: ISO 8601 timestamp  
       - logging.googleapis.com/trace: For trace correlation
+    
+    Block F3: Added correlation_id field for request tracing.
     """
     
     # Map Python log levels to Cloud Logging severity levels
@@ -50,6 +77,8 @@ class CloudLoggingJSONFormatter(logging.Formatter):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "module": record.module,
             "logger": record.name,
+            # Block F3: correlation_id for request tracing across all log entries
+            "correlation_id": getattr(record, "correlation_id", "-"),
         }
         if record.exc_info and record.exc_info[0] is not None:
             log_entry["error"] = self.formatException(record.exc_info)
@@ -74,12 +103,15 @@ def setup_logger(name: str = "whatsapp-crm"):
         queue_handler = logging.handlers.QueueHandler(log_queue)
         logger.addHandler(queue_handler)
         
+        # Block F3: Added [%(correlation_id)s] to dev format for request tracing
         formatter = logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | [%(module)s] | %(message)s",
+            "%(asctime)s | %(levelname)-8s | [%(correlation_id)s] [%(module)s] | %(message)s",
             datefmt="%H:%M:%S"
         )
         stream_handler = logging.StreamHandler(sys.stdout)
         stream_handler.setFormatter(formatter)
+        # Block F3: Correlation ID filter must be on the actual handler
+        stream_handler.addFilter(_correlation_filter)
         
         listener = logging.handlers.QueueListener(log_queue, stream_handler)
         listener.start()
@@ -90,6 +122,8 @@ def setup_logger(name: str = "whatsapp-crm"):
         # Per: https://cloud.google.com/logging/docs/structured-logging
         stream_handler = logging.StreamHandler(sys.stdout)
         stream_handler.setFormatter(CloudLoggingJSONFormatter())
+        # Block F3: Correlation ID filter adds correlation_id attribute to log records
+        stream_handler.addFilter(_correlation_filter)
         logger.addHandler(stream_handler)
 
     return logger
