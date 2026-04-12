@@ -97,7 +97,7 @@
 **Migration Parity Status:**
 | Migration | DEV | PROD |
 |:---|:---|:---|
-| `updated_at` column on contacts | ✅ | ✅ VERIFIED |
+| `updated_at` column on contacts | ✅ | ✅ VERIFIED |  
 | `contacts_updated_at_trigger` | ✅ | ✅ VERIFIED |
 | Schema drift check (13 columns) | ✅ | ✅ PASS |
 
@@ -153,17 +153,20 @@
 - [x] Removed [(Log): timestamp] prefix from user messages
 - [x] Truncation circuit breaker: if was_truncated + has_tool_calls → discard + fallback
 
-**Step 3: System prompt rewrite ⏳ PENDING USER APPROVAL**
-- [ ] Draft new prompt (remove "obligatoria", add phase gate, remove "piernas" template)
+**Step 3: System prompt rewrite 🧑‍💻 HUMAN IS WORKING ON THE PROMPT**
+- [x] Draft new prompt v2 delivered → see `system_prompt_draft_v2.md` artifact
+- [ ] Human reviewing and customizing the prompt
 - [ ] Apply to DEV tenant first → sandbox test
-- [ ] Present to user for review
 - [ ] Apply to PROD after approval (Migration Parity Rule)
 
-**Step 4: Webhook dedup + atomic lock ⏳ PENDING (requires migration)**
-- [ ] Create `acquire_processing_lock` RPC (DEV → verify → PROD)
-- [ ] Add `wamid TEXT UNIQUE` column to messages (DEV → verify → PROD)
-- [ ] Deploy code that uses wamid AFTER both migrations on PROD
-- [ ] Verify dedup with rapid-fire test
+**Step 4: Webhook dedup + atomic lock ✅ DEPLOYED TO PROD** (commit `614d1c1`)
+- [x] `acquire_processing_lock` RPC (DEV ✅ | PROD ✅ VERIFIED)
+- [x] `wamid TEXT` column + `idx_messages_wamid_unique` partial index (DEV ✅ | PROD ✅ VERIFIED)
+- [x] Code: extract wamid from payload, store in insert, catch UNIQUE violation → skip
+- [x] Code: `_set_processing()` → `_acquire_lock_atomic()` via RPC
+- [x] Code: Stale lock force-release before atomic acquire
+- [x] Sentry + Discord instrumentation on all failure paths
+- [x] Pre-merge drift check: PASS (messages.note DEV-only, pre-existing, unused)
 
 **Schema Drift (messages.note):**
 | Column | DEV | PROD | Status |
