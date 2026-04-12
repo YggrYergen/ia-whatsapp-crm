@@ -37,15 +37,17 @@ All completed. Full details in `task.md` (archived). Key milestones:
 
 | ID | Bug | Detail | Root Cause | Status |
 |:---|:---|:---|:---|:---|
-| **U-1** | Mobile frontend BROKEN | Dashboard + chat UI unusable on mobile. Layout overflows, buttons unreachable, chat doesn't scroll. Client would rage. | CSS/layout not mobile-first | ❌ Not started |
-| **U-2** | Escalation UX missing | No visual badge for `bot_active=false`, no "Resolver" button, no filter. Staff blind to escalations. | Block J not started | ❌ Not started |
+| ~~**U-1**~~ | ~~Mobile frontend BROKEN~~ | Fixed: `pb-sidebar` on layout, ChatArea input cleared from nav, responsive grids. Build OK. | Commit `2d6e969` on desarrollo | ✅ DONE |
+| ~~**U-2**~~ | ~~Escalation UX missing~~ | Fixed: badge on ContactList, Resolve button (ChatArea + ProfilePanel), filter tabs, sorting, gentle pulse, sidebar badge. | Commit `2d6e969` on desarrollo | ✅ DONE |
 | **U-3** | PROD calendar UNVERIFIED | No `book_round_robin` tool on PROD in 24+ hrs. Can't confirm CasaVitaCure booking works. | Unknown — need test | ❌ Need test |
-| **U-4** | Dashboard fake data | Mock/placeholder numbers displayed. | Block L not started | ❌ Not started |
+| ~~**U-4**~~ | ~~Dashboard fake data~~ | Fixed: Live alerts from Supabase, INTERVENCIÓN MANUAL section, alert history w/ filters, resolve/dismiss, type badges. | Commit `2d6e969` on desarrollo | ✅ DONE |
 | **U-5** | Fumigation prompt not drafted | Need business data from client: services, prices, hours, zones. | Client data not collected | ❌ Need onboarding checklist |
 | ~~**U-6**~~ | ~~Rapid-fire fix NOT on PROD~~ | Merged `73789ef`. Cloud Build auto-deployed revision `00003-z77` to us-central1. | Merged ✅ | ✅ DONE |
 | **U-7** | wamid extraction null | `wamid` column exists, all values `null`. Dedup partially broken. | Payload path may differ | ❌ Not diagnosed |
 | **U-8** | Prompt Phase 1 skip | Bot asks "nombre y hora" immediately, skips 3-question triaje. | Prompt v2.1 may not fully fix | ❌ Need E2E test |
 | **U-14** | Booking flow repetition loop | Bot re-asks info already provided (name, zone, time) + demands multiple confirmations. Extremely bothersome. | Unknown: prompt? model tool execution? history? agentic loop? | ❌ Need diagnosis + OpenAI docs |
+| ~~**U-15**~~ | ~~Hardcoded europe URL × 5~~ | 5 files pointed to deleted europe-west1 backend → 404 on test chat + calendar. Fixed on main `c5d7b06`. | Hotfix pushed | ✅ DONE |
+| ~~**U-16**~~ | ~~contacts.notes column missing~~ | ClientProfilePanel silently failed saving notes. Added column to DEV + PROD. | Migration applied both envs | ✅ DONE |
 
 ---
 
@@ -53,18 +55,28 @@ All completed. Full details in `task.md` (archived). Key milestones:
 
 ### Tonight (Sat Apr 12, ~7 hrs remaining)
 
-#### Block J: Escalation UX Minimum (U-2) — 2 hrs
-- [ ] **J1.** Visual badge on ContactList for `bot_active=false` contacts
-- [ ] **J2.** "Resolver y reactivar bot" button in ChatArea
-- [ ] **J3.** Filter/tab: "Pendientes" to show escalated contacts first
+#### ~~Block J: Escalation UX Minimum (U-2) — 2 hrs~~ ✅ DONE
+- [x] **J1.** Visual badge on ContactList for `bot_active=false` contacts
+- [x] **J2.** "Resolver y reactivar bot" button in ChatArea + ProfilePanel
+- [x] **J3.** Filter/tab: "Todos/Pendientes/Activos" with count badges
+- [x] **J4.** Sorted: escalated first, then by last_message_at
+- [x] **J5.** Gentle 3s pulse animation (not stroboscopic)
+- [x] **J6.** Sidebar escalation count badge
+- [x] **J7.** NotificationFeed: type-specific icons, navigate-to-chat
 
-#### Block L: Minimal Dashboard (U-4) — 30 min
-- [ ] **L1.** Replace mock data with real Supabase query: "Mensajes hoy: X, Escalaciones: Y, Último mensaje: hace Z min"
+#### ~~Block L: Dashboard (U-4)~~ ✅ DONE
+- [x] **L1.** Live alerts from Supabase with realtime subscription
+- [x] **L2.** INTERVENCIÓN MANUAL section (live escalations)
+- [x] **L3.** Alert history with filter tabs (Pendientes/Todas/Resueltas)
+- [x] **L4.** Navigate-to-chat from dashboard alerts
+- [x] **L5.** Resolve / Dismiss buttons per alert
+- [x] **L6.** Type badges: escalation, cita, cancelación, reagendada
 
-#### Mobile Frontend Fix (U-1) — 3-4 hrs
-- [ ] Fix chat layout for mobile viewport (scroll, buttons, contact list)
-- [ ] Fix dashboard layout for mobile
-- [ ] Test on actual phone browser
+#### ~~Mobile Frontend Fix (U-1) — 3-4 hrs~~ ✅ DONE
+- [x] Fix chat layout for mobile viewport (pb-sidebar, input clearing)
+- [x] Fix dashboard layout for mobile (responsive grids, pb-24)
+- [x] Slide-in animation for profile panel on mobile
+- [ ] Test on actual phone browser (pending merge to main)
 
 #### Diagnosis Work
 - [ ] **U-14:** Read OpenAI docs on tool execution patterns (sequential vs concurrent) for gpt-5.4-mini
