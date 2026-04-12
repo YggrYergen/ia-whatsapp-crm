@@ -13,9 +13,9 @@
 SESSION DATE:    2026-04-11
 CURRENT SPRINT:  Sprint 1
 CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A+B+C DONE ✅ — Observability hardened ✅ — DB fixes applied ✅ — Block D (CRITICAL)
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (← NOW ⭐), E, F, G, H
-LAST COMMIT:     35b9917 (desarrollo) — Block C adapter + observability gaps
+SESSION GOAL:    Blocks A+B+C+D+E DONE ✅ — Full resilience layer deployed — Block F next
+SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (← NOW), G, H
+LAST COMMIT:     2eac872 (desarrollo) — Block E resilience layer
 ```
 
 ---
@@ -65,20 +65,34 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - Added `messages_delete_own` RLS policy (ENVIAR PRUEBA button was silently failing to delete)
   - Added `contacts` to `supabase_realtime` publication (bot_active changes weren't reaching frontend)
   - Both verified via SQL queries against dev DB
+- ✅ **Block D executed & deployed** (2026-04-11):
+  - D1: Rewrote agentic loop in `use_cases.py` — multi-round with `MAX_TOOL_ROUNDS = 3`
+  - Proper `role: "tool"` + `tool_call_id` protocol (was `role: "user"` — WRONG)
+  - Assistant `tool_calls` messages appended to history between rounds
+  - Usage tracking accumulation across all rounds
+  - All 22 failure points instrumented with Sentry + Discord (16 except blocks, 19 Sentry, 20 Discord)
+  - Tested via sandbox: simple greeting ✅, tool calls ✅, escalation ✅, multi-round ✅, regression ✅
+- ✅ **Block E executed & deployed** (2026-04-11):
+  - E1: HMAC-SHA256 webhook signature verification (`security.py` + ASGI middleware in `main.py`)
+    - `META_APP_SECRET` stored in Google Secret Manager (both DEV + PROD)
+    - Soft mode: if secret missing, logs warning and skips (safe rollout)
+  - E2: LLM rate limit per contact — 20/hr max (`rate_limiter.py` NEW)
+    - In-memory sliding window, auto-prune, polite throttle message
+  - E3: Processing lock TTL — 90s stale lock force-release
+    - DB migration: added `updated_at` column + auto-update trigger to `contacts` table
+  - E4: Shadow-forwarding — full conversation forwarded to admin WhatsApp
+    - Uses tenant's own `ws_phone_id` + `ws_token` (dynamic per tenant, no hardcoded numbers)
+    - `SHADOW_FORWARD_PHONE=56931374341` set on both DEV + PROD
+  - E5: UptimeRobot health monitoring — manual setup (endpoint: `/api/debug-ping`)
+  - E6: Tenant config cache — `TTLCache(maxsize=50, ttl=180)` in `dependencies.py`
+    - Added `cachetools>=5.3.0` to `pyproject.toml`
+  - Telemetry totals: security.py 7 Sentry/6 Discord, rate_limiter.py 3/2, dependencies.py 6/4, use_cases.py 31/23
 
 ### What Is Being Done RIGHT NOW (This Session)
-**Blocks A, B, C — ✅ ALL DEPLOYED to DEV**
+**Blocks A, B, C, D, E — ✅ ALL DEPLOYED to DEV**
 **Observability + DB fixes — ✅ APPLIED**
 
-**Block D — Agentic loop rewrite (3-5 hrs) ⭐ MOST CRITICAL ← NOW:**
-- D1: Multi-round tool loop with proper `role: "tool"` messages
-- Currently uses `role: "user"` for tool results — WRONG per OpenAI docs
-- Must read Deep Dive A §3 Phase 4 + Function Calling Guide before starting
-- ⚠️ `parallel_tool_calls=False` (Block B) means only 1 tool per LLM turn — design accordingly
-
-**Remaining blocks:**
-**Block E — Resilience layer: webhook sig, rate limit, lock TTL, shadow-forward, health, cache (90 min)**
-**Block F — Observability: correlation IDs + Sentry tags (30 min)**
+**Block F — Observability: correlation IDs + Sentry tags (30 min) ← NOW**
 **Block G — DB: `bsuid` column + index (15 min)**
 **Block H — Test & deploy Day 1 (30 min)**
 
@@ -89,13 +103,14 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 - Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking, gpt-5.4-nano testing
 
 ### Known Blockers & Risks
-- ⚠️ `META_APP_SECRET` env var needed for Block E1 (webhook signature verification) — must be retrieved from Meta App Dashboard → Settings → Basic
-- ⚠️ Block D (agentic loop) is the highest-risk block — 3-5 hours estimated, involves rewriting the core message processing flow
+- ~~⚠️ `META_APP_SECRET` env var needed for Block E1~~ → **Stored in Google Secret Manager, set on both DEV + PROD**
+- ~~⚠️ Block D (agentic loop) is the highest-risk block~~ → **DONE ✅ — tested via sandbox, all 5 tests passed**
 - ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to DEV**
 - ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
 - ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
 - ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
 - ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
+- ⚠️ Shadow-forwarding (E4) uses tenant's WABA phone → admin number. Requires active 24h conversation window on admin's WhatsApp. If window expired, forward silently fails (non-blocking).
 
 ---
 
@@ -126,13 +141,12 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | CC-3 | BSUID migration needed for contact lookups | 🔴 | Block G1: add column + index |
 | CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
 | CC-5 | Tool schemas missing `strict: true` | ✅ Fixed (DEV) | Block B1: all 7 tools + `parallel_tool_calls=False` |
-| CC-7 | No webhook signature verification | 🔴 SECURITY | Block E1: HMAC-SHA256 |
-| CC-8 | No LLM rate limit per contact | 🔴 COST | Block E2: 20/hour max |
-| CC-9 | `is_processing_llm` lock has no TTL | 🔴 SILENCES | Block E3: 90s TTL |
-| CC-10 | No health monitoring | 🟡 | Block E5: UptimeRobot |
-| CC-11 | No conversation shadow-forward | 🟡 | Block E4: to admin phone |
-| CC-12 | Tenant config fetched every request | 🟡 | Block E6: 3-min cache |
-
+| CC-7 | No webhook signature verification | ✅ Fixed (DEV+PROD) | Block E1: HMAC-SHA256 middleware + Secret Manager |
+| CC-8 | No LLM rate limit per contact | ✅ Fixed (DEV) | Block E2: 20/hour max in `rate_limiter.py` |
+| CC-9 | `is_processing_llm` lock has no TTL | ✅ Fixed (DEV) | Block E3: 90s TTL + `updated_at` column |
+| CC-10 | No health monitoring | 🟡 In progress | Block E5: UptimeRobot — manual setup by user |
+| CC-11 | No conversation shadow-forward | ✅ Fixed (DEV+PROD) | Block E4: tenant-dynamic forwarding to admin phone |
+| CC-12 | Tenant config fetched every request | ✅ Fixed (DEV) | Block E6: TTLCache(50, 180s) in `dependencies.py` |
 ---
 
 ## 🔒 [IMMUTABLE] §3 — Context Files: Where to Find What
