@@ -65,9 +65,23 @@ class OpenAIStrategy(LLMStrategy):
             api_kwargs = {
                 "model": self.model_id,
                 "messages": messages,
-                # A6: Cost cap — limit output tokens per response
-                # At $4.50/1M output tokens, 500 tokens ≈ $0.00225/response max
-                "max_completion_tokens": 500,
+                # Block I: Raised from 500 → 2048 (April 12 2026 incident)
+                # 500 tokens was truncating BOTH text responses AND tool_calls JSON.
+                # Truncated tool_calls = corrupt JSON → doom loop of parse failures.
+                # 2048 is 0.0016% of gpt-5.4-mini's 128K output capacity.
+                # Cost: you pay for TOKENS GENERATED, not the cap.
+                # At $4.50/1M output tokens: 2048 tokens = ~$0.009/response MAX.
+                # Average WhatsApp response is 50-150 tokens = ~$0.0004-0.0007 actual.
+                # Ref: https://platform.openai.com/docs/api-reference/chat/create
+                "max_completion_tokens": 2048,
+                # Block I: Anti-repetition penalties (BUG-A broken record fix)
+                # frequency_penalty: penalizes tokens proportional to how often they
+                # appear in the output so far. 0.3 = mild bias against repetition.
+                # presence_penalty: penalizes tokens that have appeared at all.
+                # 0.3 = mild encouragement to introduce new topics.
+                # Ref: https://platform.openai.com/docs/api-reference/chat/create
+                "frequency_penalty": 0.3,
+                "presence_penalty": 0.3,
             }
             if tools:
                 api_kwargs["tools"] = tools
@@ -77,13 +91,51 @@ class OpenAIStrategy(LLMStrategy):
                 api_kwargs["parallel_tool_calls"] = False
             
             response = await self.client.chat.completions.create(**api_kwargs)
-            message = response.choices[0].message
+            choice = response.choices[0]
+            message = choice.message
+            finish_reason = choice.finish_reason  # "stop", "length", "tool_calls", etc.
             
             # C1: ALWAYS preserve text content — content and tool_calls can coexist
             # Per OpenAI docs: the model may provide explanatory text alongside tool calls.
             # Previously this was an if/else that silently discarded content when tool_calls existed.
             dto = LLMResponse()
             dto.content = message.content or ""
+            dto.finish_reason = finish_reason
+            
+            # Block I: Truncation detection — CRITICAL for preventing doom loops
+            # If finish_reason="length", the output was cut off by max_completion_tokens.
+            # This means:
+            #   - Text responses are incomplete (cut mid-sentence)
+            #   - tool_calls JSON arguments may be CORRUPT (truncated JSON)
+            # The agentic loop MUST check was_truncated before executing tool_calls.
+            # Ref: https://platform.openai.com/docs/api-reference/chat/object
+            if finish_reason == "length":
+                dto.was_truncated = True
+                logger.warning(
+                    f"⚠️ [LLM] Response TRUNCATED (finish_reason=length) | "
+                    f"model={self.model_id} | has_tool_calls={bool(message.tool_calls)} | "
+                    f"content_len={len(dto.content)}"
+                )
+                sentry_sdk.set_context("llm_truncation", {
+                    "model": self.model_id,
+                    "finish_reason": finish_reason,
+                    "has_tool_calls": bool(message.tool_calls),
+                    "content_length": len(dto.content),
+                    "content_preview": dto.content[:200],
+                })
+                sentry_sdk.capture_message(
+                    f"LLM response truncated (finish_reason=length) | model={self.model_id}",
+                    level="warning"
+                )
+                await send_discord_alert(
+                    title=f"⚠️ LLM Response Truncated | {self.model_id}",
+                    description=(
+                        f"finish_reason=length — output hit max_completion_tokens cap.\n"
+                        f"has_tool_calls={bool(message.tool_calls)}\n"
+                        f"content_preview: {dto.content[:150]}..."
+                    ),
+                    severity="warning"
+                )
             
             if message.tool_calls:
                 dto.has_tool_calls = True

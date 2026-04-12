@@ -352,8 +352,22 @@ class ProcessMessageUseCase:
                                 sr = m["sender_role"]
                                 if sr == "system_alert":
                                     continue  # System alerts are not part of the conversation
-                                elif sr in ("assistant", "human_agent"):
-                                    rol = "assistant"  # Both AI and staff are "business side"
+                                elif sr == "human_agent":
+                                    # Block I fix (BUG-E): Map human_agent to role:"user" with name field
+                                    # Per OpenAI docs: NEVER use role:"assistant" for human participants.
+                                    # If the LLM sees staff messages as its own prior output, it gets
+                                    # confused about its role and contradicts the human agent.
+                                    # Using role:"user" + name:"agente_humano" lets the LLM know
+                                    # a human already intervened without confusing its own identity.
+                                    # Ref: https://platform.openai.com/docs/guides/text?api-mode=chat
+                                    history.append({
+                                        "role": "user",
+                                        "name": "agente_humano",
+                                        "content": f"[Mensaje del equipo]: {m['content']}"
+                                    })
+                                    continue
+                                elif sr == "assistant":
+                                    rol = "assistant"
                                 else:
                                     rol = "user"
                                 history.append({"role": rol, "content": m["content"]})
@@ -380,8 +394,8 @@ class ProcessMessageUseCase:
             chile_tz = pytz.timezone("America/Santiago")
             current_time_str = datetime.now(chile_tz).strftime("%Y-%m-%d %H:%M")
 
-            if not history or history[-1].get("content", "").lower() != text_body:
-                history.append({"role": "user", "content": f"[(Log): {current_time_str}]\n{text_body}"})
+            if not history or history[-1].get("content", "").lower() != text_body.lower():
+                history.append({"role": "user", "content": text_body})
 
             # Error points #9-10: LLM strategy creation + schema fetch
             logger.info(f"🧠 [ORCH] Calling LLM (Provider={tenant.llm_provider})...")
@@ -510,6 +524,47 @@ class ProcessMessageUseCase:
                 # ── No tool calls → final text response, we're done ──
                 if not response_dto.has_tool_calls:
                     reply_text = response_dto.content or ""
+                    break
+
+                # ── TRUNCATION CIRCUIT BREAKER (Block I, BUG-A/BUG-D) ──
+                # If the response was truncated (finish_reason="length") AND has
+                # tool_calls, the JSON arguments are likely CORRUPT (cut off mid-string).
+                # Executing corrupt tool_calls creates a doom loop:
+                #   truncated JSON → parse error → error response to LLM →
+                #   LLM retries same tool → same truncation → repeat until MAX_TOOL_ROUNDS
+                #
+                # Fix: treat truncated tool_calls as if no tools were called.
+                # Use whatever text content the model DID produce as the reply.
+                # Ref: https://platform.openai.com/docs/api-reference/chat/object
+                if response_dto.was_truncated and response_dto.has_tool_calls:
+                    logger.warning(
+                        f"⚠️ [ORCH] TRUNCATION CIRCUIT BREAKER TRIGGERED | Round {rounds_executed} | "
+                        f"Tenant {tenant.id} | Phone {patient_phone} | "
+                        f"Tool calls DISCARDED (JSON likely corrupt)"
+                    )
+                    sentry_sdk.set_context("truncation_circuit_breaker", {
+                        "round": rounds_executed,
+                        "tenant_id": str(tenant.id),
+                        "patient_phone": patient_phone,
+                        "discarded_tool_names": [tc["name"] for tc in response_dto.tool_calls],
+                        "content_preview": (response_dto.content or "")[:200],
+                    })
+                    sentry_sdk.capture_message(
+                        f"Truncation circuit breaker triggered | Tenant {tenant.id} | Round {rounds_executed}",
+                        level="warning"
+                    )
+                    await send_discord_alert(
+                        title=f"⚠️ Truncation Circuit Breaker | Tenant {tenant.id}",
+                        description=(
+                            f"Round {rounds_executed}: tool_calls DISCARDED due to truncation.\n"
+                            f"Discarded tools: {[tc['name'] for tc in response_dto.tool_calls]}\n"
+                            f"Using text content as reply instead.\n"
+                            f"Phone: {patient_phone}"
+                        ),
+                        severity="warning"
+                    )
+                    # Use whatever partial text the model produced
+                    reply_text = response_dto.content or "Disculpa, tuve un inconveniente técnico. ¿Podrías intentar de nuevo?"
                     break
 
                 # ── Tool calls present → execute and loop ──

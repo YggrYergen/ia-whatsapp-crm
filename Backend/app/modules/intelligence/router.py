@@ -24,6 +24,12 @@ class LLMResponse(BaseModel):
     cached_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
     model_used: Optional[str] = None
+    # Block I: Truncation detection — finish_reason="length" means output was cut off
+    # by max_completion_tokens. was_truncated=True signals the agentic loop to NOT
+    # execute tool_calls (JSON is likely corrupt/incomplete).
+    # Ref: https://platform.openai.com/docs/api-reference/chat/object#choices-finish_reason
+    finish_reason: Optional[str] = None
+    was_truncated: bool = False
 
 class LLMStrategy(ABC):
     def __init__(self, api_key: str, model_id: str):
