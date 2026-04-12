@@ -92,6 +92,15 @@ class ProcessMessageUseCase:
             text_body = message.get("text", {}).get("body", "")
             
             # ============================================================
+            # Step 4: Extract wamid for webhook deduplication
+            # Meta WhatsApp Cloud API assigns a unique ID to each inbound
+            # message (format: wamid.*). Used to detect duplicate webhook
+            # deliveries (Meta retries if initial 200 response was slow).
+            # Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks
+            # ============================================================
+            wamid = message.get("id")  # e.g. "wamid.HBgNNTY5..."
+            
+            # ============================================================
             # Block G2: BSUID Dormant Capture — extract from webhook payload
             # As of April 2026, BSUIDs are present in ALL webhook payloads.
             # Format: CC.alphanumeric (e.g., CL.1A2B3C4D5E6F7890)
@@ -196,11 +205,30 @@ class ProcessMessageUseCase:
             if contact_id and not is_simulation:
                 logger.info("💾 [ORCH] Persisting inbound message...")
                 try:
-                    await db.table("messages").insert({
+                    insert_data = {
                         "contact_id": contact_id, "tenant_id": tenant.id,
                         "sender_role": "user", "content": text_body
-                    }).execute()
+                    }
+                    # Step 4: Include wamid for dedup — partial UNIQUE index
+                    # catches duplicate webhook deliveries at the DB level.
+                    if wamid:
+                        insert_data["wamid"] = wamid
+                    await db.table("messages").insert(insert_data).execute()
                 except Exception as e:
+                    err_str = str(e)
+                    # Step 4: Check if this is a UNIQUE violation on wamid
+                    # (duplicate webhook delivery from Meta). If so, skip
+                    # processing entirely — this message was already handled.
+                    if wamid and ("idx_messages_wamid_unique" in err_str or "duplicate key" in err_str.lower()):
+                        logger.warning(
+                            f"🔁 [ORCH] Duplicate webhook detected via wamid={wamid[:30]}... "
+                            f"Skipping duplicate processing for phone {patient_phone}."
+                        )
+                        sentry_sdk.capture_message(
+                            f"Webhook dedup triggered | wamid={wamid[:30]} | Tenant {tenant.id}",
+                            level="info"
+                        )
+                        return  # Skip — already processed
                     logger.error(f"❌ [ORCH] Msg persistence err: {e}")
                     sentry_sdk.capture_exception(e)
                     await send_discord_alert(title=f"❌ Msg Persistence Error | Tenant {tenant.id}", description=f"Failed to persist inbound message for contact {contact_id}: {str(e)[:300]}", severity="error", error=e)
@@ -285,7 +313,16 @@ class ProcessMessageUseCase:
                 if not stale_lock:
                     logger.info("⏳ [ORCH] Already processing (lock is fresh). Skipping.")
                     return
-                # If stale_lock=True, we fall through and re-process
+                # If stale_lock=True, force-release it so the atomic RPC can re-acquire.
+                # Without this, the RPC sees is_processing_llm=true and returns false,
+                # dropping the message even though the lock is stale.
+                try:
+                    await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
+                    logger.info(f"🔓 [ORCH] Stale lock force-released for contact {contact_id}. Proceeding to re-acquire.")
+                except Exception as release_err:
+                    logger.error(f"❌ [ORCH] Failed to force-release stale lock: {release_err}")
+                    sentry_sdk.capture_exception(release_err)
+                    return  # Can't release the stale lock — can't proceed safely
 
             # ============================================================
             # Block E2: Rate Limit Check — before LLM call
@@ -324,22 +361,58 @@ class ProcessMessageUseCase:
                 # Non-fatal: proceed without rate limit if the limiter itself fails
 
             # ============================================================
-            # PARALLEL: Set processing lock + fetch history
+            # PARALLEL: Acquire processing lock (ATOMIC) + fetch history
             # ============================================================
-            # Error points #6-7: Processing lock + history fetch
-            async def _set_processing():
-                if contact_id:
+            # Step 4: Replace non-atomic _set_processing with database-level
+            # acquire_processing_lock RPC. This is the ONLY reliable way to
+            # prevent double-processing across Cloud Run instances.
+            # The RPC does: UPDATE contacts SET is_processing_llm=true
+            #   WHERE id=p_contact_id AND is_processing_llm=false
+            # If another pipeline already locked, it returns false.
+            # ============================================================
+            async def _acquire_lock_atomic():
+                """Atomically acquire the processing lock via database RPC.
+                Returns True if lock acquired, False if already locked."""
+                if not contact_id:
+                    return True  # No contact = no lock needed (shouldn't happen)
+                try:
+                    result = await db.rpc(
+                        'acquire_processing_lock',
+                        {'p_contact_id': str(contact_id)}
+                    ).execute()
+                    acquired = result.data if isinstance(result.data, bool) else bool(result.data)
+                    if not acquired:
+                        logger.info(
+                            f"🔒 [ORCH] Atomic lock NOT acquired — another pipeline owns it. "
+                            f"Contact: {contact_id} | Phone: {patient_phone}"
+                        )
+                    else:
+                        logger.info(f"🔓 [ORCH] Atomic lock ACQUIRED for contact {contact_id}")
+                    return acquired
+                except Exception as lock_err:
+                    logger.error(f"❌ [ORCH] Atomic lock RPC failed: {lock_err}")
+                    sentry_sdk.set_context("atomic_lock_failure", {
+                        "contact_id": str(contact_id),
+                        "tenant_id": str(tenant.id),
+                        "patient_phone": patient_phone,
+                    })
+                    sentry_sdk.capture_exception(lock_err)
+                    await send_discord_alert(
+                        title=f"❌ Atomic Lock RPC Failed | Tenant {tenant.id}",
+                        description=(
+                            f"acquire_processing_lock failed for contact {contact_id}.\n"
+                            f"Phone: {patient_phone}\n"
+                            f"Falling back to non-atomic lock.\n"
+                            f"Error: {str(lock_err)[:300]}"
+                        ),
+                        severity="error", error=lock_err
+                    )
+                    # Fallback: set lock non-atomically (better than no lock)
                     try:
                         await db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
-                    except Exception as lock_err:
-                        logger.error(f"❌ [ORCH] Failed to set processing lock: {lock_err}")
-                        sentry_sdk.capture_exception(lock_err)
-                        await send_discord_alert(
-                            title=f"❌ Processing Lock Failed | Tenant {tenant.id}",
-                            description=f"Contact: {contact_id}\nError: {str(lock_err)[:300]}",
-                            severity="error", error=lock_err
-                        )
-                        # Non-fatal: continue without lock (risk of double-processing)
+                    except Exception:
+                        pass
+                    return True  # Proceed with processing (risk of double, but better than dropping)
 
             async def _fetch_history():
                 history = []
@@ -382,11 +455,21 @@ class ProcessMessageUseCase:
                         # Non-fatal: continue with empty history
                 return history
 
-            # Run concurrently
-            _, history = await asyncio.gather(
-                _set_processing(),
+            # Run concurrently: atomic lock + history fetch
+            lock_acquired, history = await asyncio.gather(
+                _acquire_lock_atomic(),
                 _fetch_history()
             )
+
+            # Step 4: If lock was NOT acquired, another pipeline is processing.
+            # Skip to avoid double-processing. The wamid dedup above catches
+            # Meta retries; this catches rapid sequential user messages.
+            if not lock_acquired and not is_simulation:
+                logger.info(
+                    f"⏳ [ORCH] Lock not acquired (another pipeline active). "
+                    f"Skipping for contact {contact_id} | Phone {patient_phone}"
+                )
+                return
 
             if not is_simulation:
                 await asyncio.sleep(3)
