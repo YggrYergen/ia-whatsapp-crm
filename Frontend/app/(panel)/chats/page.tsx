@@ -14,7 +14,7 @@ export default function ChatsPage() {
 
   return (
     <div className="flex-1 flex overflow-hidden relative">
-      {/* Contact List: Visible in 'list' mode or on Desktop */}
+      {/* Contact List: Visible in 'list' mode on mobile, always on desktop */}
       <div className={`
         ${mobileView === 'list' ? 'flex w-full' : 'hidden'} 
         lg:flex lg:w-[320px] xl:w-[380px] border-r border-slate-200
@@ -23,16 +23,16 @@ export default function ChatsPage() {
         <ContactList />
       </div>
 
-      {/* Main Chat Area: Visible in 'chat' mode or on Desktop when a contact is selected */}
+      {/* Main Chat Area: Visible in 'chat' mode on mobile, always on desktop when contact selected */}
       <div className={`
-        flex-1 flex flex-col 
-        ${mobileView === 'chat' ? 'flex w-full' : 'hidden'} 
+        flex-1 flex flex-col min-w-0
+        ${mobileView === 'chat' || mobileView === 'info' ? 'flex w-full' : 'hidden'} 
         lg:flex
       `}>
         {isTestContact ? <TestChatArea /> : <ChatArea />}
       </div>
 
-      {/* Right Panel (Profile or Test Config): Only visible if explicitly requested or on Desktop */}
+      {/* Right Panel (Profile or Test Config): Only visible if explicitly opened */}
       {isTestContact ? <TestConfigPanel /> : <ClientProfilePanel />}
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { User, Phone, Mail, Calendar, MapPin, Tag, Clock, Save, FileText, X, ShieldAlert, Users } from 'lucide-react'
+import { User, Phone, Mail, Calendar, MapPin, Tag, Clock, Save, FileText, X, ShieldAlert, Users, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -19,7 +19,6 @@ export default function ClientProfilePanel() {
     } = useCrm()
     
     const [notes, setNotes] = useState('')
-    const [isSaving, setIsSaving] = useState(false)
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
     useEffect(() => {
@@ -27,9 +26,9 @@ export default function ClientProfilePanel() {
             setNotes(selectedContact.notes || '')
             setSaveStatus('idle')
         }
-    }, [selectedContact])
+    }, [selectedContact?.id])
 
-    // Auto-save logic with debounce
+    // Auto-save notes with debounce (single effect, not duplicated)
     useEffect(() => {
         if (!selectedContact) return
         if (notes === (selectedContact.notes || '')) return
@@ -46,29 +45,9 @@ export default function ClientProfilePanel() {
                 setSelectedContact({ ...selectedContact, notes })
                 setContacts(contacts.map(c => c.id === selectedContact.id ? { ...c, notes } : c))
                 setTimeout(() => setSaveStatus('idle'), 2000)
-            }
-        }, 1500)
-
-        return () => clearTimeout(timer)
-    }, [notes])
-
-    // Auto-save logic with debounce
-    useEffect(() => {
-        if (!selectedContact) return
-        if (notes === (selectedContact.notes || '')) return
-
-        setSaveStatus('saving')
-        const timer = setTimeout(async () => {
-            const { error } = await supabase
-                .from('contacts')
-                .update({ notes })
-                .eq('id', selectedContact.id)
-            
-            if (!error) {
-                setSaveStatus('saved')
-                setSelectedContact({ ...selectedContact, notes })
-                setContacts(contacts.map(c => c.id === selectedContact.id ? { ...c, notes } : c))
-                setTimeout(() => setSaveStatus('idle'), 2000)
+            } else {
+                console.error('Failed to save notes:', error)
+                setSaveStatus('idle')
             }
         }, 1500)
 
@@ -85,17 +64,29 @@ export default function ClientProfilePanel() {
         }
     }
 
+    const resolveEscalation = async () => {
+        if (!selectedContact) return
+        const { error } = await supabase.from('contacts').update({ bot_active: true }).eq('id', selectedContact.id)
+        if (!error) {
+            setSelectedContact({ ...selectedContact, bot_active: true })
+            setContacts(contacts.map(c => c.id === selectedContact.id ? { ...c, bot_active: true } : c))
+        }
+        // Resolve related alerts
+        await supabase.from('alerts').update({ is_resolved: true }).eq('contact_id', selectedContact.id).eq('is_resolved', false)
+    }
+
     if (!selectedContact) return null;
 
     const isVisible = showDesktopInfo || mobileView === 'info'
     const isTestContact = selectedContact.phone_number === '56912345678'
+    const isEscalated = !selectedContact.bot_active && !isTestContact
 
     return (
         <div className={`
             bg-white border-l border-slate-200 flex-shrink-0 transition-all duration-300 overflow-y-auto custom-scrollbar
-            ${isVisible ? 'w-full fixed inset-0 z-[100] md:static md:w-[320px] lg:w-[380px]' : 'w-0 overflow-hidden opacity-0 p-0 border-none'}
+            ${isVisible ? 'w-full fixed inset-0 z-[100] md:static md:w-[320px] lg:w-[380px] animate-slide-in-right md:animate-none' : 'w-0 overflow-hidden opacity-0 p-0 border-none'}
         `}>
-            {/* Header Fixed close for Mobile (Crucial Fix) */}
+            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white/80 backdrop-blur-md sticky top-0 z-[101]">
                 <h3 className="font-black text-slate-800 tracking-tight">INFORMACIÓN DEL LEAD</h3>
                 <button 
@@ -112,6 +103,26 @@ export default function ClientProfilePanel() {
 
             <div className="p-5 md:p-6 space-y-6">
                 
+                {/* Escalation Status Banner */}
+                {isEscalated && (
+                    <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                            <AlertTriangle size={18} className="text-amber-600" />
+                            <h4 className="text-xs font-black uppercase tracking-widest text-amber-700">Intervención manual activa</h4>
+                        </div>
+                        <p className="text-xs text-amber-600 font-medium mb-3">
+                            La IA está pausada. Las respuestas deben ser manuales hasta que se resuelva.
+                        </p>
+                        <button
+                            onClick={resolveEscalation}
+                            className="w-full flex items-center justify-center gap-2 bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 transition-colors active:scale-[0.98]"
+                        >
+                            <CheckCircle2 size={16} />
+                            Resolver y reactivar IA
+                        </button>
+                    </div>
+                )}
+
                 {/* Simulation Control (Only for Test Contact & Admin Dashboard) */}
                 {isTestContact && dashboardRole === 'admin' && (
                     <div className="bg-indigo-50 border-2 border-indigo-100 rounded-2xl p-4 shadow-sm">
@@ -153,11 +164,19 @@ export default function ClientProfilePanel() {
 
                 {/* Profile Summary */}
                 <div className="flex flex-col items-center text-center pb-6 border-b border-slate-100">
-                    <div className="w-24 h-24 rounded-full bg-emerald-50 border-4 border-white shadow-xl flex items-center justify-center mb-4 relative group">
-                        <User size={48} className="text-emerald-500" />
-                        <div className="absolute bottom-1 right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
-                            <Badge className="p-0 bg-transparent hover:bg-transparent"><div className="w-2 h-2 bg-white rounded-full"></div></Badge>
-                        </div>
+                    <div className={`w-24 h-24 rounded-full border-4 border-white shadow-xl flex items-center justify-center mb-4 relative group
+                        ${isEscalated ? 'bg-amber-50' : 'bg-emerald-50'}
+                    `}>
+                        <User size={48} className={isEscalated ? 'text-amber-500' : 'text-emerald-500'} />
+                        {isEscalated ? (
+                            <div className="absolute bottom-1 right-1 w-6 h-6 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center animate-gentle-pulse">
+                                <AlertTriangle size={12} className="text-white" />
+                            </div>
+                        ) : (
+                            <div className="absolute bottom-1 right-1 w-6 h-6 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
+                                <Badge className="p-0 bg-transparent hover:bg-transparent"><div className="w-2 h-2 bg-white rounded-full"></div></Badge>
+                            </div>
+                        )}
                     </div>
                     <h3 className="text-xl font-bold text-slate-800 tracking-tight">{selectedContact.name || 'Sin Nombre'}</h3>
                     <div className="mt-2 flex flex-wrap justify-center gap-2">
@@ -167,6 +186,9 @@ export default function ClientProfilePanel() {
                             {selectedContact.role === 'admin' ? 'Clínica Staff' : 'Paciente / Lead'}
                         </Badge>
                         <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-200 font-bold text-[10px] uppercase">{selectedContact.status || 'lead'}</Badge>
+                        {isEscalated && (
+                            <Badge className="bg-amber-100 text-amber-700 border-none font-bold text-[10px]">⚠️ Escalado</Badge>
+                        )}
                     </div>
                 </div>
 
@@ -207,23 +229,32 @@ export default function ClientProfilePanel() {
                 </Card>
 
                 {/* Automation Status */}
-                <div className="bg-indigo-900 rounded-2xl p-5 text-white relative overflow-hidden shadow-lg">
+                <div className={`rounded-2xl p-5 text-white relative overflow-hidden shadow-lg ${isEscalated ? 'bg-amber-800' : 'bg-indigo-900'}`}>
                     <div className="relative z-10">
                         <div className="flex items-center gap-2 mb-2">
-                            <Clock size={16} className="text-indigo-300" />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-200">Próxima Acción IA</span>
+                            <Clock size={16} className={isEscalated ? 'text-amber-300' : 'text-indigo-300'} />
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${isEscalated ? 'text-amber-200' : 'text-indigo-200'}`}>
+                                {isEscalated ? 'Estado de Escalación' : 'Próxima Acción IA'}
+                            </span>
                         </div>
-                        <p className="text-sm font-bold leading-relaxed mb-3">Seguimiento de agendamiento en 24 horas si no concreta.</p>
-                        <Select onValueChange={() => {}}>
-                            <SelectTrigger className="w-full bg-white/10 border-white/20 text-white font-bold h-9">
-                                <SelectValue placeholder="Modificar Prioridad" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="high">Alta Prioridad</SelectItem>
-                                <SelectItem value="medium">Normal</SelectItem>
-                                <SelectItem value="low">Baja Prioridad</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <p className="text-sm font-bold leading-relaxed mb-3">
+                            {isEscalated 
+                                ? 'Esperando resolución manual por staff. La IA se reactivará al presionar "Resolver".'
+                                : 'Seguimiento de agendamiento en 24 horas si no concreta.'
+                            }
+                        </p>
+                        {!isEscalated && (
+                            <Select onValueChange={() => {}}>
+                                <SelectTrigger className="w-full bg-white/10 border-white/20 text-white font-bold h-9">
+                                    <SelectValue placeholder="Modificar Prioridad" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="high">Alta Prioridad</SelectItem>
+                                    <SelectItem value="medium">Normal</SelectItem>
+                                    <SelectItem value="low">Baja Prioridad</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        )}
                     </div>
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Calendar size={80} />
