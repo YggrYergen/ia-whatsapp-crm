@@ -121,14 +121,6 @@ async def verify_webhook_signature(raw_body: bytes, signature_header: str | None
         )
         return False
     
-    # ⚠️ TEMPORARY DEBUG — remove after confirming fix on PROD
-    logger.warning(
-        f"🔐 [HMAC-DEBUG] body_len={len(raw_body)} | "
-        f"secret_len={len(app_secret)} | secret_repr={repr(app_secret[:5])}...{repr(app_secret[-5:])} | "
-        f"provided={provided_sig[:16]}... | expected={expected_sig[:16]}... | "
-        f"match={hmac.compare_digest(expected_sig, provided_sig)}"
-    )
-    
     # Timing-safe comparison (prevents timing attacks)
     # Ref: https://docs.python.org/3/library/hmac.html#hmac.compare_digest
     is_valid = hmac.compare_digest(expected_sig, provided_sig)
