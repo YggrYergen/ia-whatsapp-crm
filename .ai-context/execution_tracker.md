@@ -63,47 +63,110 @@
 
 **Commits:** `fec49c7` → `0d93f94` → `030ef94` (all synced main↔desarrollo)
 
-### Day 2: Sunday April 13 — System Prompts + Escalation UX + Provisioning
+### Day 2: Saturday April 12 — INCIDENT RESPONSE + System Prompts
 
-> **Primary reference:** [Deep Dive A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md)
+#### 🔴 Block 0 (EMERGENCY): Production Incident Fix — April 12 00:47 CLT
 
-#### Step 1: Quick Wins (30 min)
-- [ ] **RC-4 Fix:** `openai_adapter.py` — Always capture `message.content`, not just when no tool_calls
-  - File: `Backend/app/infrastructure/llm_providers/openai_adapter.py:58-66`
-  - Change: `dto.content = message.content or ""` BEFORE the if/else
-- [ ] **RC-3 Fix:** `use_cases.py:64` — Remove `.lower()`, store original text
-  - Change: `raw_text_body = message.get("text", {}).get("body", "")`
-  - Only lowercase for keyword detection on L106-107
-- [ ] **RC-7 Fix:** `use_cases.py:219-242` — Comment out BUG-5 silent failure detector
-  - Add comment: `# DISABLED: 95%+ false positive rate. See BUG-5 in README.`
+> **Full incident report:** [`.ai-context/incident_report_apr12.md`](file:///d:/WebDev/IA/.ai-context/incident_report_apr12.md)
+> **Forensic artifact:** [BSUID forensic (Antigravity brain)](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/incident_report_apr12.md)
 
-#### Step 2: LLMResponse DTO Update (15 min)
-- [ ] `router.py:8-12` — Add `prompt_tokens`, `completion_tokens`, `total_tokens`, `model` fields
-- [ ] `openai_adapter.py` — Capture `response.usage` and `response.model` into DTO
+**Summary:** Cloud Run instance network death at 00:47 CLT caused a cascade of ConnectTimeout + StreamReset errors. The processing lock on contact `83dc2480` (phone 56931374341, "Rapida Media Co.") was never released because `_unset_processing()` also failed. Contact is STILL permanently locked — all real WhatsApp messages are silently dropped. Sandbox works because it bypasses the lock check (`is_simulation=True`).
 
-#### Step 3: Agentic Loop Rewrite — THE BIG ONE (3-5 hours)
-- [ ] `use_cases.py` — Replace L245-L325 with proper agentic loop
-  - Implement `MAX_TOOL_ROUNDS = 5` loop
-  - Append `role: "assistant"` message with `tool_calls` array to history
-  - For each tool result, append `role: "tool"` with `tool_call_id`
-  - Pass `tools=tools_schema` on EVERY iteration (not `tools=None`)
-  - Track `tool_choice_override` only on first round
-  - Add safety: if max rounds exceeded, generate fallback message
-  - Remove old error injection logic (L286-L323)
+**Root cause of permanence:** Block E3's `updated_at` column migration was applied to DEV but NOT PROD. The 90-second TTL safety net has **never worked in production.** The code reads `contact_data.get("updated_at")` → always `None` → treats every lock as "fresh" → silently drops every subsequent message.
 
-#### Step 4: Test with Simulation Suite (1-2 hours)
-- [ ] Run simulation scenarios from `Backend/scripts/simulation/`
-- [ ] Test multi-step conversation: "check availability" → "book the 3pm slot"
-- [ ] Test name preservation: "Soy María García" → verify NOT lowercased in DB
-- [ ] Verify tool results display naturally in responses
-- [ ] Check Sentry for errors during testing
+**5 issues discovered:**
 
-#### Step 5: Deploy to Production (30 min)
-- [ ] `git commit` with descriptive message
-- [ ] Push to `main` → auto-deploy via Cloud Build
-- [ ] Verify revision is active: `gcloud run services describe ia-backend-prod`
-- [ ] Test with real WhatsApp message to CasaVitaCure number
-- [ ] Monitor Sentry for 15 minutes
+| ID | Issue | Severity | Fix |
+|:---|:---|:---|:---|
+| **INC-1** | Contact 83dc2480 permanently locked (`is_processing_llm=true`) | 🔴 CRITICAL | `UPDATE contacts SET is_processing_llm = false WHERE id = '83dc2480-...'` |
+| **INC-2** | `updated_at` column + trigger missing from PROD contacts | 🔴 CRITICAL | Run E3 migration on PROD: `ALTER TABLE contacts ADD COLUMN updated_at...` + trigger |
+| **INC-3** | No recovery mechanism for network-death cascade | 🟡 ARCH | Lock release needs retry + finally pattern |
+| **INC-4** | `last_message_at` not being updated by orchestrator | 🟡 BUG | Should update on every processed message |
+| **INC-5** | Lock release (`_unset_processing`) has no retry | 🟡 RESILIENCE | Add 1 retry with backoff |
+
+**Checklist:**
+- [ ] Fix INC-1: Unlock contact via MCP SQL on PROD
+- [ ] Fix INC-2: Apply `updated_at` migration to PROD via MCP
+- [ ] Fix INC-3: Add retry/finally to `_unset_processing()` in `use_cases.py`
+- [ ] Fix INC-4: Update `last_message_at` in orchestrator pipeline
+- [ ] Fix INC-5: Add retry to lock release
+- [ ] Verify: Send real WhatsApp message, confirm response received
+- [ ] Add new SESSION_PROMPT rule: Migration Parity Rule (DEV+PROD always)
+- [ ] Commit + deploy to `desarrollo`, test, then merge to `main`
+
+#### Block I: Assistant Response Quality — DIAGNOSTIC FIRST, THEN FIX
+
+> ⚠️ **DO NOT IMPLEMENT ANY FIXES UNTIL THE FULL DIAGNOSIS IN PHASE 1 IS COMPLETE.**
+> We know WHAT is broken (7 bugs). We do NOT know WHY. Premature fixes risk masking the real root cause.
+> 
+> **Conversation diagnostic:** [`.ai-context/conversation_diagnostic_apr12.md`](file:///d:/WebDev/IA/.ai-context/conversation_diagnostic_apr12.md)
+> **Deep Dive A (prior analysis):** [`.ai-context/deep_dive_a_response_quality.md`](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md)
+
+**7 bugs identified from PROD conversation analysis:**
+
+| Bug | Summary | Severity |
+|:---|:---|:---|
+| **BUG-A** | Broken record loop — bot gives identical response 6+ times ignoring conversation | 🔴 CRITICAL |
+| **BUG-B** | Phase 1 skip — triaje questions bypassed, jumps straight to scheduling | 🔴 CRITICAL |
+| **BUG-C** | Context hallucination — bot references "piernas" user never mentioned | 🔴 HIGH |
+| **BUG-D** | "Confirmed" without tool call — says booking is done but may not have called `book_round_robin` | 🔴 HIGH |
+| **BUG-E** | Human agent message triggers bot response (should be ignored by bot) | 🟡 MEDIUM |
+| **BUG-F** | Double response — bot responds twice to same message ~37s apart | 🟡 MEDIUM |
+| **BUG-G** | Owner conversation skips phases with fabricated context | 🔴 HIGH |
+
+##### Phase 1: Root Cause Investigation (DO THIS FIRST — no code changes)
+
+**Track 1: History Loading** — Is the LLM receiving the full conversation history?
+- [ ] Read `use_cases.py` — trace EXACTLY what gets passed in the `messages` array to OpenAI
+- [ ] Check: How many messages are loaded? Is there a `.limit()` truncation?
+- [ ] Check: Are `human_agent` role messages included in history? (relates to BUG-E)
+- [ ] Check: Is history ordered correctly (chronological)?
+- [ ] Check: Does the system prompt get prepended correctly?
+- [ ] Add temporary logging to echo the EXACT messages array sent to OpenAI (for one test message)
+
+**Track 2: OpenAI API Contract** — Are we calling the API correctly for gpt-5.4-mini?
+- [ ] Search OpenAI docs for `gpt-5.4-mini` — message format, system prompt format, tool_calls protocol
+- [ ] Search OpenAI docs for `max_completion_tokens` behavior — does 500 tokens cause the broken record?
+- [ ] Compare our `openai_adapter.py` against the official Chat Completions API reference
+- [ ] Check: Are we sending `role: "system"` or embedding it differently?
+- [ ] Check: `temperature`, `top_p`, or other params that could cause repetitive output
+- [ ] Check: Is `parallel_tool_calls=False` causing issues with this model?
+
+**Track 3: Tool Execution** — Did `book_round_robin` and `get_merged_availability` actually fire?
+- [ ] Pull Cloud Run logs for contact 83dc2480 between 00:41-00:47 CLT April 12
+- [ ] Search for `[TOOL]` or tool execution log lines during that window
+- [ ] If tools DID fire: check return values — did the bot receive confirmation?
+- [ ] If tools DID NOT fire: this confirms BUG-1/BUG-D — the bot is claiming actions without executing tools
+
+**Track 4: System Prompt Analysis** — Does the prompt structure cause LLM misbehavior?
+- [ ] Read the full system prompt (PROD) + `INTERNAL_TOOL_RULES` concatenation
+- [ ] Check: Is the prompt so prescriptive that the LLM memorizes template outputs instead of conversing?
+- [ ] Check: Does "Ejemplo de estructura obligatoria" in Phase 2 cause verbatim parroting?
+- [ ] Cross-reference with OpenAI best practices for system prompts (web search required)
+- [ ] Evaluate: The "broken record" response IS the Phase 2 template — "nombre y apellido y día y hora"
+
+**Track 5: Message Dedup & Lock Behavior** — Why double responses?
+- [ ] Check: Is there a webhook deduplication mechanism? (Meta sometimes sends same webhook twice)
+- [ ] Check: `message_id` from Meta — are we storing it? Using it for dedup?
+- [ ] Check: Can two pipeline runs overlap if the lock isn't set fast enough?
+- [ ] Check: Do `human_agent` messages from the dashboard come through the webhook path?
+
+**Synthesis:**
+- [ ] After all 5 tracks are investigated, write a root cause summary for each of the 7 bugs
+- [ ] Classify each root cause: prompt issue / code issue / API issue / infrastructure issue
+- [ ] Propose specific fixes with evidence from the investigation
+- [ ] Present to user for approval before implementing
+
+##### Phase 2: Implement Fixes (ONLY after Phase 1 is complete and approved)
+
+- [ ] Fix each confirmed root cause (specific steps TBD from diagnosis)
+- [ ] Test on DEV via sandbox simulation
+- [ ] Verify each fix against the specific BUG it addresses
+- [ ] Deploy to PROD following Migration Parity Rule
+- [ ] Run Post-Migration Health Check
+- [ ] Send real WhatsApp test message to verify behavior
+
+
 
 ### Day 3: Sunday April 13 — Context + Dashboard + Escalation
 

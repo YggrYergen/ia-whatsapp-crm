@@ -206,6 +206,32 @@ class ProcessMessageUseCase:
                     await send_discord_alert(title=f"❌ Msg Persistence Error | Tenant {tenant.id}", description=f"Failed to persist inbound message for contact {contact_id}: {str(e)[:300]}", severity="error", error=e)
 
             # ============================================================
+            # INC-4: Update last_message_at on every processed message
+            # This field was stale since contact creation. Critical for
+            # activity tracking, stale contact detection, and analytics.
+            # Non-fatal: failure here does not block message processing.
+            # ============================================================
+            if contact_id and not is_simulation:
+                try:
+                    await db.table("contacts").update({
+                        "last_message_at": datetime.now(pytz.utc).isoformat()
+                    }).eq("id", contact_id).execute()
+                except Exception as lm_err:
+                    logger.error(f"❌ [ORCH] Failed to update last_message_at for contact {contact_id}: {lm_err}")
+                    sentry_sdk.set_context("last_message_at_update", {
+                        "contact_id": str(contact_id),
+                        "tenant_id": str(tenant.id),
+                        "patient_phone": patient_phone,
+                    })
+                    sentry_sdk.capture_exception(lm_err)
+                    await send_discord_alert(
+                        title=f"❌ last_message_at Update Failed | Tenant {tenant.id}",
+                        description=f"Contact: {contact_id}\nPhone: {patient_phone}\nError: {str(lm_err)[:300]}",
+                        severity="error", error=lm_err
+                    )
+                    # Non-fatal: continue processing
+
+            # ============================================================
             # STEP 2: Logic routing (Bot Active check)
             # ============================================================
             if not bot_active:
@@ -719,18 +745,10 @@ class ProcessMessageUseCase:
                             severity="error", error=meta_err
                         )
 
-            async def _unset_processing():
-                if contact_id:
-                    try:
-                        await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                    except Exception as unset_err:
-                        logger.error(f"❌ [ORCH] Failed to unset processing lock: {unset_err}")
-                        sentry_sdk.capture_exception(unset_err)
-                        await send_discord_alert(
-                            title=f"🔒 Processing Lock Release Failed | Tenant {tenant.id}",
-                            description=f"Contact {contact_id} may be permanently locked.\nError: {str(unset_err)[:300]}",
-                            severity="error", error=unset_err
-                        )
+            # NOTE: _unset_processing() REMOVED from here (INC-3, April 12 2026)
+            # Lock release now happens in the `finally` block at the end of the
+            # pipeline, with retry logic (INC-5). This guarantees execution even
+            # when asyncio.gather fails due to network death cascades.
 
             # ============================================================
             # Block E4: Shadow-forward conversation to admin WhatsApp
@@ -774,7 +792,6 @@ class ProcessMessageUseCase:
             await asyncio.gather(
                 _persist_reply(),
                 _send_meta(),
-                _unset_processing(),
                 _shadow_forward()
             )
             logger.info("✨ [ORCH] Done.")
@@ -791,9 +808,88 @@ class ProcessMessageUseCase:
             })
             sentry_sdk.capture_exception(e)
             await send_discord_alert(title=f"💥 AI Orchestration Fatal Crash | Tenant {tenant.id}", description=f"Pipeline exception for contact {contact_id}", error=e, severity="error")
+
+        finally:
+            # ============================================================
+            # INC-3 + INC-5: Processing lock release with retry
+            #
+            # This is the ONLY place the processing lock is released.
+            # Guarantees:
+            #   - ALWAYS runs (finally block) — even on unhandled exceptions
+            #   - 1 retry with 2s backoff — handles transient network failures
+            #   - Full Sentry + Discord alerting if BOTH attempts fail
+            #   - Discord alert includes the exact SQL for manual unlock
+            #
+            # Root cause (April 12 2026 incident):
+            #   _unset_processing() was inside asyncio.gather alongside
+            #   _send_meta(). When Cloud Run's network died, ALL gather
+            #   tasks failed simultaneously. No retry, no finally block =
+            #   contact permanently locked, all messages silently dropped.
+            # ============================================================
             if contact_id:
-                try: 
-                    await db.table("contacts").update({"is_processing_llm": False}).eq("id", contact_id).execute()
-                except Exception as cleanup_err:
-                    sentry_sdk.capture_exception(cleanup_err)
-                    await send_discord_alert(title=f"🔒 Processing Lock Cleanup Failed | Contact {contact_id}", description=f"Failed to reset is_processing_llm=False. Contact may be permanently locked: {str(cleanup_err)[:300]}", severity="error", error=cleanup_err)
+                _lock_released = False
+                for _lock_attempt in range(2):
+                    try:
+                        await db.table("contacts").update({
+                            "is_processing_llm": False
+                        }).eq("id", contact_id).execute()
+                        logger.info(
+                            f"🔓 [ORCH] Lock released for contact {contact_id} "
+                            f"(attempt {_lock_attempt + 1})"
+                        )
+                        _lock_released = True
+                        break
+                    except Exception as lock_release_err:
+                        if _lock_attempt == 0:
+                            # First attempt failed — retry after backoff
+                            logger.warning(
+                                f"⚠️ [ORCH] Lock release attempt 1 failed for contact "
+                                f"{contact_id}, retrying in 2s: {lock_release_err}"
+                            )
+                            sentry_sdk.capture_message(
+                                f"Lock release retry triggered | Contact {contact_id} | "
+                                f"Tenant {tenant.id}",
+                                level="warning"
+                            )
+                            try:
+                                await asyncio.sleep(2)
+                            except Exception:
+                                pass  # sleep failure is non-critical
+                        else:
+                            # Second attempt also failed — CRITICAL alert
+                            logger.error(
+                                f"🔴 [ORCH] Lock release FAILED after 2 attempts — "
+                                f"contact {contact_id} may be permanently locked: "
+                                f"{lock_release_err}"
+                            )
+                            sentry_sdk.set_context("lock_release_failure", {
+                                "contact_id": str(contact_id),
+                                "tenant_id": str(tenant.id) if tenant else "unknown",
+                                "patient_phone": patient_phone if 'patient_phone' in dir() else "unknown",
+                                "attempts": 2,
+                                "final_error": str(lock_release_err)[:500],
+                                "incident_ref": "INC-3/INC-5 April 12 2026",
+                            })
+                            sentry_sdk.capture_exception(lock_release_err)
+                            try:
+                                await send_discord_alert(
+                                    title=(
+                                        f"🔴 PERMANENT LOCK RISK | Contact {contact_id} "
+                                        f"| Tenant {tenant.id}"
+                                    ),
+                                    description=(
+                                        f"Lock release failed after 2 attempts.\n"
+                                        f"Contact may be permanently locked "
+                                        f"(is_processing_llm=true).\n\n"
+                                        f"MANUAL INTERVENTION REQUIRED:\n"
+                                        f"```sql\n"
+                                        f"UPDATE contacts SET is_processing_llm = false "
+                                        f"WHERE id = '{contact_id}';\n"
+                                        f"```\n\n"
+                                        f"Error: {str(lock_release_err)[:300]}"
+                                    ),
+                                    severity="error", error=lock_release_err
+                                )
+                            except Exception:
+                                # If even Discord fails, we've logged + Sentry'd above
+                                pass

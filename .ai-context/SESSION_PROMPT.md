@@ -10,11 +10,11 @@
 ## ✏️ [MODIFIABLE] §0 — Session Identity
 
 ```
-SESSION DATE:    2026-04-11
+SESSION DATE:    2026-04-12
 CURRENT SPRINT:  Sprint 1
-CURRENT DAY:     Day 1 of Sprint (Saturday — most critical day)
-SESSION GOAL:    Blocks A-H ALL COMPLETE ✅ — PROD LIVE on us-central1 — WhatsApp E2E verified
-SESSION BLOCKS:  A (✅), B (✅), C (✅), D (✅), E (✅), F (✅), G (✅), H (✅ ALL — including H4 live test)
+CURRENT DAY:     Day 2 of Sprint (Saturday)
+SESSION GOAL:    Block 0 (emergency incident fix) + Block I (diagnose + fix 7 response quality bugs)
+SESSION BLOCKS:  Block 0 (⏳ EMERGENCY), Block I (⏳ DIAGNOSTIC FIRST)
 LAST COMMIT:     030ef94 (main) — HMAC fix + debug cleanup, synced desarrollo↔main
 ```
 
@@ -104,19 +104,23 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
   - Phase 2 (lookup swap) is SEPARATE task before June 2026
 
 ### What Is Being Done RIGHT NOW (This Session)
-**ALL Blocks A-H — ✅ COMPLETE AND DEPLOYED TO PRODUCTION**
-**Observability + DB fixes — ✅ APPLIED**
 
-**Block H — Test & deploy Day 1 — ✅ ALL COMPLETE (2026-04-11)**
-- [x] **H1. Run simulation suite** — 9/9 passed
-- [x] **H2. Test strict mode** — validated
-- [x] **H3. Deploy to production** — merged, deployed, verified
-- [x] **H4. Live test** — ✅ DONE — HMAC bug found & fixed, PROD migrated to us-central1, WhatsApp messages flowing
+**🔴 Block 0 (EMERGENCY) — Production incident fix from April 12 00:47 CLT**
+- Contact 83dc2480 permanently locked (`is_processing_llm=true`) — must unlock
+- `updated_at` column missing from PROD — Block E3 TTL is dead in production
+- Lock release retry/finally pattern needed in `use_cases.py`
+- Full incident report: `.ai-context/incident_report_apr12.md`
+
+**🔴 Block I — Assistant Response Quality — DIAGNOSTIC FIRST, THEN FIX**
+- 7 bugs identified from PROD conversation analysis (`.ai-context/conversation_diagnostic_apr12.md`)
+- Phase 1: Root cause investigation across 5 tracks (history, OpenAI API, tools, prompt, dedup)
+- Phase 2: Implement fixes ONLY after diagnosis is confirmed
+- DO NOT prescribe fixes until we understand WHY each bug occurs
 
 ### What Comes Next (After This Session)
-- Day 2 (Sun): Blocks I (system prompt engineering 3-4h), J (escalation UX), K (provisioning script), L (status page)
-- Day 3 (Mon): Blocks M (fumigation tenant setup), N (E2E testing), O (Meta audit)
-- Day 4 (Tue): Blocks P (go-live 🚀), Q (post-onboarding)
+- Day 3 (Sun): Blocks J (escalation UX), K (provisioning script), L (status page)
+- Day 4 (Mon): Blocks M (fumigation tenant setup), N (E2E testing), O (Meta audit)
+- Day 5 (Tue): Blocks P (go-live 🚀), Q (post-onboarding)
 - Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking, gpt-5.4-nano testing
 
 ### Known Blockers & Risks
@@ -501,6 +505,67 @@ At the END of every session, ensure:
 - Format: `type(scope): description` (e.g., `fix(llm): migrate to gpt-5.4-mini for deprecated model`)
 - One logical change per commit — not a giant "fixed everything" commit
 - Never force-push to `main`
+
+### 🔴 Migration Parity Rule — NON-NEGOTIABLE
+
+> [!CAUTION]
+> **On April 12, 2026, a migration applied ONLY to DEV caused a production outage.** The `updated_at` column was never applied to PROD. The 90-second lock TTL safety mechanism was completely dead in production — contacts were permanently silenced with zero recovery. Full incident report: [`.ai-context/incident_report_apr12.md`](file:///d:/WebDev/IA/.ai-context/incident_report_apr12.md)
+
+**The Rule:** Every database migration, schema change, or DDL operation (columns, indexes, triggers, functions, RLS policies, ALTER TABLE) follows a **gated lifecycle**. No migration is ever "complete" until PROD is verified.
+
+**The Gated Lifecycle:**
+
+```
+ 1. Write the migration SQL
+ 2. Apply to DEV (project: nzsksjczswndjjbctasu) — iterate freely here
+ 3. Test on DEV (simulation, manual test, sandbox)
+ 4. Mark in execution_tracker.md:
+    └─ "DEV ✅ | PROD ⏳ PENDING APPROVAL"
+ 5. ── GATE: User explicitly approves promotion to PROD ──
+ 6. Apply IDENTICAL SQL to PROD (project: nemrjlimrnrusodivtoa)
+ 7. Verify on PROD (run schema verification query — see below)
+ 8. Mark in execution_tracker.md:
+    └─ "DEV ✅ | PROD ✅ VERIFIED"
+```
+
+**If the migration is experimental or potentially harmful:**
+- Stay at step 4
+- Mark: `"PROD ❌ NOT YET — REASON: [explain why it's unsafe for prod, e.g., 'destructive ALTER on live data', 'depends on code not yet deployed', 'testing edge cases first']"`
+- Only promote after user explicitly says "send it to PROD"
+- NEVER mark the task as complete while PROD is pending
+
+**Verification Query (run after EVERY migration on target env):**
+```sql
+-- Verify column exists
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = '<TABLE>' AND column_name = '<COLUMN>';
+
+-- Verify index exists
+SELECT indexname, indexdef FROM pg_indexes
+WHERE tablename = '<TABLE>' AND indexname LIKE '%<INDEX_NAME>%';
+```
+
+**Report BOTH verification results (DEV + PROD) in your response.**
+
+**Pre-Merge Drift Check (before every `desarrollo → main` merge):**
+- Query `information_schema.columns` on BOTH DEV and PROD for all tables touched in the sprint
+- If ANY column/index/trigger exists on DEV but not PROD → the merge is BLOCKED until the migration is applied or explicitly deferred with reason
+
+**Sprint 2 (planned):** Automate this with a GitHub Action that runs `supabase db dump --schema-only` on both projects and diffs them on every PR to `main`.
+
+**Sprint 3 (planned):** Add a proper staging environment (3rd Supabase project) that mirrors PROD exactly, so migrations can be tested against production-like data before promotion.
+
+### 🔴 Post-Migration Health Check
+
+**After every migration applied to PROD:**
+1. Run the verification query above — confirm the change exists
+2. Check Sentry for new errors in the next 5 minutes
+3. Check Discord alerts channel for any new alerts
+4. If the migration added a column used by existing code (e.g., `updated_at` for lock TTL), send ONE real test message through WhatsApp to confirm the code path executes without error
+5. If any check fails → immediately document in execution_tracker and alert the user
+
+**This is NOT optional.** The April 12 incident was invisible for 12+ hours because no health check was performed after the blocks were deployed.
 
 ---
 
