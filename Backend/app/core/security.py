@@ -64,7 +64,7 @@ async def verify_webhook_signature(raw_body: bytes, signature_header: str | None
     
     If META_APP_SECRET is not configured, logs a warning and returns True (soft mode).
     """
-    app_secret = settings.META_APP_SECRET
+    app_secret = (settings.META_APP_SECRET or "").strip()
     
     # Soft mode: if secret not configured, skip verification with a warning
     if not app_secret:
