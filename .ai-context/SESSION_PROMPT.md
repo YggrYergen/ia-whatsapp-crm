@@ -99,7 +99,7 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 **Blocks A, B, C, D, E, F — ✅ ALL DEPLOYED to DEV**
 **Observability + DB fixes — ✅ APPLIED**
 
-**Block G — DB: `bsuid` column + index (15 min) ← NOW**
+**Block G — BSUID Dormant Capture: DB + Backend (20 min) ← NOW** (Phase 1: store data, zero behavior change)
 **Block H — Test & deploy Day 1 (30 min)**
 
 ### What Comes Next (After This Session)
@@ -137,6 +137,8 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | Rate limit behavior | Auto-resume when limit refreshes + notify us | 2026-04-11 | Don't permanently block contacts, just throttle + alert. |
 | Config cache | 3-min TTL, ~250KB for 50 tenants | 2026-04-11 | Negligible memory vs 512MB Cloud Run limit. |
 | WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
+| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap, nullable phone, tool updates) is separate task. |
+| BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |
@@ -144,7 +146,7 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | BUG-5 | Silent Failure Detector 95%+ false positives | ✅ Disabled (DEV) | Block A3: commented L219-L242 `use_cases.py` |
 | BUG-6 | Response quality unacceptable in production | 🟡 Partial (A done) | Blocks B-D remaining: tools, adapter, agentic loop |
 | CC-1 | Codebase uses deprecated `gpt-4o-mini` | ✅ Fixed (DEV) | Block A1: 3 backend + frontend + tests |
-| CC-3 | BSUID migration needed for contact lookups | 🔴 | Block G1: add column + index |
+| CC-3 | BSUID dormant capture (Phase 1 of 2) | 🟡 Phase 1 | Block G1-G4: column + index + extract + store + backfill. Phase 2 (lookup swap) before June 2026. |
 | CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
 | CC-5 | Tool schemas missing `strict: true` | ✅ Fixed (DEV) | Block B1: all 7 tools + `parallel_tool_calls=False` |
 | CC-7 | No webhook signature verification | ✅ Fixed (DEV+PROD) | Block E1: HMAC-SHA256 middleware + Secret Manager |

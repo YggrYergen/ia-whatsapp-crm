@@ -810,7 +810,7 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 
 **Critical Corrections (v5 Research) 🔴:**
 - [ ] **CC-1:** Model string `gpt-4o-mini` DEPRECATED in 3 files. Change to `gpt-5.4-mini`. [Models](https://platform.openai.com/docs/models)
-- [ ] **CC-3:** Add `bsuid` column to contacts. BSUIDs active NOW. [Deep Dive B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md)
+- [ ] **CC-3:** BSUID dormant capture (Phase 1): add `bsuid` column, extract `user_id`, store + backfill. Phase 2 (lookup swap) before June 2026. [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md)
 - [ ] **CC-4:** Graph API `v19.0` → `v25.0`. Deprecated May 21. [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
 - [ ] **CC-5:** Add `strict: true` to all tool schemas. [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
 
@@ -856,7 +856,7 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 | **D** | **Agentic loop rewrite** (role:tool, multi-round, parallel) | **3-5 hr** | Sat | [Function Calling](https://platform.openai.com/docs/guides/function-calling) §"Multi-turn" **CRITICAL**, [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create), [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
 | **E** | **Resilience: webhook sig, rate limit, lock TTL, shadow-forward, health, cache** | **90 min** | Sat | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages), [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits), [cachetools](https://pypi.org/project/cachetools/) |
 | F | Observability: correlation IDs + Sentry tags + logging | 30 min | Sat | [asgi-correlation-id](https://github.com/snok/asgi-correlation-id), [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/), [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) |
-| G | DB: `bsuid` column + index | 15 min | Sat | [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) (BSUID format), [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) |
+| G | BSUID Dormant Capture (Phase 1): DB migration + webhook extract + store + backfill | 20 min | Sat | [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) (BSUID format), [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md), [BSUID Forensic](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/bsuid_full_forensic.md) |
 | H | Test & deploy Day 1 | 30 min | Sat PM | — |
 | **I** | **System prompt engineering** (CasaVitaCure + fumigation draft) | **3-4 hr** | Sun | [OpenAI Prompt Engineering](https://platform.openai.com/docs/guides/prompt-engineering), [Function Calling](https://platform.openai.com/docs/guides/function-calling) |
 | J | Escalation UX minimal | 2 hr | Sun | [Next.js 15](https://nextjs.org/docs) |

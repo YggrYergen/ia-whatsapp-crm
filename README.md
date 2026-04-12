@@ -98,6 +98,7 @@ FASE 0: Pre-flight ✅ ─► FASE 1: Estabilizar ✅ ─► FASE 2: Monitoreo �
 | **CC-8** | No hay rate limit LLM por contacto | 🔴 **COSTO** | Troll = muchas llamadas LLM. Max 20/hora con auto-resume. Sprint 1, Block E. |
 | **CC-9** | Lock `is_processing_llm` sin TTL | 🔴 **SILENCIA** | Timeout = contacto permanentemente silenciado. TTL 90s. Sprint 1, Block E. |
 | **CC-10** | No hay health monitoring | 🟡 | Backend puede crash sin que nadie sepa. UptimeRobot free. Sprint 1, Block E. |
+| **CC-3** | BSUID ya activo en webhooks — captura dormante requerida | 🟡 Phase 1 | Meta envía `user_id` (BSUID) desde marzo 2026. Phase 1: capturar y almacenar (0 cambio de comportamiento). Phase 2: swap de lookup antes de junio 2026. Sprint 1, Block G. [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) |
 
 ### Backlog Técnico (Sprints 1-3 — Abril 11 → Mayo 4, 2026)
 
@@ -108,6 +109,7 @@ FASE 0: Pre-flight ✅ ─► FASE 1: Estabilizar ✅ ─► FASE 2: Monitoreo �
 |:---|:---|:---|:---|
 | **S1** | 🔴 CRÍTICA | LLM | **BUG-6 Fix: Agentic Loop Rewrite** — 7 root causes. Ver `deep_dive_a_response_quality.md`. Resumen: tool results como `role:"tool"`, loop multi-ronda, preservar texto, enriquecer contexto. |
 | **S1** | 🔴 CRÍTICA | LLM | **BUG-5 Disable** — Comentar L219-L242 en `use_cases.py` |
+| **S1** | 🟡 Alta | DB+Backend | **BSUID Dormant Capture (Phase 1)** — Add `bsuid` column, extract `user_id` from webhooks, store on new contacts, backfill existing. Zero behavior change. Phase 2 (lookup swap) before June 2026. Block G. |
 | **S1** | 🔴 CRÍTICA | Meta | **WhatsApp # Setup 2do cliente** — Comprar SIM, registrar en WABA, configurar display name |
 | **S1** | 🔴 CRÍTICA | Supabase | **Tenant + User setup 2do cliente** — Insert tenant, crear usuario auth, mapping |
 | **S1** | 🔴 Alta | Dashboard | **Dashboard MVP de-mock** — Blocks 1-2 con data real. Ver `deep_dive_c_dashboard_ux.md` |

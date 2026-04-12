@@ -1,6 +1,7 @@
 import asyncio
 from supabase import AsyncClient
 import json
+import re
 import pytz
 from datetime import datetime
 from app.core.models import TenantContext
@@ -90,6 +91,28 @@ class ProcessMessageUseCase:
             patient_phone = message.get("from")
             text_body = message.get("text", {}).get("body", "")
             
+            # ============================================================
+            # Block G2: BSUID Dormant Capture — extract from webhook payload
+            # As of April 2026, BSUIDs are present in ALL webhook payloads.
+            # Format: CC.alphanumeric (e.g., CL.1A2B3C4D5E6F7890)
+            # Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks
+            # ⚠️ DORMANT: extracted and stored, but NOT used for contact lookup
+            # ============================================================
+            raw_bsuid = message.get("user_id")
+            bsuid = None
+            if raw_bsuid and isinstance(raw_bsuid, str) and re.match(r'^[A-Z]{2}\..+$', raw_bsuid):
+                bsuid = raw_bsuid
+                logger.info(f"📎 [ORCH] BSUID extracted: {bsuid[:20]}...")
+            elif raw_bsuid:
+                # user_id present but doesn't match BSUID format — log for investigation
+                logger.warning(f"⚠️ [ORCH] Unexpected user_id format: '{str(raw_bsuid)[:50]}'")
+                sentry_sdk.set_context("bsuid_unexpected", {
+                    "raw_value": str(raw_bsuid)[:100],
+                    "tenant_id": str(tenant.id),
+                    "patient_phone": patient_phone,
+                })
+                sentry_sdk.capture_message("Unexpected user_id format in webhook", level="warning")
+            
             logger.info(f"📩 [ORCH] Message from {patient_phone}: '{text_body}'")
 
             if not tenant.is_active:
@@ -121,21 +144,41 @@ class ProcessMessageUseCase:
                 contact_role = contact_data.get("role", "cliente")
                 is_processing = contact_data.get("is_processing_llm", False)
                 logger.info(f"✅ [ORCH] Contact found: {contact_id} | BotActive={bot_active} | Processing={is_processing}")
+                
+                # ============================================================
+                # Block G4: BSUID Backfill — enrich existing contacts
+                # If we have a valid BSUID and the contact doesn't have one yet,
+                # store it. This is non-blocking — failure doesn't affect flow.
+                # ============================================================
+                if bsuid and not contact_data.get("bsuid"):
+                    try:
+                        await db.table("contacts").update({"bsuid": bsuid}).eq("id", contact_id).execute()
+                        logger.info(f"📎 [ORCH] BSUID backfilled for contact {contact_id}")
+                    except Exception as bf_err:
+                        logger.warning(f"⚠️ [ORCH] BSUID backfill failed (non-blocking): {bf_err}")
+                        sentry_sdk.capture_exception(bf_err)
+                        await send_discord_alert(
+                            title=f"⚠️ BSUID Backfill Failed | Tenant {tenant.id}",
+                            description=f"Contact: {contact_id}\nBSUID: {bsuid[:20]}...\nError: {str(bf_err)[:300]}",
+                            severity="warning", error=bf_err
+                        )
             else:
                 logger.info("🆕 [ORCH] Creating new contact...")
                 is_processing = False
                 try:
                     profile_name = changes.get("contacts", [{}])[0].get("profile", {}).get("name", "Lead")
+                    # Block G3: Include bsuid in new contact creation (nullable)
                     new_contact = await db.table("contacts").insert({
                         "tenant_id": tenant.id,
                         "phone_number": patient_phone,
                         "name": profile_name,
-                        "bot_active": True
+                        "bot_active": True,
+                        "bsuid": bsuid,  # Block G3: dormant capture — NULL if absent/invalid
                     }).execute()
                     if new_contact.data:
                         contact_id = new_contact.data[0]["id"]
                         contact_data = new_contact.data[0]
-                        logger.info(f"✅ [ORCH] New contact created: {contact_id}")
+                        logger.info(f"✅ [ORCH] New contact created: {contact_id}{' with BSUID' if bsuid else ''}")
                 except Exception as e:
                     logger.error(f"❌ [ORCH] Failed creating contact: {e}")
                     sentry_sdk.capture_exception(e)

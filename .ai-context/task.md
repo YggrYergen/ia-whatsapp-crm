@@ -779,12 +779,73 @@ Docs consulted:
   - Fallback filter in case `asgi-correlation-id` not installed
   - 📚 [asgi-correlation-id GitHub](https://github.com/snok/asgi-correlation-id) — logging config example
 
-#### Block G: Database (15 min)
-- [ ] **G1. Add `bsuid` column** to contacts table
-  - `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bsuid text;`
-  - `CREATE INDEX IF NOT EXISTS idx_contacts_bsuid ON contacts(bsuid) WHERE bsuid IS NOT NULL;`
+#### Block G: BSUID Dormant Capture — Phase 1 (20 min)
+
+> **Strategy: DORMANT MODE.** This block captures and stores BSUID data from webhooks but changes ZERO lookup behavior. All contact resolution remains phone-first. Phase 2 (lookup swap + `phone_number` nullable) is a separate task before June 2026.
+> 
+> **Full forensic analysis:** See [BSUID Full Forensic](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/bsuid_full_forensic.md) — traces 40+ touch points across DB, backend, and frontend.
+
+- [ ] **G1. DB Migration — Add `bsuid` column + index** (both DEV and PROD)
+  - Run via `apply_migration` MCP tool on BOTH databases:
+  - ```sql
+    ALTER TABLE contacts ADD COLUMN IF NOT EXISTS bsuid text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_tenant_bsuid 
+      ON contacts(tenant_id, bsuid) WHERE bsuid IS NOT NULL;
+    ```
+  - ⚠️ This is a metadata-only operation — microseconds, no lock, no table rewrite
+  - ⚠️ `phone_number NOT NULL` stays unchanged — all current users have phones
+  - ⚠️ Existing `UNIQUE(tenant_id, phone_number)` stays unchanged
   - 📚 [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) — BSUID format
   - 📚 [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) — BSUID webhook payload example
+
+- [ ] **G2. Extract BSUID from webhook payload** in `use_cases.py`
+  - File: `Backend/app/modules/communication/use_cases.py`
+  - After line ~90 (`patient_phone = message.get("from")`), add:
+  - ```python
+    # BSUID Dormant Capture (Phase 1) — extract but don't change lookup behavior
+    import re
+    raw_bsuid = message.get("user_id")
+    bsuid = raw_bsuid if raw_bsuid and re.match(r'^[A-Z]{2}\..+$', raw_bsuid) else None
+    ```
+  - ⚠️ Format validation prevents storing garbage if Meta sends unexpected `user_id` values
+  - ⚠️ BSUID format: `CC.alphanumeric` (e.g., `CL.1A2B3C4D5E6F7890`)
+
+- [ ] **G3. Store BSUID on new contact creation** in `use_cases.py`
+  - File: `Backend/app/modules/communication/use_cases.py`
+  - At line ~131 (new contact insert dict), add `"bsuid": bsuid` field:
+  - ```python
+    new_contact = await db.table("contacts").insert({
+        "tenant_id": tenant.id,
+        "phone_number": patient_phone,
+        "name": profile_name,
+        "bot_active": True,
+        "bsuid": bsuid,  # ← NEW: dormant capture
+    }).execute()
+    ```
+  - ⚠️ `bsuid` is nullable — if `user_id` was absent or invalid format, stores NULL (safe)
+
+- [ ] **G4. Backfill BSUID on existing contacts** in `use_cases.py`
+  - File: `Backend/app/modules/communication/use_cases.py`
+  - After successful phone-based contact lookup (~line 115), add backfill:
+  - ```python
+    # BSUID Dormant Capture — backfill existing contacts
+    if contact_data and bsuid and not contact_data.get("bsuid"):
+        try:
+            await db.table("contacts").update({"bsuid": bsuid}).eq("id", contact_data["id"]).execute()
+            logger.info(f"📎 [ORCH] BSUID backfilled for contact {contact_data['id']}")
+        except Exception as bf_err:
+            logger.warning(f"[ORCH] BSUID backfill failed (non-blocking): {bf_err}")
+    ```
+  - ⚠️ Non-blocking — backfill failure does NOT affect message processing
+  - ⚠️ Only backfills if contact has no BSUID yet (idempotent)
+
+> **Phase 2 (SEPARATE TASK — before June 2026 due to meta api transition DO NOT DO IT NOW!):**
+> - Swap contact lookup to BSUID-first, phone-fallback
+> - Relax `phone_number NOT NULL` → nullable
+> - Update `UNIQUE(tenant_id, phone_number)` to partial index
+> - Update tools (`tools.py`) to use `contact_id` instead of `phone_number` for queries
+> - Update frontend display for BSUID-only contacts (name fallback)
+> - Update simulation suite with BSUID test scenarios
 
 #### Block H: Test & Deploy Day 1 (30 min)
 - [ ] **H1. Run simulation suite** — all 9 scenarios must pass

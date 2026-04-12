@@ -111,7 +111,67 @@ def resolve_contact(webhook_data):
     return await create_contact(phone=phone if not is_bsuid else None, bsuid=bsuid)
 ```
 
----
+### Dormant Mode Implementation — Phase 1 (April 2026)
+
+> **Forensic analysis completed 2026-04-11.**
+> See [Full BSUID Forensic Report](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/bsuid_full_forensic.md) for the complete 40+ touch-point trace.
+
+**Decision:** Implement as "dormant capture" — store BSUID data from webhooks NOW, but change ZERO contact resolution behavior. All lookups remain phone-first.
+
+**What Phase 1 changes (4 code touches + 1 migration):**
+
+| Change | File | Risk |
+|:---|:---|:---|
+| Add `bsuid TEXT NULL` column + `UNIQUE(tenant_id, bsuid)` partial index | DB migration (both DEV + PROD) | Near zero — metadata-only ALTER TABLE |
+| Extract `bsuid = message.get("user_id")` with format validation | `use_cases.py:~L90` | Zero — additive `.get()`, no existing logic touched |
+| Add `"bsuid": bsuid` to new contact insert | `use_cases.py:~L131` | Near zero — nullable column, NULL if absent |
+| Backfill BSUID on existing contacts found by phone | `use_cases.py:~L115` | Near zero — non-blocking, idempotent, wrapped in try/except |
+
+**What Phase 1 does NOT change:**
+- ❌ Contact lookup order (remains phone-only)
+- ❌ Reply routing (`to=patient_phone`)
+- ❌ Tool queries (all still `.eq("phone_number", ...)`) 
+- ❌ Rate limiter key (still phone-based)
+- ❌ Frontend code (zero changes)
+- ❌ RLS policies (row-level, not column-level)
+- ❌ Realtime subscriptions (table-level listeners)
+- ❌ Simulation suite (absence of `user_id` doesn't break anything)
+
+### Database Constraints to Know (verified via MCP 2026-04-11)
+
+| Constraint | Type | Dormant Impact | Phase 2 Impact |
+|:---|:---|:---|:---|
+| `phone_number NOT NULL` | Column constraint | 🟢 Unaffected — all current users have phones | 🔴 Must relax to NULLABLE when users can hide phone |
+| `UNIQUE(tenant_id, phone_number)` | Unique index | 🟢 Unaffected | 🟡 Must become partial: `WHERE phone_number IS NOT NULL` |
+| `contacts_pkey (id uuid)` | Primary key | 🟢 UUID-based, not phone-based | 🟢 No change needed |
+| `contacts_tenant_id_fkey` | Foreign key | 🟢 References tenants(id) | 🟢 No change needed |
+
+### 7 Breaking Points (Current Codebase — Will Fail in June 2026 WITHOUT Phase 2)
+
+1. **`use_cases.py:L90`** — `patient_phone = message.get("from")` — assumes `from` is always a phone
+2. **`use_cases.py:L102`** — `.eq("phone_number", patient_phone)` — phone-only lookup, misses BSUID users
+3. **`use_cases.py:L131`** — `"phone_number": patient_phone` — stores BSUID in phone column
+4. **`tools.py:L265`** — `.eq("phone_number", patient_phone)` — escalation silently fails
+5. **`tools.py:L335`** — `.eq("phone_number", phone)` — scoring silently fails
+6. **`main.py:L63`** — `.eq("phone_number", patient_phone)` — frontend send fails
+7. **`meta_graph_api.py:L32`** — `to=patient_phone` — actually works (API accepts BSUIDs), but semantics are wrong
+
+### Activation — Phase 2 (SEPARATE TASK — Must Deploy Before June 2026)
+
+When Meta enables username hiding (~June 2026), `message["from"]` may contain a BSUID instead of a phone number. Phase 2 must be deployed BEFORE that happens.
+
+**Phase 2 changes:**
+1. Swap contact lookup: BSUID-first → phone-fallback (using the data Phase 1 pre-stored)
+2. Relax `phone_number NOT NULL` → `NULLABLE`
+3. Update `UNIQUE(tenant_id, phone_number)` to partial index (`WHERE phone_number IS NOT NULL`)
+4. Add `UNIQUE(tenant_id, bsuid)` if not already present
+5. Update all tool queries from `.eq("phone_number", ...)` → `.eq("id", contact_id)` 
+6. Update frontend display: `contact.name || contact.phone_number || contact.bsuid`
+7. Update simulation suite with BSUID-only test scenarios
+8. BSUID format detection utility: `re.match(r'^[A-Z]{2}\..+$', identifier)`
+
+> **Phase 2 is dramatically easier if Phase 1 is done:** every existing contact will already have their BSUID stored from ongoing webhook traffic.
+
 
 ## 2. WhatsApp Pricing (CORRECTED — Service = FREE)
 
@@ -307,7 +367,8 @@ POST https://graph.facebook.com/v25.0/me/messages?access_token=<TOKEN>
 | Task | Effort | Docs |
 |:---|:---|:---|
 | Add `bsuid` column to contacts | 2 min | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
-| Update webhook handler to store BSUIDs | 15 min | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
+| Extract + store BSUIDs from webhooks (dormant capture) | 15 min | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
+| Backfill existing contacts' BSUIDs | 3 min | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
 | Verify webhook signature implementation | 15 min | [Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started) |
 | Audit API version strings (→ v25.0) | 10 min | [Changelog](https://developers.facebook.com/docs/graph-api/changelog) |
 | Add WhatsApp error code handler | 30 min | [Error Codes](https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes/) |
@@ -334,7 +395,7 @@ POST https://graph.facebook.com/v25.0/me/messages?access_token=<TOKEN>
 
 | Risk | Mitigation | Verify Against |
 |:---|:---|:---|
-| BSUID breaks contact lookup | Add `bsuid` column NOW | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
+| BSUID breaks contact lookup (June 2026) | Phase 1: dormant capture NOW. Phase 2: lookup swap before June. | [Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
 | IG window closes, can't follow up | Collect phone/email as backup | [IG Messaging](https://developers.facebook.com/docs/messenger-platform/instagram) |
 | Graph API v19 deprecated May 21 | Use v25.0 everywhere | [Changelog](https://developers.facebook.com/docs/graph-api/changelog) |
 | mTLS cert broke webhooks | Verify Cloud Run TLS handling | [Changelog](https://developers.facebook.com/docs/graph-api/changelog) |
