@@ -998,3 +998,4 @@ Docs consulted:
 - [ ] **U-5: Fumigation prompt draft** — Need onboarding checklist + first prompt version.
 - [ ] **U-6: Merge rapid-fire fix to PROD** — Dev only right now. Needs user approval to merge.
 - [ ] **U-8: Prompt Phase 1 skip test** — Verify prompt v2.1 actually enforces triaje before scheduling.
+- [ ] **U-14: Booking flow repetition loop** — Assistant re-asks info already provided and demands multiple confirmations before booking. Extremely bothersome. Root cause unclear: prompt, model tool execution pattern, history, or agentic loop. Must check OpenAI docs on tool calling patterns for gpt-5.4-mini.
