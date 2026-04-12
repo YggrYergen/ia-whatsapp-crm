@@ -85,14 +85,21 @@
 | **INC-5** | Lock release (`_unset_processing`) has no retry | 🟡 RESILIENCE | Add 1 retry with backoff |
 
 **Checklist:**
-- [ ] Fix INC-1: Unlock contact via MCP SQL on PROD
-- [ ] Fix INC-2: Apply `updated_at` migration to PROD via MCP
-- [ ] Fix INC-3: Add retry/finally to `_unset_processing()` in `use_cases.py`
-- [ ] Fix INC-4: Update `last_message_at` in orchestrator pipeline
-- [ ] Fix INC-5: Add retry to lock release
-- [ ] Verify: Send real WhatsApp message, confirm response received
-- [ ] Add new SESSION_PROMPT rule: Migration Parity Rule (DEV+PROD always)
-- [ ] Commit + deploy to `desarrollo`, test, then merge to `main`
+- [x] Fix INC-1: Unlock contact via MCP SQL on PROD — `is_processing_llm` set to false (verified)
+- [x] Fix INC-2: Apply `updated_at` migration to PROD via MCP — column + trigger verified on PROD
+- [x] Fix INC-3: Lock release moved to `finally` block — always runs even on crash
+- [x] Fix INC-4: `last_message_at` now updated on every inbound message
+- [x] Fix INC-5: Lock release has 1 retry + 2s backoff + Sentry/Discord alerts
+- [ ] Verify: Send real WhatsApp message, confirm response received ← **WAITING FOR PROD DEPLOY (~3min)**
+- [x] Add SESSION_PROMPT rule: Migration Parity Rule already in §8 (added in previous session)
+- [x] Commit `3c9d9ed` → pushed to `desarrollo` + merged to `main` (fast-forward)
+
+**Migration Parity Status:**
+| Migration | DEV | PROD |
+|:---|:---|:---|
+| `updated_at` column on contacts | ✅ | ✅ VERIFIED |
+| `contacts_updated_at_trigger` | ✅ | ✅ VERIFIED |
+| Schema drift check (13 columns) | ✅ | ✅ PASS |
 
 #### Block I: Assistant Response Quality — DIAGNOSTIC FIRST, THEN FIX
 
@@ -114,57 +121,54 @@
 | **BUG-F** | Double response — bot responds twice to same message ~37s apart | 🟡 MEDIUM |
 | **BUG-G** | Owner conversation skips phases with fabricated context | 🔴 HIGH |
 
-##### Phase 1: Root Cause Investigation (DO THIS FIRST — no code changes)
+##### Phase 1: Root Cause Investigation ✅ COMPLETE
 
-**Track 1: History Loading** — Is the LLM receiving the full conversation history?
-- [ ] Read `use_cases.py` — trace EXACTLY what gets passed in the `messages` array to OpenAI
-- [ ] Check: How many messages are loaded? Is there a `.limit()` truncation?
-- [ ] Check: Are `human_agent` role messages included in history? (relates to BUG-E)
-- [ ] Check: Is history ordered correctly (chronological)?
-- [ ] Check: Does the system prompt get prepended correctly?
-- [ ] Add temporary logging to echo the EXACT messages array sent to OpenAI (for one test message)
+**All 5 tracks investigated. 7 root causes identified and documented.**
 
-**Track 2: OpenAI API Contract** — Are we calling the API correctly for gpt-5.4-mini?
-- [ ] Search OpenAI docs for `gpt-5.4-mini` — message format, system prompt format, tool_calls protocol
-- [ ] Search OpenAI docs for `max_completion_tokens` behavior — does 500 tokens cause the broken record?
-- [ ] Compare our `openai_adapter.py` against the official Chat Completions API reference
-- [ ] Check: Are we sending `role: "system"` or embedding it differently?
-- [ ] Check: `temperature`, `top_p`, or other params that could cause repetitive output
-- [ ] Check: Is `parallel_tool_calls=False` causing issues with this model?
+| Bug | Root Cause | Classification | Fix |
+|:---|:---|:---|:---|
+| BUG-A | `max_completion_tokens=500` truncates responses; "obligatoria" template parroting | API + Prompt | ✅ Step 1: 500→2048 + penalties |
+| BUG-B | No phase enforcement in prompt; LLM freely skips Phase 1 | Prompt design | ⏳ Step 3: prompt rewrite |
+| BUG-C | Template contains "piernas" → hallucinated patient context | Prompt design | ⏳ Step 3: prompt rewrite |
+| BUG-D | Template responses bypass tool calling + truncation corrupts tool JSON | API + Prompt | ✅ Step 1: finish_reason + circuit breaker |
+| BUG-E | `human_agent` mapped to `role:"assistant"` — LLM confused own identity | Code bug | ✅ Step 2: role:"user" + name:"agente_humano" |
+| BUG-F | No webhook dedup (wamid not stored) + atomic lock race condition | Code gap | ⏳ Step 4: wamid + RPC lock |
+| BUG-G | Same root as BUG-B + BUG-C combined | Prompt design | ⏳ Step 3: prompt rewrite |
 
-**Track 3: Tool Execution** — Did `book_round_robin` and `get_merged_availability` actually fire?
-- [ ] Pull Cloud Run logs for contact 83dc2480 between 00:41-00:47 CLT April 12
-- [ ] Search for `[TOOL]` or tool execution log lines during that window
-- [ ] If tools DID fire: check return values — did the bot receive confirmation?
-- [ ] If tools DID NOT fire: this confirms BUG-1/BUG-D — the bot is claiming actions without executing tools
+**Critical blind spots caught by second-agent review:**
+1. 🔴 human_agent Option A (skip) would BREAK escalation — fixed with Option C (role:"user")
+2. 🔴 max_completion_tokens truncates tool_calls JSON too — raised to 2048 + circuit breaker
+3. 🔴 wamid column migration MUST happen before code deployment
 
-**Track 4: System Prompt Analysis** — Does the prompt structure cause LLM misbehavior?
-- [ ] Read the full system prompt (PROD) + `INTERNAL_TOOL_RULES` concatenation
-- [ ] Check: Is the prompt so prescriptive that the LLM memorizes template outputs instead of conversing?
-- [ ] Check: Does "Ejemplo de estructura obligatoria" in Phase 2 cause verbatim parroting?
-- [ ] Cross-reference with OpenAI best practices for system prompts (web search required)
-- [ ] Evaluate: The "broken record" response IS the Phase 2 template — "nombre y apellido y día y hora"
+##### Phase 2: Fix Implementation
 
-**Track 5: Message Dedup & Lock Behavior** — Why double responses?
-- [ ] Check: Is there a webhook deduplication mechanism? (Meta sometimes sends same webhook twice)
-- [ ] Check: `message_id` from Meta — are we storing it? Using it for dedup?
-- [ ] Check: Can two pipeline runs overlap if the lock isn't set fast enough?
-- [ ] Check: Do `human_agent` messages from the dashboard come through the webhook path?
+**Step 1: openai_adapter.py ✅ DEPLOYED TO PROD** (commit `8808a28`)
+- [x] max_completion_tokens: 500 → 2048
+- [x] frequency_penalty: 0.3, presence_penalty: 0.3
+- [x] finish_reason checked → was_truncated flag in LLMResponse DTO
+- [x] Sentry + Discord instrumentation on truncation events
 
-**Synthesis:**
-- [ ] After all 5 tracks are investigated, write a root cause summary for each of the 7 bugs
-- [ ] Classify each root cause: prompt issue / code issue / API issue / infrastructure issue
-- [ ] Propose specific fixes with evidence from the investigation
-- [ ] Present to user for approval before implementing
+**Step 2: use_cases.py ✅ DEPLOYED TO PROD** (commit `8808a28`)
+- [x] human_agent → role:"user" + name:"agente_humano" (NOT skip)
+- [x] Removed [(Log): timestamp] prefix from user messages
+- [x] Truncation circuit breaker: if was_truncated + has_tool_calls → discard + fallback
 
-##### Phase 2: Implement Fixes (ONLY after Phase 1 is complete and approved)
+**Step 3: System prompt rewrite ⏳ PENDING USER APPROVAL**
+- [ ] Draft new prompt (remove "obligatoria", add phase gate, remove "piernas" template)
+- [ ] Apply to DEV tenant first → sandbox test
+- [ ] Present to user for review
+- [ ] Apply to PROD after approval (Migration Parity Rule)
 
-- [ ] Fix each confirmed root cause (specific steps TBD from diagnosis)
-- [ ] Test on DEV via sandbox simulation
-- [ ] Verify each fix against the specific BUG it addresses
-- [ ] Deploy to PROD following Migration Parity Rule
-- [ ] Run Post-Migration Health Check
-- [ ] Send real WhatsApp test message to verify behavior
+**Step 4: Webhook dedup + atomic lock ⏳ PENDING (requires migration)**
+- [ ] Create `acquire_processing_lock` RPC (DEV → verify → PROD)
+- [ ] Add `wamid TEXT UNIQUE` column to messages (DEV → verify → PROD)
+- [ ] Deploy code that uses wamid AFTER both migrations on PROD
+- [ ] Verify dedup with rapid-fire test
+
+**Schema Drift (messages.note):**
+| Column | DEV | PROD | Status |
+|:---|:---|:---|:---|
+| messages.note | ✅ exists | ❌ missing | ⚠️ No code references — safe for now |
 
 
 
