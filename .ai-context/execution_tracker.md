@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-13 01:50 CLT
+> **Last Updated:** 2026-04-12 22:10 CLT
 
 ---
 
@@ -202,10 +202,10 @@
 | All contacts cols (13) | ✅ | ✅ | ✅ MATCH |
 | All messages cols (7) | ✅ | ✅ | ✅ MATCH |
 
-#### Day 2 Unsolved Issues — Status Update (2026-04-13 01:50 CLT)
+#### Day 2 Unsolved Issues — Status Update (2026-04-12 22:10 CLT)
 
-> **Last updated:** 2026-04-13 01:50 CLT  
-> Most issues resolved during Apr 12-13 frontend session. See `task_v2.md` for authoritative status.
+> **Last updated:** 2026-04-12 22:10 CLT  
+> Most issues resolved during Apr 12 frontend session. See `task_v2.md` for authoritative status.
 
 **🔴 RESOLVED**
 
@@ -230,7 +230,7 @@
 
 ### Day 2 (Evening) / Day 3 (Early Morning): Apr 12-13 — Frontend Overhaul + Mobile Stabilization
 
-> **Session** (2ae8123c) — Multiple passes, ~22:00 Apr 12 → 01:50 Apr 13 CLT
+> **Session** (2ae8123c) — Multiple passes, started ~16:00 Apr 12 CLT
 
 #### Block J: Escalation UX ✅ COMPLETE
 - [x] **J1.** Visual badge on ContactList for `bot_active=false` contacts
@@ -278,6 +278,12 @@
 **Commits:** Multiple on `desarrollo` branch. Build verified (0 errors).
 
 #### Pending for Day 3 Continuation
+
+- [ ] Test on actual phone browser (pending merge to main)
+- [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
+- [ ] **Step 6:** Enriched Patient Context — `use_cases.py` richer context block (name, phone, role, created_at, notes, tags)
+- [ ] Pre-merge drift check per §8
+- [ ] Merge `desarrollo` → `main` and verify PROD deployment
 
 ### Day 4: Monday April 14 — Fumigation Tenant Setup
 
