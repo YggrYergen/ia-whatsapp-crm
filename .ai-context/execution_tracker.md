@@ -174,7 +174,7 @@
 - [x] Impact: every request was doubling (fail→retry) + spamming Discord (7+ alerts per test)
 - [x] Fix: removed entire experiment (commit `627c93e`). Zero quality impact — param never worked with tools
 - [ ] Sprint 2: Migrate adapter to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively
-- [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/reasoning_effort_diagnostic.md)
+- [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
 
 **Step 5b: Rapid-fire message batching ✅ MERGED TO PROD** (commit `1f7b250` → merged `73789ef`)
 - [x] Diagnosed: messages 2+ in rapid-fire sequences were persisted to DB but silently dropped from LLM context
