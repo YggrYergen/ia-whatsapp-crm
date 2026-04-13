@@ -217,7 +217,7 @@ export default function ContactList() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {isEscalated ? (
-                                                <Badge className="bg-rose-100 text-rose-700 border-none text-[10px] px-1.5 py-0 font-bold h-5 hover:bg-rose-100 flex-shrink-0">
+                                                <Badge className="bg-rose-100 text-rose-700 border-none text-[10px] px-2.5 py-0.5 font-bold h-auto hover:bg-rose-100 flex-shrink-0 rounded-full">
                                                     ⚠️ Requiere atención
                                                 </Badge>
                                             ) : (

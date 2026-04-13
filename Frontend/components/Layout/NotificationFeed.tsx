@@ -61,8 +61,9 @@ export default function NotificationFeed() {
             <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[100]" onClick={() => setIsNotificationFeedOpen(false)} />
             
             <div className={`
-                fixed top-0 right-0 h-full w-full md:w-[400px] bg-white shadow-2xl z-[101] border-l border-slate-200
+                fixed top-0 right-0 w-full md:w-[400px] bg-white shadow-2xl z-[101] border-l border-slate-200
                 flex flex-col animate-slide-in-right
+                h-[calc(100%-68px)] md:h-full bottom-[68px] md:bottom-0
             `}>
                 <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">

@@ -84,48 +84,47 @@ export default function PacientesView() {
     }
 
     return (
-        <div className="flex-1 overflow-y-auto bg-slate-50 p-6 lg:p-10 w-full transition-all pb-[100px] md:pb-10 fixed inset-0 md:static top-[72px] bottom-0 z-40 md:z-0">
-            <div className="max-w-6xl mx-auto space-y-6">
-                <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+        <div className="flex-1 overflow-y-auto bg-[#0a0e1a] w-full transition-all pb-24 md:pb-10">
+            <div className="max-w-6xl mx-auto p-4 md:p-10 space-y-5">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3">
                     <div>
-                        <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Base de Pacientes CRM</h2>
-                        <p className="text-slate-500 mt-1">
-                            {loading ? 'Cargando...' : `${totalCount} contacto${totalCount !== 1 ? 's' : ''} registrado${totalCount !== 1 ? 's' : ''}`}
+                        <h2 className="text-lg md:text-2xl font-black text-white tracking-tight">Base de Pacientes</h2>
+                        <p className="text-xs md:text-sm text-slate-500 mt-0.5 font-medium">
+                            {loading ? 'Cargando...' : `${totalCount} contacto${totalCount !== 1 ? 's' : ''}`}
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        <div className="relative">
-                            <button
-                                onClick={() => setFilterStatus(f => f === null ? 'active' : f === 'active' ? 'paused' : null)}
-                                className={`border font-bold py-2 px-4 rounded-lg shadow-sm flex items-center gap-2 transition-colors
-                                    ${filterStatus ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                            >
-                                <Filter size={16} />
-                                {filterStatus === 'active' ? 'IA Activa' : filterStatus === 'paused' ? 'IA Pausada' : 'Filtrar'}
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => setFilterStatus(f => f === null ? 'active' : f === 'active' ? 'paused' : null)}
+                            className={`border font-bold py-2 px-3 md:px-4 rounded-xl text-xs flex items-center gap-1.5 transition-colors
+                                ${filterStatus ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}
+                        >
+                            <Filter size={14} />
+                            {filterStatus === 'active' ? 'IA Activa' : filterStatus === 'paused' ? 'IA Pausada' : 'Filtrar'}
+                        </button>
                     </div>
                 </div>
 
                 {/* Search bar */}
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex gap-4">
+                <div className="bg-white/[0.03] border border-white/[0.06] p-3 md:p-4 rounded-2xl backdrop-blur-xl flex gap-3">
                     <div className="relative flex-1">
-                        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => { setSearchQuery(e.target.value); setPage(0) }}
                             placeholder="Buscar por nombre o teléfono..."
-                            className="w-full bg-slate-50 border-none rounded-xl pl-10 pr-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium"
+                            className="w-full bg-white/5 border border-white/[0.06] rounded-xl pl-9 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm font-medium text-white placeholder:text-slate-600 transition-all"
                         />
                     </div>
                 </div>
 
                 {/* Data Table */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden backdrop-blur-xl">
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[640px]">
                         <thead>
-                            <tr className="bg-slate-50 text-slate-500 text-xs uppercase font-bold tracking-wider border-b border-slate-200">
+                            <tr className="bg-white/[0.03] text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b border-white/[0.06]">
                                 <th className="p-4 pl-6">Paciente / Lead</th>
                                 <th className="p-4">Contacto</th>
                                 <th className="p-4">Estado</th>
@@ -133,7 +132,7 @@ export default function PacientesView() {
                                 <th className="p-4">Agente IA</th>
                             </tr>
                         </thead>
-                        <tbody className="text-sm font-medium text-slate-800">
+                        <tbody className="text-sm font-medium text-slate-300">
                             {loading ? (
                                 <tr>
                                     <td colSpan={5} className="p-12 text-center">
@@ -152,9 +151,9 @@ export default function PacientesView() {
                             ) : contacts.map((contact) => {
                                 const status = getStatusLabel(contact)
                                 return (
-                                    <tr key={contact.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer group">
-                                        <td className="p-4 pl-6 flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                                    <tr key={contact.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors cursor-pointer group">
+                                        <td className="p-3 md:p-4 pl-4 md:pl-6 flex items-center gap-3">
+                                            <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
                                                 {(contact.name || '?').charAt(0).toUpperCase()}
                                             </div>
                                             <div>
@@ -162,9 +161,9 @@ export default function PacientesView() {
                                                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{contact.role || 'cliente'}</span>
                                             </div>
                                         </td>
-                                        <td className="p-4 text-slate-500 font-mono text-xs">{contact.phone_number}</td>
-                                        <td className="p-4">
-                                            <span className={`px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider ${status.color}`}>
+                                        <td className="p-3 md:p-4 text-slate-500 font-mono text-[11px]">{contact.phone_number}</td>
+                                        <td className="p-3 md:p-4">
+                                            <span className={`px-2 py-0.5 rounded-full text-[9px] uppercase font-bold tracking-wider ${status.color}`}>
                                                 {status.label}
                                             </span>
                                         </td>
@@ -180,9 +179,9 @@ export default function PacientesView() {
                             })}
                         </tbody>
                     </table>
+                    </div>
 
-                    {/* Pagination */}
-                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                    <div className="p-3 md:p-4 bg-white/[0.02] border-t border-white/[0.06] flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                             {totalCount > 0 ? `Mostrando ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, totalCount)} de ${totalCount.toLocaleString()}` : 'Sin datos'}
                         </span>
@@ -191,7 +190,7 @@ export default function PacientesView() {
                                 <button
                                     onClick={() => setPage(p => Math.max(0, p - 1))}
                                     disabled={page === 0}
-                                    className="p-2 rounded-lg border border-slate-200 bg-white disabled:opacity-30 hover:bg-slate-50 transition-colors"
+                                    className="p-2 rounded-lg border border-white/10 bg-white/5 disabled:opacity-30 hover:bg-white/10 transition-colors text-slate-400"
                                 >
                                     <ChevronLeft size={16} />
                                 </button>
@@ -201,7 +200,7 @@ export default function PacientesView() {
                                 <button
                                     onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                                     disabled={page >= totalPages - 1}
-                                    className="p-2 rounded-lg border border-slate-200 bg-white disabled:opacity-30 hover:bg-slate-50 transition-colors"
+                                    className="p-2 rounded-lg border border-white/10 bg-white/5 disabled:opacity-30 hover:bg-white/10 transition-colors text-slate-400"
                                 >
                                     <ChevronRight size={16} />
                                 </button>
