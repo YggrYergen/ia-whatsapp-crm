@@ -202,7 +202,7 @@
 | All contacts cols (13) | ✅ | ✅ | ✅ MATCH |
 | All messages cols (7) | ✅ | ✅ | ✅ MATCH |
 
-#### Day 2 Unsolved Issues — Status Update (2026-04-12 22:10 CLT)
+#### Day 2 Unsolved Issues — Carried Forward (2026-04-12 ~18:30 CLT)
 
 > **Last updated:** 2026-04-12 22:10 CLT  
 > Most issues resolved during Apr 12 frontend session. See `task_v2.md` for authoritative status.
@@ -230,7 +230,7 @@
 
 ### Day 2 (Evening) / Day 3 (Early Morning): Apr 12-13 — Frontend Overhaul + Mobile Stabilization
 
-> **Session** (2ae8123c) — Multiple passes, started ~16:00 Apr 12 CLT
+> **Session** (2ae8123c) — Multiple passes, Apr 12 evening CLT
 
 #### Block J: Escalation UX ✅ COMPLETE
 - [x] **J1.** Visual badge on ContactList for `bot_active=false` contacts
@@ -281,7 +281,7 @@
 
 - [ ] Test on actual phone browser (pending merge to main)
 - [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
-- [ ] **Step 6:** Enriched Patient Context — `use_cases.py` richer context block (name, phone, role, created_at, notes, tags)
+- [ ] **Step 6:** Enriched Patient Context — `use_cases.py`: richer context block (name, phone, role, created_at, notes, tags)
 - [ ] Pre-merge drift check per §8
 - [ ] Merge `desarrollo` → `main` and verify PROD deployment
 
