@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-12 22:10 CLT
+> **Last Updated:** 2026-04-12 23:03 CLT
 
 ---
 
@@ -277,13 +277,18 @@
 
 **Commits:** Multiple on `desarrollo` branch. Build verified (0 errors).
 
-#### Pending for Day 3 Continuation
+#### Session 3 Close-Out (Apr 12 ~23:00 CLT)
 
-- [ ] Test on actual phone browser (pending merge to main)
+- [x] README.md rewrite — 1581→508 lines (Project README + Operational Runbook + Roadmap)
+- [x] All `.ai-context/` docs synchronized (master_plan, implementation_plan, execution_tracker)
+- [x] `reasoning_effort_diagnostic.md` persisted to `deep_dives_&_misc/`
+- [x] Pre-merge drift check: 6 tables compared, **✅ PASS** (tenant_users +role/+created_at on DEV only — safe)
+- [x] Merge `desarrollo` → `main` — commit `6ee6cd8`, pushed. Auto-deploy triggered.
+- [ ] Test on actual phone browser (PROD now deployed)
 - [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
-- [ ] **Step 6:** Enriched Patient Context — `use_cases.py`: richer context block (name, phone, role, created_at, notes, tags)
-- [ ] Pre-merge drift check per §8
-- [ ] Merge `desarrollo` → `main` and verify PROD deployment
+
+#### Deferred to Monday
+- [ ] **Step 6:** Enriched Patient Context — deferred for proper design (interconnected: LLM context ↔ PacientesView ↔ staff actions)
 
 ### Day 4: Monday April 14 — Fumigation Tenant Setup
 

@@ -20,20 +20,25 @@
 
 ## 📋 REMAINING SPRINT 1 WORK (Apr 12-15)
 
-### Tonight (Sat Apr 12)
+### Tonight (Sat Apr 12) — CLOSED
 
 #### Pending from Mobile Fix
-- [ ] Test on actual phone browser (pending merge to main)
+- [ ] Test on actual phone browser (PROD deployed via merge `6ee6cd8`)
 
 #### Pending Diagnosis
 - [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
 
-#### Step 6: Enriched Patient Context (30 min)
-- [ ] `use_cases.py` — Build richer context block (name, phone, role, created_at, notes, tags)
+#### Step 6: Enriched Patient Context — DEFERRED TO MONDAY
+- [ ] `use_cases.py` — needs proper design session (LLM context ↔ PacientesView ↔ staff actions)
 
-#### Merge `desarrollo` → `main`
-- [ ] Pre-merge drift check per §8
-- [ ] Merge and verify PROD deployment
+#### Merge `desarrollo` → `main` ✅
+- [x] Pre-merge drift check: 6 tables, **PASS** (tenant_users drift safe)
+- [x] Merge commit `6ee6cd8`, pushed. Auto-deploy triggered.
+
+#### Docs Session ✅
+- [x] README.md rewrite (1581→508 lines)
+- [x] All `.ai-context/` docs synchronized
+- [x] `reasoning_effort_diagnostic.md` persisted to `deep_dives_&_misc/`
 
 ---
 
