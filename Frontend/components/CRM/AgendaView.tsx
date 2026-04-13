@@ -151,104 +151,99 @@ export default function AgendaView() {
     const box2Pct = Math.round((box2Count / totalCap) * 100) || 0
 
     return (
-        <div className="flex flex-col h-full bg-slate-50/50 p-4 md:p-8 space-y-6 overflow-y-auto">
+        <div className="flex flex-col h-full bg-slate-50/50 p-3 md:p-8 space-y-4 md:space-y-6 overflow-y-auto pb-24 md:pb-10">
             {/* Top Stats / Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                        <CalendarDays className="text-indigo-600" size={32} />
-                        Agenda Médica
+                    <h1 className="text-xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 md:gap-3">
+                        <CalendarDays className="text-indigo-600" size={24} />
+                        Agenda
                     </h1>
-                    <p className="text-slate-500 font-medium">Gestión y control de citas en tiempo real.</p>
+                    <p className="text-xs md:text-base text-slate-500 font-medium">Citas en tiempo real.</p>
                 </div>
                 
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" className="bg-white border-slate-200 shadow-sm gap-2" onClick={fetchEvents}>
-                        <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Sincronizar Google
+                <div className="flex items-center gap-2 flex-wrap">
+                    <Button variant="outline" className="bg-white border-slate-200 shadow-sm gap-1.5 text-xs h-9" onClick={fetchEvents}>
+                        <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Sincronizar
                     </Button>
-                    <Button onClick={() => handleSlotClick(new Date().toISOString().split('T')[0], "09:00")} className="bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 gap-2">
-                        <CalendarCheck size={18} /> Nueva Cita
+                    <Button onClick={() => handleSlotClick(new Date().toISOString().split('T')[0], "09:00")} className="bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 gap-1.5 text-xs h-9">
+                        <CalendarCheck size={14} /> Nueva Cita
                     </Button>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 {/* Sidebar Stats */}
-                <div className="lg:col-span-1 space-y-4">
-                    <Card className="border-none shadow-sm bg-indigo-900 text-white overflow-hidden relative">
-                        <div className="absolute top-0 right-0 p-4 opacity-10">
-                            <CalendarIcon size={80} />
-                        </div>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-sm font-bold opacity-80 uppercase tracking-wider">Hoy</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-4xl font-black mb-1">{todaysEvents.length}</div>
-                            <p className="text-xs text-indigo-200">Citas programadas para hoy</p>
-                        </CardContent>
-                    </Card>
+                <div className="lg:col-span-1 space-y-3">
+                    {/* Compact stats card */}
+                    <div className="bg-indigo-900 text-white rounded-2xl p-4 relative overflow-hidden shadow-sm">
+                        <div className="absolute top-2 right-2 opacity-10"><CalendarIcon size={48} /></div>
+                        <div className="text-[10px] font-bold opacity-60 uppercase tracking-widest">Hoy</div>
+                        <div className="text-3xl font-black leading-none mt-1">{todaysEvents.length}</div>
+                        <p className="text-[10px] text-indigo-200 mt-1">Citas programadas</p>
+                    </div>
 
-                    <Card className="border-none shadow-sm">
-                        <CardHeader className="pb-4">
-                            <CardTitle className="text-sm font-bold text-slate-500 uppercase tracking-wider">Ocupación Hoy</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs font-bold">
-                                    <span>Box 1</span>
+                    {/* Compact ocupación */}
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Ocupación Hoy</h4>
+                        <div className="space-y-2.5">
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-bold">
+                                    <span className="text-slate-600">Box 1</span>
                                     <span className="text-indigo-600">{box1Pct}%</span>
                                 </div>
-                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo-500 transition-all" style={{ width: `${box1Pct}%` }} />
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${box1Pct}%` }} />
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs font-bold">
-                                    <span>Box 2</span>
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-bold">
+                                    <span className="text-slate-600">Box 2</span>
                                     <span className="text-emerald-600">{box2Pct}%</span>
                                 </div>
-                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${box2Pct}%` }} />
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${box2Pct}%` }} />
                                 </div>
                             </div>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
 
+                    {/* Próximos — compact */}
                     <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Próximos en Llegar (Hoy)</h4>
-                        <div className="space-y-4">
-                            {todaysEvents.slice(0, 4).map(app => (
-                                <div key={app.id} className="flex items-center gap-3 group cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-all">
-                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
-                                        <User size={18} />
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Próximos</h4>
+                        <div className="space-y-2">
+                            {todaysEvents.slice(0, 3).map(app => (
+                                <div key={app.id} className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 flex-shrink-0">
+                                        <User size={14} />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-slate-800 truncate">{app.summary.split('-')[1]?.trim() || app.summary}</p>
-                                        <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold">
-                                            <Clock size={10} /> {new Date(app.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {app.box}
+                                        <p className="text-[12px] font-bold text-slate-800 truncate">{app.summary.split('-')[1]?.trim() || app.summary}</p>
+                                        <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold">
+                                            <Clock size={8} /> {new Date(app.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {app.box}
                                         </div>
                                     </div>
                                 </div>
                             ))}
-                            {todaysEvents.length === 0 && <p className="text-xs text-slate-400">Sin citas pendientes hoy.</p>}
+                            {todaysEvents.length === 0 && <p className="text-[11px] text-slate-400">Sin citas hoy.</p>}
                         </div>
                     </div>
                 </div>
 
                 {/* Main Calendar Area */}
-                <Card className="lg:col-span-3 border-none shadow-xl bg-white overflow-hidden rounded-[2rem] flex flex-col">
-                    <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 pb-6 w-full shrink-0">
-                        <div className="flex items-center gap-4">
-                            <div className="flex bg-slate-100 p-1 rounded-xl">
-                                <Button onClick={handlePrev} variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-white hover:shadow-sm"><ChevronLeft size={18} /></Button>
-                                <Button onClick={handleNext} variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-white hover:shadow-sm"><ChevronRight size={18} /></Button>
+                <Card className="lg:col-span-3 border-none shadow-xl bg-white overflow-hidden rounded-2xl flex flex-col">
+                    <CardHeader className="flex flex-row items-center justify-between border-b border-slate-50 pb-4 w-full shrink-0 gap-2 p-3 md:p-6">
+                        <div className="flex items-center gap-2 md:gap-4">
+                            <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                <Button onClick={handlePrev} variant="ghost" size="icon" className="h-7 w-7 rounded-md hover:bg-white hover:shadow-sm"><ChevronLeft size={16} /></Button>
+                                <Button onClick={handleNext} variant="ghost" size="icon" className="h-7 w-7 rounded-md hover:bg-white hover:shadow-sm"><ChevronRight size={16} /></Button>
                             </div>
-                            <h2 className="text-lg md:text-xl font-black text-slate-800 tracking-tight capitalize">{formatHeaderDate()}</h2>
+                            <h2 className="text-sm md:text-xl font-black text-slate-800 tracking-tight capitalize">{formatHeaderDate()}</h2>
                         </div>
-                        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl shrink-0 overflow-x-auto">
-                            <Button onClick={() => setViewMode('day')} variant="ghost" className={`h-8 px-4 py-0 text-xs font-bold rounded-lg ${viewMode==='day'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Día</Button>
-                            <Button onClick={() => setViewMode('week')} variant="ghost" className={`h-8 px-4 py-0 text-xs font-bold rounded-lg ${viewMode==='week'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Semana</Button>
-                            <Button onClick={() => setViewMode('month')} variant="ghost" className={`h-8 px-4 py-0 text-xs font-bold rounded-lg ${viewMode==='month'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Mes</Button>
+                        <div className="flex gap-0.5 bg-slate-100 p-0.5 rounded-lg shrink-0">
+                            <Button onClick={() => setViewMode('day')} variant="ghost" className={`h-7 px-2.5 md:px-4 py-0 text-[10px] md:text-xs font-bold rounded-md ${viewMode==='day'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Día</Button>
+                            <Button onClick={() => setViewMode('week')} variant="ghost" className={`h-7 px-2.5 md:px-4 py-0 text-[10px] md:text-xs font-bold rounded-md ${viewMode==='week'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Sem</Button>
+                            <Button onClick={() => setViewMode('month')} variant="ghost" className={`h-7 px-2.5 md:px-4 py-0 text-[10px] md:text-xs font-bold rounded-md ${viewMode==='month'?'bg-white shadow-sm text-indigo-600':'text-slate-500'}`}>Mes</Button>
                         </div>
                     </CardHeader>
                     
@@ -261,10 +256,10 @@ export default function AgendaView() {
                         
                         {/* Day View */}
                         {viewMode === 'day' && (
-                            <div className="flex flex-col min-w-[600px]">
+                            <div className="flex flex-col w-full">
                                 <div className="flex border-b border-slate-100">
-                                    <div className="w-20 border-r border-slate-100"></div>
-                                    <div className="flex-1 grid grid-cols-2 text-center text-xs font-black uppercase text-slate-400 py-2">
+                                    <div className="w-12 md:w-16 border-r border-slate-100"></div>
+                                    <div className="flex-1 grid grid-cols-2 text-center text-[10px] font-black uppercase text-slate-400 py-2">
                                         <div className="border-r border-slate-100">Box 1</div>
                                         <div>Box 2</div>
                                     </div>
@@ -284,16 +279,15 @@ export default function AgendaView() {
                                     })
 
                                     return (
-                                        <div key={idx} className="flex border-b border-slate-50 min-h-[80px] group">
-                                            <div className="w-20 flex-shrink-0 flex items-center justify-center border-r border-slate-50 bg-slate-50/30 text-[11px] font-black text-slate-400 uppercase">
+                                        <div key={idx} className="flex border-b border-slate-50 min-h-[48px] md:min-h-[64px] group">
+                                            <div className="w-12 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-slate-50 bg-slate-50/30 text-[10px] font-black text-slate-400">
                                                 {hour}
                                             </div>
                                             <div className="flex-1 grid grid-cols-2">
-                                                {/* BOX 1 */}
-                                                <div className="border-r border-slate-50 p-1 relative h-full">
+                                                <div className="border-r border-slate-50 p-0.5 md:p-1 relative h-full">
                                                     {box1App ? (
-                                                        <div className="h-full rounded-xl p-3 bg-indigo-50 border-l-4 border-indigo-500 shadow-sm transition-all hover:scale-105 cursor-pointer">
-                                                            <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-600 mb-1">{box1App.summary}</p>
+                                                        <div className="h-full rounded-lg md:rounded-xl p-2 md:p-3 bg-indigo-50 border-l-3 md:border-l-4 border-indigo-500 shadow-sm">
+                                                            <p className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter text-indigo-600 line-clamp-2">{box1App.summary}</p>
                                                         </div>
                                                     ) : (
                                                         <div onClick={() => handleSlotClick(currentDate.toISOString().split('T')[0], hour)} className="h-full w-full opacity-0 group-hover:opacity-100 flex items-center justify-center border border-dashed border-indigo-200 rounded-xl transition-all hover:bg-indigo-50/50 cursor-pointer">
@@ -301,11 +295,10 @@ export default function AgendaView() {
                                                         </div>
                                                     )}
                                                 </div>
-                                                {/* BOX 2 */}
-                                                <div className="p-1 relative h-full">
+                                                <div className="p-0.5 md:p-1 relative h-full">
                                                     {box2App ? (
-                                                        <div className="h-full rounded-xl p-3 bg-emerald-50 border-l-4 border-emerald-500 shadow-sm transition-all hover:scale-105 cursor-pointer">
-                                                            <p className="text-[10px] font-black uppercase tracking-tighter text-emerald-600 mb-1">{box2App.summary}</p>
+                                                        <div className="h-full rounded-lg md:rounded-xl p-2 md:p-3 bg-emerald-50 border-l-3 md:border-l-4 border-emerald-500 shadow-sm">
+                                                            <p className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter text-emerald-600 line-clamp-2">{box2App.summary}</p>
                                                         </div>
                                                     ) : (
                                                         <div onClick={() => handleSlotClick(currentDate.toISOString().split('T')[0], hour)} className="h-full w-full opacity-0 group-hover:opacity-100 flex items-center justify-center border border-dashed border-emerald-200 rounded-xl transition-all hover:bg-emerald-50/50 cursor-pointer">
@@ -322,7 +315,7 @@ export default function AgendaView() {
 
                         {/* Week View */}
                         {viewMode === 'week' && (
-                            <div className="flex flex-col min-w-[800px]">
+                            <div className="flex flex-col overflow-x-auto">
                                 <div className="flex border-b border-slate-100">
                                     <div className="w-16 border-r border-slate-100"></div>
                                     <div className="flex-1 grid grid-cols-7 text-center">
@@ -340,7 +333,7 @@ export default function AgendaView() {
                                 </div>
                                 {hours.map((hour, idx) => (
                                     <div key={idx} className="flex border-b border-slate-50 min-h-[60px] group text-[10px]">
-                                        <div className="w-16 flex-shrink-0 flex items-center justify-center border-r border-slate-50 bg-slate-50/30 font-black text-slate-400">
+                                    <div className="w-10 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-slate-50 bg-slate-50/30 font-black text-slate-400 text-[9px] md:text-[10px]">
                                             {hour}
                                         </div>
                                         <div className="flex-1 grid grid-cols-7">
@@ -380,7 +373,7 @@ export default function AgendaView() {
 
                         {/* Month View */}
                         {viewMode === 'month' && (
-                            <div className="h-full flex flex-col min-w-[600px]">
+                            <div className="h-full flex flex-col">
                                 <div className="grid grid-cols-7 text-center border-b border-slate-100 shrink-0">
                                     {['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'].map(d => (
                                         <div key={d} className="py-2 text-[10px] font-black tracking-widest uppercase text-slate-400">{d}</div>

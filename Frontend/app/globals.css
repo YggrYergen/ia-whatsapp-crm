@@ -89,3 +89,45 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #cbd5e1;
 }
+
+/* Gentle pulse for attention-needed indicators — slow, calm, professional */
+@keyframes gentle-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.animate-gentle-pulse {
+    animation: gentle-pulse 3s ease-in-out infinite;
+}
+
+/* Subtle left-border glow for escalated items */
+@keyframes border-glow {
+    0%, 100% { border-left-color: rgb(239 68 68); }
+    50% { border-left-color: rgb(239 68 68 / 0.4); }
+}
+.animate-border-glow {
+    animation: border-glow 3s ease-in-out infinite;
+}
+
+/* Safe bottom padding for mobile sidebar */
+.pb-sidebar {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Notification badge pop-in */
+@keyframes badge-pop {
+    0% { transform: scale(0); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+.animate-badge-pop {
+    animation: badge-pop 0.3s ease-out forwards;
+}
+
+/* Smooth slide-in from right for panels */
+@keyframes slide-in-right {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in-right {
+    animation: slide-in-right 0.25s ease-out forwards;
+}

@@ -21,16 +21,16 @@
 |:---|:---|:---|:---|:---|
 | **CC-1** | **Codebase defaults to DEPRECATED `gpt-4o-mini`** in 3 files | Using retired model, may stop working anytime | Change to `gpt-5.4-mini` in `core/models.py:L9`, `openai_adapter.py:L23`, `main.py:L219` | ✅ Decision: `gpt-5.4-mini` PROD |
 | **CC-2** | **Pricing was WRONG** — `gpt-5.4-mini` is $0.75/$4.50, NOT $0.25/$2.00 | Mitigated with `max_completion_tokens=500` cap (~$0.00225/response) | With cap: ~$5-8/tenant/mo → **88-90% margins**. Nano ($0.20/$1.25) for dev/budget tenants | ✅ Mitigated |
-| **CC-3** | **BSUID already active** in webhooks (April 2026) | Contact lookup may break for username-enabled users | Add `bsuid` column to contacts table, update webhook handler | ❌ Sprint 1 |
-| **CC-4** | **Graph API v19.0 DEPRECATED May 21, 2026** | 40 days until API calls may fail | Update `meta_graph_api.py:L8` to `v25.0` | ❌ Sprint 1 |
-| **CC-5** | **All tool schemas lack `strict: true`** | LLM can hallucinate parameters, wrong types | Add `strict: true` + `additionalProperties: false` to all tools | ❌ Sprint 1 |
-| **CC-6** | **New mTLS cert since March 31, 2026** | Webhook signature verification may have issues | Verify Cloud Run handles new cert | ❓ Check |
-| **CC-7** | **No webhook signature verification** | `/webhook` accepts POST from ANYONE — cost/security risk | Add HMAC-SHA256 check with `X-Hub-Signature-256` + `hmac.compare_digest` | ❌ Sprint 1 |
-| **CC-8** | **No LLM rate limit per contact** | Troll/excited user = 50 LLM calls in 2 min = $5+ | Add `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20`, auto-resume + notify | ❌ Sprint 1 |
-| **CC-9** | **`is_processing_llm` lock has no TTL** | OpenAI timeout = permanently silenced contact | Force-release if `updated_at > 90 seconds ago` | ❌ Sprint 1 |
-| **CC-10** | **No health monitoring** | Backend can crash without anyone knowing | UptimeRobot free tier, SMS/push alert on failure | ❌ Sprint 1 |
-| **CC-11** | **No conversation shadow-forward** | We can't see problems until clients complain | Forward full bot+user interactions to our WhatsApp | ❌ Sprint 1 |
-| **CC-12** | **Tenant config fetched on every request** | 1,400+ DB queries/day for data that changes monthly | In-memory cache with 3-min TTL, LRU eviction | ❌ Sprint 1 |
+| **CC-3** | **BSUID already active** in webhooks (April 2026) | Contact lookup may break for username-enabled users | Add `bsuid` column to contacts table, update webhook handler | ✅ Phase 1 Done (Block G) |
+| **CC-4** | **Graph API v19.0 DEPRECATED May 21, 2026** | 40 days until API calls may fail | Update `meta_graph_api.py:L8` to `v25.0` | ✅ Fixed (Block A5) |
+| **CC-5** | **All tool schemas lack `strict: true`** | LLM can hallucinate parameters, wrong types | Add `strict: true` + `additionalProperties: false` to all tools | ✅ Fixed (Block B1) |
+| **CC-6** | **New mTLS cert since March 31, 2026** | Webhook signature verification may have issues | Verify Cloud Run handles new cert | ✅ Cloud Run handles automatically |
+| **CC-7** | **No webhook signature verification** | `/webhook` accepts POST from ANYONE — cost/security risk | Add HMAC-SHA256 check with `X-Hub-Signature-256` + `hmac.compare_digest` | ✅ Fixed (Block E1) |
+| **CC-8** | **No LLM rate limit per contact** | Troll/excited user = 50 LLM calls in 2 min = $5+ | Add `MAX_LLM_CALLS_PER_CONTACT_PER_HOUR = 20`, auto-resume + notify | ✅ Fixed (Block E2) |
+| **CC-9** | **`is_processing_llm` lock has no TTL** | OpenAI timeout = permanently silenced contact | Force-release if `updated_at > 90 seconds ago` | ✅ Fixed (Block E3) |
+| **CC-10** | **No health monitoring** | Backend can crash without anyone knowing | UptimeRobot free tier, SMS/push alert on failure | 🟡 Endpoint ready, manual setup pending |
+| **CC-11** | **No conversation shadow-forward** | We can't see problems until clients complain | Forward full bot+user interactions to our WhatsApp | ✅ Fixed (Block E4) |
+| **CC-12** | **Tenant config fetched on every request** | 1,400+ DB queries/day for data that changes monthly | In-memory cache with 3-min TTL, LRU eviction | ✅ Fixed (Block E6) |
 
 ### 🔵 MODEL RESEARCH FINDINGS (2026-04-11)
 
@@ -987,15 +987,53 @@ Docs consulted:
 
 ---
 
-## 🔴 UNSOLVED ISSUES FROM DAY 2 — CRITICAL FOR TUESDAY (2026-04-12)
+## 🔴 UNSOLVED ISSUES FROM DAY 2 (2026-04-12) — Updated 2026-04-13 01:40 CLT
 
-> **These must be resolved before Tuesday onboarding.** See `execution_tracker.md` Day 2 Unsolved section for full detail.
+> **These must be resolved before Tuesday onboarding.** See `execution_tracker.md` Day 2 Unsolved section for full detail. **Status update:** Most items resolved during Apr 12-13 session. See `task_v2.md` for authoritative status.
 
-- [ ] **U-1: Mobile frontend broken** — Layout/UX unusable on phone. Clients WILL use mobile.
-- [ ] **U-2: Escalation UX (Block J)** — No badge, no resolve button, no filter. Staff blind to escalations.
-- [ ] **U-3: PROD calendar verification** — Must trigger test booking to confirm `book_round_robin` works on PROD.
-- [ ] **U-4: Dashboard fake data (Block L)** — Replace mock numbers with real queries.
-- [ ] **U-5: Fumigation prompt draft** — Need onboarding checklist + first prompt version.
-- [ ] **U-6: Merge rapid-fire fix to PROD** — Dev only right now. Needs user approval to merge.
-- [ ] **U-8: Prompt Phase 1 skip test** — Verify prompt v2.1 actually enforces triaje before scheduling.
-- [ ] **U-14: Booking flow repetition loop** — Assistant re-asks info already provided and demands multiple confirmations before booking. Extremely bothersome. Root cause unclear: prompt, model tool execution pattern, history, or agentic loop. Must check OpenAI docs on tool calling patterns for gpt-5.4-mini.
+- [x] **U-1: Mobile frontend broken** — ✅ RESOLVED. Multiple fix passes: pb-sidebar, responsive grids, dark glassmorphic design, compact navbar (68→60px), header clearance for browser chrome, double padding elimination. Commits on `desarrollo`.
+- [x] **U-2: Escalation UX (Block J)** — ✅ RESOLVED. Full Block J: badge on ContactList, resolve button, filter tabs, sorting, pulse animation, sidebar badge, NotificationFeed with navigate-to-chat.
+- [x] **U-3: PROD calendar verification** — ✅ RESOLVED. Confirmed working — multiple successful bookings in live testing over 5+ hours.
+- [x] **U-4: Dashboard fake data (Block L)** — ✅ RESOLVED. Full Block L: live alerts from Supabase, INTERVENCIÓN MANUAL section, alert history w/ filters, time range filter, dark glassmorphic design.
+- [ ] **U-5: Fumigation prompt draft** — ⏳ Template drafted in `.ai-context/fumigation_prompt_template.md`. Blocked on client business data (services, prices, hours, zones).
+- [x] **U-6: Merge rapid-fire fix to PROD** — ✅ RESOLVED. Merged `73789ef` to main. Cloud Build auto-deployed.
+- [ ] **U-8: Prompt Phase 1 skip test** — ⏳ Prompt v2 deployed, testing ongoing.
+- [ ] **U-14: Booking flow repetition loop** — ⏳ Fix deployed, testing ongoing.
+
+### Additional bugs found and resolved (Apr 12-13 session):
+- [x] **U-15: Hardcoded europe URL × 5** — 5 frontend files pointed to deleted europe-west1 backend → 404s. Fixed on main `c5d7b06`.
+- [x] **U-16: contacts.notes column missing** — ClientProfilePanel silently failed. Added column to DEV + PROD.
+- [x] **NotificationFeed not closable on mobile** — Root cause: rendered inside a `pointer-events-none` container. Moved out to sibling element.
+- [x] **TestChatArea sandbox controls broken** — Redesigned: compact layout, DESCARTAR/ENVIAR/CAMBIAR ROL/CONFIG. buttons, role switcher.
+- [x] **Chat header hidden by browser bar** — Reduced header height (72→52px TestChat, 72→56px ChatArea).
+- [x] **Huge blank space in chats** — Double bottom padding: layout pb-sidebar + component padding. Removed duplicate.
+- [x] **GlobalFeedbackButton overlapping controls** — Hidden on mobile (desktop-only).
+
+---
+
+## ✅ SESSION COMPLETIONS (Apr 12-13)
+
+> Blocks completed during the Apr 12 night / Apr 13 early morning session. Full details in `task_v2.md`.
+
+### Block J: Escalation UX ✅
+- [x] J1-J7 all completed. Visual badges, resolve button, filter tabs, sorting, pulse, sidebar badge, NotificationFeed.
+
+### Block L: Dashboard ✅  
+- [x] L1-L6 all completed. Live Supabase alerts, INTERVENCIÓN MANUAL, alert history, navigate-to-chat, resolve/dismiss, type badges.
+
+### Mobile Frontend Overhaul ✅
+- [x] Dark glassmorphic design language across Dashboard, Agenda, CRM views
+- [x] Compact responsive stats with time range filter (1h/6h/today/week/month/year)
+- [x] PacientesView with patient profile sheet, lead scoring, editable notes, call button
+- [x] TestChatArea sandbox controls with role switching
+- [x] Navbar height optimization (68→60px), header browser chrome clearance
+- [x] NotificationFeed scroll + close fix (pointer-events root cause)
+
+### Documentation ✅
+- [x] Fumigation tenant prompt template drafted (`.ai-context/fumigation_prompt_template.md`)
+- [x] task_v2.md reorganized (completed items moved to bottom)
+
+### Remaining for tonight:
+- [ ] Step 6: Enriched Patient Context (`use_cases.py`)
+- [ ] Pre-merge drift check per §8
+- [ ] Merge `desarrollo` → `main` and verify PROD deployment

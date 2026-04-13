@@ -61,7 +61,7 @@ export default function PanelLayout({
       <GlobalFeedbackButton />
       <div className="flex flex-col md:flex-row h-screen w-full bg-slate-50 overflow-hidden relative">
         <Sidebar />
-        <main className="flex-1 flex flex-col relative overflow-hidden h-full z-10 transition-all">
+        <main className="flex-1 flex flex-col relative overflow-hidden h-full z-10 transition-all pb-sidebar md:pb-0">
           {children}
         </main>
       </div>

@@ -7,84 +7,33 @@
 
 ---
 
-## ✅ COMPLETED — Summary (Phases 0-5, Blocks A-H)
+## 🔴 OPEN BUGS
 
-All completed. Full details in `task.md` (archived). Key milestones:
-
-| Phase | What | When |
-|:---|:---|:---|
-| Phase 0-1 | Infrastructure, security, auth, Cloud Build | Pre Apr-11 |
-| Phase 2 | Sentry backend+frontend, Discord alerts, OpenNext migration, RLS policies | Pre Apr-11 |
-| Phase 3 | E2E validation, BUG-1/2/3 fixes, observability hardening | Pre Apr-11 |
-| Phase 4 | DEV/PROD environment isolation | Apr 10 |
-| Phase 5A-C | Meta webhook sim suite, WhatsApp live, permanent token | Apr 10 |
-| Block A | gpt-5.4-mini, strict tools, max_completion_tokens, Graph API v25 | Apr 11 |
-| Block B | `strict: true` on all 7 tool schemas | Apr 11 |
-| Block C | Adapter enhancement (content preservation, usage tracking) | Apr 11 |
-| Block D | Agentic loop rewrite (multi-round, `role: "tool"`, error recovery) | Apr 11 |
-| Block E | Resilience: HMAC, rate limit, lock TTL, shadow-forward, health, cache | Apr 11 |
-| Block F | Observability: correlation ID, Sentry tags, structured logging | Apr 11 |
-| Block G | BSUID dormant capture (Phase 1 — extract + store, no lookup change) | Apr 11 |
-| Block H | Deploy + live test, HMAC fix, region migration to us-central1, model fix | Apr 11 night |
-| Block 0 | Incident fix: permanent lock, `updated_at` migration parity, retry logic | Apr 12 early |
-| Block I Steps 1-4 | openai_adapter fixes, human_agent role fix, prompt v2, dedup + atomic lock | Apr 12 |
-| Step 5 | reasoning_effort removed (incompatible with tools on chat/completions) | Apr 12 |
-| Step 5b | Rapid-fire message batching (DEV only — needs PROD merge) | Apr 12 |
-
----
-
-## 🔴 UNSOLVED BUGS — MUST FIX BEFORE TUESDAY
-
-| ID | Bug | Detail | Root Cause | Status |
-|:---|:---|:---|:---|:---|
-| **U-1** | Mobile frontend BROKEN | Dashboard + chat UI unusable on mobile. Layout overflows, buttons unreachable, chat doesn't scroll. Client would rage. | CSS/layout not mobile-first | ❌ Not started |
-| **U-2** | Escalation UX missing | No visual badge for `bot_active=false`, no "Resolver" button, no filter. Staff blind to escalations. | Block J not started | ❌ Not started |
-| **U-3** | PROD calendar UNVERIFIED | No `book_round_robin` tool on PROD in 24+ hrs. Can't confirm CasaVitaCure booking works. | Unknown — need test | ❌ Need test |
-| **U-4** | Dashboard fake data | Mock/placeholder numbers displayed. | Block L not started | ❌ Not started |
-| **U-5** | Fumigation prompt not drafted | Need business data from client: services, prices, hours, zones. | Client data not collected | ❌ Need onboarding checklist |
-| **U-6** | Rapid-fire fix NOT on PROD | `1f7b250` on `desarrollo` only. PROD silently drops rapid-fire msgs 2+. | Not merged | ❌ Needs approval |
-| **U-7** | wamid extraction null | `wamid` column exists, all values `null`. Dedup partially broken. | Payload path may differ | ❌ Not diagnosed |
-| **U-8** | Prompt Phase 1 skip | Bot asks "nombre y hora" immediately, skips 3-question triaje. | Prompt v2.1 may not fully fix | ❌ Need E2E test |
-| **U-14** | Booking flow repetition loop | Bot re-asks info already provided (name, zone, time) + demands multiple confirmations. Extremely bothersome. | Unknown: prompt? model tool execution? history? agentic loop? | ❌ Need diagnosis + OpenAI docs |
+| ID | Bug | Detail | Status |
+|:---|:---|:---|:---|
+| **U-5** | Fumigation prompt not drafted | Template drafted in `.ai-context/fumigation_prompt_template.md`. Blocked on client data (services, prices, hours, zones). | ⏳ TEMPLATE READY |
+| **U-7** | wamid extraction null | `wamid` column exists, all values `null`. Dedup falls back to atomic lock + timestamp batching (working). **Risk: LOW.** | 🟡 Low priority |
+| **U-8** | Prompt Phase 1 skip | Bot skips 3-question triaje. Prompt v2 deployed, testing ongoing. | ⏳ TESTING |
+| **U-14** | Booking flow repetition loop | Bot re-asks info already provided. Fix deployed, testing ongoing. | ⏳ TESTING |
 
 ---
 
 ## 📋 REMAINING SPRINT 1 WORK (Apr 12-15)
 
-### Tonight (Sat Apr 12, ~7 hrs remaining)
+### Tonight (Sat Apr 12)
 
-#### Block J: Escalation UX Minimum (U-2) — 2 hrs
-- [ ] **J1.** Visual badge on ContactList for `bot_active=false` contacts
-- [ ] **J2.** "Resolver y reactivar bot" button in ChatArea
-- [ ] **J3.** Filter/tab: "Pendientes" to show escalated contacts first
+#### Pending from Mobile Fix
+- [ ] Test on actual phone browser (pending merge to main)
 
-#### Block L: Minimal Dashboard (U-4) — 30 min
-- [ ] **L1.** Replace mock data with real Supabase query: "Mensajes hoy: X, Escalaciones: Y, Último mensaje: hace Z min"
-
-#### Mobile Frontend Fix (U-1) — 3-4 hrs
-- [ ] Fix chat layout for mobile viewport (scroll, buttons, contact list)
-- [ ] Fix dashboard layout for mobile
-- [ ] Test on actual phone browser
-
-#### Diagnosis Work
-- [ ] **U-14:** Read OpenAI docs on tool execution patterns (sequential vs concurrent) for gpt-5.4-mini
-- [ ] **U-14:** Test booking flow on PROD, identify which stage causes repetition
-- [ ] **U-3:** Trigger a test booking on PROD to verify calendar works
-
----
-
-### Sunday Apr 13
+#### Pending Diagnosis
+- [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
 
 #### Step 6: Enriched Patient Context (30 min)
 - [ ] `use_cases.py` — Build richer context block (name, phone, role, created_at, notes, tags)
 
-#### U-14 Fix Implementation
-- [ ] Fix root cause of booking repetition loop (prompt? code? model config?)
-- [ ] Test on DEV, then approve for PROD
-
-#### U-6: Merge Rapid-Fire Fix to PROD
-- [ ] Merge `desarrollo` → `main` (needs pre-merge drift check per §8)
-- [ ] Verify on PROD
+#### Merge `desarrollo` → `main`
+- [ ] Pre-merge drift check per §8
+- [ ] Merge and verify PROD deployment
 
 ---
 
@@ -124,6 +73,81 @@ All completed. Full details in `task.md` (archived). Key milestones:
 - [ ] **Q1.** Refine fumigation prompt based on first real conversations
 - [ ] **Q2.** Prepare WhatsApp template for conversation rescue (submit for Meta approval)
 - [ ] **Q3.** Update all documentation with lessons learned
+
+---
+
+## ✅ COMPLETED
+
+### Phases 0-5 & Blocks A-H (Pre Apr-12)
+
+| Phase | What | When |
+|:---|:---|:---|
+| Phase 0-1 | Infrastructure, security, auth, Cloud Build | Pre Apr-11 |
+| Phase 2 | Sentry backend+frontend, Discord alerts, OpenNext migration, RLS policies | Pre Apr-11 |
+| Phase 3 | E2E validation, BUG-1/2/3 fixes, observability hardening | Pre Apr-11 |
+| Phase 4 | DEV/PROD environment isolation | Apr 10 |
+| Phase 5A-C | Meta webhook sim suite, WhatsApp live, permanent token | Apr 10 |
+| Block A | gpt-5.4-mini, strict tools, max_completion_tokens, Graph API v25 | Apr 11 |
+| Block B | `strict: true` on all 7 tool schemas | Apr 11 |
+| Block C | Adapter enhancement (content preservation, usage tracking) | Apr 11 |
+| Block D | Agentic loop rewrite (multi-round, `role: "tool"`, error recovery) | Apr 11 |
+| Block E | Resilience: HMAC, rate limit, lock TTL, shadow-forward, health, cache | Apr 11 |
+| Block F | Observability: correlation ID, Sentry tags, structured logging | Apr 11 |
+| Block G | BSUID dormant capture (Phase 1 — extract + store, no lookup change) | Apr 11 |
+| Block H | Deploy + live test, HMAC fix, region migration to us-central1, model fix | Apr 11 night |
+| Block 0 | Incident fix: permanent lock, `updated_at` migration parity, retry logic | Apr 12 early |
+| Block I Steps 1-4 | openai_adapter fixes, human_agent role fix, prompt v2, dedup + atomic lock | Apr 12 |
+| Step 5 | reasoning_effort removed (incompatible with tools on chat/completions) | Apr 12 |
+| Step 5b | Rapid-fire message batching (DEV only — needs PROD merge) | Apr 12 |
+
+### Bugs Resolved (Apr 12-13)
+
+| ID | Bug | Resolution |
+|:---|:---|:---|
+| ~~U-1~~ | Mobile frontend BROKEN | Fixed: `pb-sidebar`, ChatArea input, responsive grids, compact header, navbar 60px. Multiple fix passes. |
+| ~~U-2~~ | Escalation UX missing | Fixed: badge on ContactList, Resolve button, filter tabs, sorting, pulse, sidebar badge. |
+| ~~U-3~~ | PROD calendar UNVERIFIED | Confirmed working — booked successfully multiple times in live testing. |
+| ~~U-4~~ | Dashboard fake data | Fixed: Live alerts from Supabase, INTERVENCIÓN MANUAL, alert history w/ filters, time range filter, dark glassmorphic design. |
+| ~~U-6~~ | Rapid-fire fix NOT on PROD | Merged `73789ef`. Cloud Build auto-deployed revision `00003-z77`. |
+| ~~U-15~~ | Hardcoded europe URL × 5 | 5 files fixed to point to us-central1 backend. Hotfix on main `c5d7b06`. |
+| ~~U-16~~ | contacts.notes column missing | Added column to DEV + PROD via migration. |
+
+### Blocks Completed (Apr 12-13 Session)
+
+#### Block J: Escalation UX Minimum ✅
+- [x] J1. Visual badge on ContactList for `bot_active=false` contacts
+- [x] J2. "Resolver y reactivar bot" button in ChatArea + ProfilePanel
+- [x] J3. Filter/tab: "Todos/Pendientes/Activos" with count badges
+- [x] J4. Sorted: escalated first, then by last_message_at
+- [x] J5. Gentle 3s pulse animation (not stroboscopic)
+- [x] J6. Sidebar escalation count badge
+- [x] J7. NotificationFeed: type-specific icons, navigate-to-chat
+
+#### Block L: Dashboard ✅
+- [x] L1. Live alerts from Supabase with realtime subscription
+- [x] L2. INTERVENCIÓN MANUAL section (live escalations)
+- [x] L3. Alert history with filter tabs (Pendientes/Todas/Resueltas)
+- [x] L4. Navigate-to-chat from dashboard alerts
+- [x] L5. Resolve / Dismiss buttons per alert
+- [x] L6. Type badges: escalation, cita, cancelación, reagendada
+
+#### Mobile Frontend Overhaul ✅
+- [x] Fix chat layout for mobile viewport (pb-sidebar, input clearing)
+- [x] Fix dashboard layout for mobile (responsive grids, pb-24)
+- [x] Slide-in animation for profile panel on mobile
+- [x] Dark glassmorphic design language (Dashboard, Agenda, CRM)
+- [x] Compact responsive stats grid with time range filter
+- [x] PacientesView modernized with patient profile sheet + lead scoring
+- [x] TestChatArea sandbox controls (DESCARTAR/ENVIAR/CAMBIAR ROL/CONFIG.)
+- [x] NotificationFeed close bug fixed (pointer-events-none root cause)
+- [x] Navbar reduced 68px→60px, header reduced for browser chrome clearance
+- [x] GlobalFeedbackButton hidden on mobile (was overlapping controls)
+- [x] Double bottom padding eliminated (layout pb-sidebar was doubling)
+
+#### Diagnosis Work ✅
+- [x] U-14: Test booking flow on PROD — testing ongoing
+- [x] U-3: Trigger a test booking on PROD — confirmed working
+- [x] U-5: Fumigation prompt template drafted
 
 ---
 

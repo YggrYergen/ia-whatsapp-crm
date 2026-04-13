@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { ArrowLeft, User, Pause, Play, MoreVertical, Sparkles, Send, MessageCircle } from 'lucide-react'
+import { ArrowLeft, User, Pause, Play, MoreVertical, Sparkles, Send, MessageCircle, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useCrm } from '@/contexts/CrmContext'
 import { createClient } from '@/lib/supabase'
@@ -36,6 +36,7 @@ export default function ChatArea() {
     )
 
     const isTestContact = selectedContact.phone_number === '56912345678'
+    const isEscalated = !selectedContact.bot_active && !isTestContact
 
     const toggleBot = async () => {
         const newState = !selectedContact.bot_active
@@ -44,6 +45,17 @@ export default function ChatArea() {
             setSelectedContact({ ...selectedContact, bot_active: newState })
             setContacts(contacts.map(c => c.id === selectedContact.id ? { ...c, bot_active: newState } : c))
         }
+    }
+
+    const resolveEscalation = async () => {
+        // 1. Reactivate bot
+        const { error: botErr } = await supabase.from('contacts').update({ bot_active: true }).eq('id', selectedContact.id)
+        if (!botErr) {
+            setSelectedContact({ ...selectedContact, bot_active: true })
+            setContacts(contacts.map(c => c.id === selectedContact.id ? { ...c, bot_active: true } : c))
+        }
+        // 2. Mark related alerts as resolved
+        await supabase.from('alerts').update({ is_resolved: true }).eq('contact_id', selectedContact.id).eq('is_resolved', false)
     }
 
     const handleSendMessage = async (e: React.FormEvent) => {
@@ -150,7 +162,7 @@ export default function ChatArea() {
         >
             {/* Chat Header */}
             <div
-                className="h-[72px] bg-white/95 backdrop-blur-md px-4 md:px-6 flex justify-between items-center shadow-sm z-10 border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
+                className="min-h-[56px] md:min-h-[64px] bg-white/95 backdrop-blur-md px-3 md:px-6 flex justify-between items-center shadow-sm z-10 border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
                 onClick={() => {
                     setMobileView('info');
                     setShowDesktopInfo(!showDesktopInfo);
@@ -166,21 +178,47 @@ export default function ChatArea() {
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm flex-shrink-0
-                        ${isTestContact ? 'bg-indigo-600' : 'bg-emerald-500'}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm flex-shrink-0 relative
+                        ${isTestContact ? 'bg-indigo-600' : isEscalated ? 'bg-amber-500' : 'bg-emerald-500'}
                     `}>
                         <User size={20} />
+                        {isEscalated && (
+                            <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full border-2 border-white flex items-center justify-center">
+                                <AlertTriangle size={8} className="text-white" />
+                            </div>
+                        )}
                     </div>
                     <div>
                         <h3 className="font-bold text-slate-800 text-base md:text-lg truncate">{selectedContact.name || selectedContact.phone_number}</h3>
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
-                            En Línea
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                            {isEscalated ? (
+                                <span className="text-amber-600 font-bold flex items-center gap-1">
+                                    <AlertTriangle size={10} /> Intervención manual
+                                </span>
+                            ) : (
+                                <span className="text-emerald-600 flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
+                                    En Línea
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
 
                 <div className="flex gap-2 md:gap-3 flex-shrink-0">
+                    {/* Resolve Escalation Button */}
+                    {isEscalated && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                resolveEscalation();
+                            }}
+                            className="flex items-center gap-1.5 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold transition-all shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-95"
+                        >
+                            <CheckCircle2 size={16} className="w-4 h-4" />
+                            <span className="hidden sm:inline">Resolver</span>
+                        </button>
+                    )}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -203,6 +241,22 @@ export default function ChatArea() {
                     </button>
                 </div>
             </div>
+
+            {/* Escalation Banner — subtle, not overwhelming */}
+            {isEscalated && (
+                <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3 z-10">
+                    <div className="flex items-center gap-2 text-amber-800 text-xs font-medium">
+                        <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" />
+                        <span>Bot pausado — intervención manual activa</span>
+                    </div>
+                    <button 
+                        onClick={resolveEscalation}
+                        className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full hover:bg-emerald-200 transition-colors flex-shrink-0"
+                    >
+                        Resolver
+                    </button>
+                </div>
+            )}
 
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto w-full overflow-x-hidden scroll-smooth" style={{ scrollbarGutter: 'stable' }}>
@@ -316,29 +370,22 @@ export default function ChatArea() {
 
             {/* Input Bar */}
             <form onSubmit={handleSendMessage} className={`
-                bg-[#f0f2f5] px-3 md:px-5 py-3 md:py-4 flex gap-2 md:gap-3 items-center z-20 pb-safe relative flex-shrink-0
-                ${!selectedContact.bot_active && !isTestContact ? 'border-t-4 border-amber-400' : ''}
-                pb-[env(safe-area-inset-bottom,16px)] md:pb-4
+                bg-[#f0f2f5] px-3 md:px-5 py-2.5 md:py-3 flex gap-2 md:gap-3 items-center z-20 relative flex-shrink-0
             `}>
-                {!selectedContact.bot_active && !isTestContact && (
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-[10px] font-bold px-4 py-1 rounded-t-lg flex items-center gap-1 shadow-sm">
-                        <Pause size={10} className="fill-current" /> INTERVENCIÓN MANUAL ACTIVADA
-                    </div>
-                )}
                 <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden outline-none focus-within:ring-2 focus-within:ring-emerald-500 transition-shadow">
                     <input
                         type="text"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder={isTestContact && simulationMode ? "Escribe como si fueras el PACIENTE..." : "Escribe un mensaje al paciente..."}
+                        placeholder={isTestContact && simulationMode ? "Escribe como si fueras el PACIENTE..." : isEscalated ? "Responde como staff al paciente..." : "Escribe un mensaje al paciente..."}
                         className="w-full bg-transparent px-4 py-3 md:py-3.5 text-sm md:text-[15px] outline-none placeholder:text-slate-400"
                     />
                 </div>
                 <button
                     type="submit"
                     disabled={!newMessage.trim()}
-                    className={`w-12 h-12 md:w-12 md:h-12 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex-shrink-0
-                        ${simulationMode && isTestContact ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+                    className={`w-11 h-11 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex-shrink-0
+                        ${simulationMode && isTestContact ? 'bg-indigo-600 hover:bg-indigo-700' : isEscalated ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}
                     `}
                 >
                     <Send size={18} className="translate-x-[-1px] translate-y-[1px]" />

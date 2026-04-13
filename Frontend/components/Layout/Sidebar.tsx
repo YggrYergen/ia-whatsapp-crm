@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell } from 'lucide-react'
+import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCrm } from '@/contexts/CrmContext'
@@ -9,8 +9,11 @@ import { useUI } from '@/contexts/UIContext'
 
 export default function Sidebar() {
     const pathname = usePathname()
-    const { setMobileView, user } = useCrm()
+    const { setMobileView, user, contacts } = useCrm()
     const { unreadCount, isNotificationFeedOpen, setIsNotificationFeedOpen } = useUI()
+
+    // Count escalated contacts (bot_active=false, excluding test contact)
+    const escalatedCount = contacts.filter((c: any) => !c.bot_active && c.phone_number !== '56912345678').length
 
     const handleLogout = async () => {
         const { createClient } = await import('@/lib/supabase')
@@ -23,7 +26,7 @@ export default function Sidebar() {
 
     const navItems = [
         { href: '/dashboard', icon: LayoutDashboard, title: 'Panel', label: 'Panel' },
-        { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', alert: true },
+        { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', escalationBadge: true },
         { href: '/agenda', icon: CalendarIcon, title: 'Agenda', label: 'Agenda' },
         { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
@@ -36,7 +39,7 @@ export default function Sidebar() {
     return (
         <div className={`
             bg-slate-900 border-t md:border-t-0 md:border-r border-slate-800 flex-shrink-0 z-50
-            fixed bottom-0 left-0 w-full h-[68px] flex flex-row items-center justify-around px-2
+            fixed bottom-0 left-0 w-full h-[60px] flex flex-row items-center justify-around px-2
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0 md:gap-6
             pb-safe md:pb-6
         `}>
@@ -60,8 +63,11 @@ export default function Sidebar() {
                         title={item.title}
                     >
                         <item.icon className="w-[20px] h-[20px] md:w-[22px] md:h-[22px]" />
-                        {item.alert && (
-                            <span className="absolute top-2 right-2 md:top-2 md:right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 border-transparent shadow-sm"></span>
+                        {/* Escalation badge on Chats */}
+                        {item.escalationBadge && escalatedCount > 0 && (
+                            <span className="absolute top-1 right-1 md:top-1.5 md:right-1.5 min-w-[18px] h-[18px] bg-rose-500 rounded-full border-2 border-slate-900 text-[9px] text-white font-black flex items-center justify-center animate-badge-pop shadow-sm">
+                                {escalatedCount}
+                            </span>
                         )}
                         {item.label && <span className="text-[10px] mt-1 md:hidden">{item.label}</span>}
                     </Link>
@@ -79,7 +85,9 @@ export default function Sidebar() {
                 >
                     <Bell className="w-[20px] h-[20px] md:w-[22px] md:h-[22px]" />
                     {unreadCount > 0 && (
-                        <span className="absolute top-2 right-2 md:top-2 md:right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 shadow-sm"></span>
+                        <span className="absolute top-1 right-1 min-w-[18px] h-[18px] bg-emerald-500 rounded-full border-2 border-slate-900 text-[9px] text-white font-black flex items-center justify-center shadow-sm">
+                            {unreadCount}
+                        </span>
                     )}
                     <span className="text-[10px] mt-1 md:hidden">Alertas</span>
                 </button>
@@ -93,7 +101,9 @@ export default function Sidebar() {
                 >
                     <Bell size={22} />
                     {unreadCount > 0 && (
-                        <span className="absolute top-2 right-2 w-3 h-3 bg-rose-500 rounded-full border-2 border-slate-900 shadow-sm"></span>
+                        <span className="absolute top-2 right-2 min-w-[18px] h-[18px] bg-emerald-500 rounded-full border-2 border-slate-900 text-[9px] text-white font-black flex items-center justify-center shadow-sm">
+                            {unreadCount}
+                        </span>
                     )}
                 </button>
                 <Link href="/config">
