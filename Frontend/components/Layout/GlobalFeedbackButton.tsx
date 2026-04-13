@@ -54,7 +54,7 @@ export default function GlobalFeedbackButton() {
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-                <button className="fixed bottom-32 left-6 z-[100] w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all group overflow-hidden border-2 border-slate-700/50">
+                <button className="fixed bottom-32 left-6 z-[100] w-12 h-12 bg-slate-900 text-white rounded-full hidden md:flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all group overflow-hidden border-2 border-slate-700/50">
                     <div className="absolute inset-0 bg-gradient-to-tr from-emerald-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <MessageSquarePlus size={22} className="relative z-10" />
                 </button>

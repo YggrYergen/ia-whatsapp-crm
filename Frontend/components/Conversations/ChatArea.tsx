@@ -371,7 +371,6 @@ export default function ChatArea() {
             {/* Input Bar */}
             <form onSubmit={handleSendMessage} className={`
                 bg-[#f0f2f5] px-3 md:px-5 py-2.5 md:py-3 flex gap-2 md:gap-3 items-center z-20 relative flex-shrink-0
-                mb-[60px] md:mb-0
             `}>
                 <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden outline-none focus-within:ring-2 focus-within:ring-emerald-500 transition-shadow">
                     <input

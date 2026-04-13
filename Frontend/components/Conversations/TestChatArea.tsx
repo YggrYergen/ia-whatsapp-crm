@@ -225,14 +225,14 @@ export default function TestChatArea() {
     return (
         <div className="flex-col relative bg-[#efeae2] flex-1 flex h-full overflow-hidden">
             {/* Globo Flotante de Rol */}
-            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[50]">
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[50]">
                 <div className="bg-indigo-600 text-white text-[10px] font-black px-4 py-1 rounded-full shadow-xl border border-indigo-400/30 tracking-widest animate-in fade-in slide-in-from-top-1">
                     {selectedContact.role ? selectedContact.role.toUpperCase() : 'CLIENTE'}
                 </div>
             </div>
 
             {/* Header Mini */}
-            <div className="h-[72px] bg-white border-b flex items-center px-4 md:px-6 justify-between shrink-0 z-10">
+            <div className="h-[52px] bg-white border-b flex items-center px-3 md:px-6 justify-between shrink-0 z-10">
                 <div className="flex items-center gap-2 md:gap-3">
                     {/* Botón Volver (Mobile) */}
                     <button 
@@ -363,7 +363,7 @@ export default function TestChatArea() {
             </div>
 
             {/* Barra Inferior Sandbox — Compact */}
-            <div className="bg-[#f0f2f5] p-2.5 pb-[60px] lg:pb-2.5 space-y-2 shrink-0 border-t z-20">
+            <div className="bg-[#f0f2f5] p-2.5 space-y-2 shrink-0 border-t z-20">
                 <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
                     <div className="flex-1 bg-white rounded-full shadow-sm border focus-within:ring-2 ring-indigo-500 transition-all overflow-hidden">
                         <input 
