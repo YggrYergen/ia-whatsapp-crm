@@ -162,7 +162,7 @@ export default function ChatArea() {
         >
             {/* Chat Header */}
             <div
-                className="h-[72px] bg-white/95 backdrop-blur-md px-4 md:px-6 flex justify-between items-center shadow-sm z-10 border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
+                className="min-h-[56px] md:min-h-[64px] bg-white/95 backdrop-blur-md px-3 md:px-6 flex justify-between items-center shadow-sm z-10 border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
                 onClick={() => {
                     setMobileView('info');
                     setShowDesktopInfo(!showDesktopInfo);
@@ -370,8 +370,8 @@ export default function ChatArea() {
 
             {/* Input Bar */}
             <form onSubmit={handleSendMessage} className={`
-                bg-[#f0f2f5] px-3 md:px-5 py-3 md:py-4 flex gap-2 md:gap-3 items-center z-20 relative flex-shrink-0
-                pb-[env(safe-area-inset-bottom,8px)] md:pb-4
+                bg-[#f0f2f5] px-3 md:px-5 py-2.5 md:py-3 flex gap-2 md:gap-3 items-center z-20 relative flex-shrink-0
+                mb-[60px] md:mb-0
             `}>
                 <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden outline-none focus-within:ring-2 focus-within:ring-emerald-500 transition-shadow">
                     <input
@@ -385,7 +385,7 @@ export default function ChatArea() {
                 <button
                     type="submit"
                     disabled={!newMessage.trim()}
-                    className={`w-12 h-12 md:w-12 md:h-12 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex-shrink-0
+                    className={`w-11 h-11 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex-shrink-0
                         ${simulationMode && isTestContact ? 'bg-indigo-600 hover:bg-indigo-700' : isEscalated ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}
                     `}
                 >

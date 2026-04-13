@@ -79,7 +79,7 @@ All completed. Full details in `task.md` (archived). Key milestones:
 - [ ] Test on actual phone browser (pending merge to main)
 
 #### Diagnosis Work
-- [x] ~~**U-14:** Read OpenAI docs on tool execution patterns~~ — fix deployed, testing
+- [ ] **U-69:** Read OpenAI docs on tool execution patterns (sequential vs concurrent) for gpt-5.4-mini
 - [x] ~~**U-14:** Test booking flow on PROD~~ — testing ongoing
 - [x] ~~**U-3:** Trigger a test booking on PROD~~ — confirmed working
 

@@ -362,39 +362,64 @@ export default function TestChatArea() {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Barra Inferior Sandbox */}
-            <div className="bg-[#f0f2f5] p-5 pb-24 lg:pb-5 space-y-4 shrink-0 border-t z-20">
-                <form onSubmit={handleSendMessage} className="flex gap-3 items-center">
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border focus-within:ring-2 ring-indigo-500 transition-all overflow-hidden">
+            {/* Barra Inferior Sandbox — Compact */}
+            <div className="bg-[#f0f2f5] p-2.5 pb-[60px] lg:pb-2.5 space-y-2 shrink-0 border-t z-20">
+                <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+                    <div className="flex-1 bg-white rounded-full shadow-sm border focus-within:ring-2 ring-indigo-500 transition-all overflow-hidden">
                         <input 
                             value={newMessage}
                             onChange={e => setNewMessage(e.target.value)}
-                            placeholder="Escribe como si fueras el CLIENTE..."
-                            className="w-full px-4 py-3 text-sm outline-none"
+                            placeholder={`Escribe como ${selectedContact.role?.toUpperCase() || 'CLIENTE'}...`}
+                            className="w-full px-4 py-2.5 text-sm outline-none"
                         />
                     </div>
-                    <button type="submit" className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-transform active:scale-95">
-                        <Send size={18} />
+                    <button type="submit" className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-transform active:scale-95 flex-shrink-0">
+                        <Send size={16} />
                     </button>
                 </form>
 
-                {/* Fila de Acciones Rápidas */}
-                <div className="flex flex-wrap gap-2 justify-center">
-                    <Button variant="outline" size="sm" className="bg-white border-red-200 text-red-600 hover:bg-red-50 text-[10px] h-8 font-bold" onClick={handleDiscard}>
-                        <Trash2 size={14} className="mr-1" /> DESCARTAR PRUEBA
-                    </Button>
-                    <Button variant="outline" size="sm" className="bg-white border-green-200 text-green-600 hover:bg-green-50 text-[10px] h-8 font-bold" onClick={handleSendTest}>
-                        <Send size={14} className="mr-1" /> ENVIAR PRUEBA (FINALIZAR)
-                    </Button>
-                    <Button variant="outline" size="sm" className="bg-white text-indigo-600 text-[10px] h-8 font-bold">
-                        <Sparkles size={14} className="mr-1" /> CAMBIAR MODELO
-                    </Button>
-                    <Button variant="outline" size="sm" className="bg-white text-slate-600 text-[10px] h-8 font-bold" onClick={() => setShowDesktopInfo(true)}>
-                        <Settings size={14} className="mr-1" /> CONFIGURACIÓN
-                    </Button>
-                    <Button variant="outline" size="sm" className="bg-white text-slate-600 text-[10px] h-8 font-bold">
-                        <MoreHorizontal size={14} className="mr-1" /> MÁS OPCIONES
-                    </Button>
+                {/* Action buttons — compact row */}
+                <div className="flex gap-1.5 justify-center flex-wrap">
+                    <button 
+                        onClick={handleDiscard}
+                        className="px-3 py-1.5 rounded-full bg-white border border-red-200 text-red-600 hover:bg-red-50 text-[9px] font-black uppercase tracking-wider transition-colors active:scale-95"
+                    >
+                        DESCARTAR
+                    </button>
+                    <button 
+                        onClick={handleSendTest}
+                        className="px-3 py-1.5 rounded-full bg-white border border-green-200 text-green-600 hover:bg-green-50 text-[9px] font-black uppercase tracking-wider transition-colors active:scale-95"
+                    >
+                        ENVIAR
+                    </button>
+                    <button 
+                        onClick={async () => {
+                            const roles = ['client', 'staff', 'admin']
+                            const currentIdx = roles.indexOf(selectedContact.role || 'client')
+                            const nextRole = roles[(currentIdx + 1) % roles.length]
+                            const { error } = await supabase.from('contacts').update({ role: nextRole }).eq('id', selectedContact.id)
+                            if (!error) {
+                                setSelectedContact({ ...selectedContact, role: nextRole })
+                                setContacts(contacts.map((c: any) => c.id === selectedContact.id ? { ...c, role: nextRole } : c))
+                                setToasts(prev => [...prev, { id: Date.now(), payload: { content: `Rol cambiado a ${nextRole.toUpperCase()} 🔄` } }])
+                            }
+                        }}
+                        className="px-3 py-1.5 rounded-full bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[9px] font-black uppercase tracking-wider transition-colors active:scale-95"
+                    >
+                        CAMBIAR ROL
+                    </button>
+                    <button 
+                        onClick={() => {
+                            if (window.innerWidth < 1024) {
+                                setMobileView('info')
+                            } else {
+                                setShowDesktopInfo(!showDesktopInfo)
+                            }
+                        }}
+                        className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-[9px] font-black uppercase tracking-wider transition-colors active:scale-95"
+                    >
+                        CONFIG.
+                    </button>
                 </div>
             </div>
         </div>

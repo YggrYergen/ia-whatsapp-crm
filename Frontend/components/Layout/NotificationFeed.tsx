@@ -18,6 +18,8 @@ export default function NotificationFeed() {
 
     if (!isNotificationFeedOpen) return null
 
+    const closeFeed = () => setIsNotificationFeedOpen(false)
+
     const getNotifIcon = (notif: any) => {
         if (notif.type === 'escalation') return <AlertTriangle size={16} className="text-rose-500" />
         if (notif.message?.includes('NUEVA CITA') || notif.message?.includes('AGENDADA')) return <Calendar size={16} className="text-emerald-500" />
@@ -49,23 +51,26 @@ export default function NotificationFeed() {
         if (msgs) setMessages(msgs)
         setSelectedContact(contact)
         setMobileView('chat')
-        setIsNotificationFeedOpen(false)
+        closeFeed()
         router.push('/chats')
     }
 
-    // Separate: those that have a contact (navigable) vs. system-only
     const hasContact = (n: any) => !!n.contact_id && contacts.some((c: any) => c.id === n.contact_id)
 
     return (
         <>
-            <div className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[100]" onClick={() => setIsNotificationFeedOpen(false)} />
+            {/* Backdrop — covers full screen, tapping closes */}
+            <div 
+                className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[100]" 
+                onClick={closeFeed}
+                onTouchEnd={(e) => { e.preventDefault(); closeFeed(); }}
+            />
             
-            <div className={`
-                fixed top-0 right-0 w-full md:w-[400px] bg-white shadow-2xl z-[101] border-l border-slate-200
-                flex flex-col animate-slide-in-right
-                h-[calc(100%-68px)] md:h-full bottom-[68px] md:bottom-0
-            `}>
-                <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
+            {/* Panel — stops above the 60px mobile nav */}
+            <div className="fixed top-0 right-0 w-full md:w-[400px] bg-white shadow-2xl z-[101] border-l border-slate-200 flex flex-col animate-slide-in-right h-[calc(100dvh-60px)] md:h-full md:bottom-0 bottom-[60px]">
+                
+                {/* Header */}
+                <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
                             <Bell size={20} />
@@ -84,17 +89,19 @@ export default function NotificationFeed() {
                             <CheckCheck size={20} />
                         </button>
                         <button 
-                            onClick={() => setIsNotificationFeedOpen(false)}
-                            className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                            onClick={closeFeed}
+                            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); closeFeed(); }}
+                            className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors active:bg-rose-100"
                         >
                             <X size={20} />
                         </button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-2 bg-slate-50/50 custom-scrollbar">
+                {/* Scrollable content */}
+                <div className="flex-1 overflow-y-auto overscroll-contain p-3 md:p-4 space-y-2 bg-slate-50/50 -webkit-overflow-scrolling-touch">
                     {notifications.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16">
                             <Bell size={48} className="mb-4 opacity-20" />
                             <p className="font-bold">No hay notificaciones</p>
                         </div>
@@ -126,7 +133,6 @@ export default function NotificationFeed() {
                                             </div>
                                             <p className="text-sm font-semibold text-slate-700 mt-1.5 leading-snug line-clamp-3">{notif.message}</p>
                                             
-                                            {/* Navigate or Info */}
                                             {canNavigate && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); navigateToChat(notif); }}

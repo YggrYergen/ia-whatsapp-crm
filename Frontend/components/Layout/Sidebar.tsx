@@ -39,7 +39,7 @@ export default function Sidebar() {
     return (
         <div className={`
             bg-slate-900 border-t md:border-t-0 md:border-r border-slate-800 flex-shrink-0 z-50
-            fixed bottom-0 left-0 w-full h-[68px] flex flex-row items-center justify-around px-2
+            fixed bottom-0 left-0 w-full h-[60px] flex flex-row items-center justify-around px-2
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0 md:gap-6
             pb-safe md:pb-6
         `}>

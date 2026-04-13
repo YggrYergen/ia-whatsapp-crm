@@ -110,7 +110,7 @@ body {
 
 /* Safe bottom padding for mobile sidebar */
 .pb-sidebar {
-    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Notification badge pop-in */
