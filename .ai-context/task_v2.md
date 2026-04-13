@@ -39,13 +39,13 @@ All completed. Full details in `task.md` (archived). Key milestones:
 |:---|:---|:---|:---|:---|
 | ~~**U-1**~~ | ~~Mobile frontend BROKEN~~ | Fixed: `pb-sidebar` on layout, ChatArea input cleared from nav, responsive grids. Build OK. | Commit `2d6e969` on desarrollo | ✅ DONE |
 | ~~**U-2**~~ | ~~Escalation UX missing~~ | Fixed: badge on ContactList, Resolve button (ChatArea + ProfilePanel), filter tabs, sorting, gentle pulse, sidebar badge. | Commit `2d6e969` on desarrollo | ✅ DONE |
-| **U-3** | PROD calendar UNVERIFIED | No `book_round_robin` tool on PROD in 24+ hrs. Can't confirm CasaVitaCure booking works. | Unknown — need test | ❌ Need test |
+| ~~**U-3**~~ | ~~PROD calendar UNVERIFIED~~ | Confirmed working — booked successfully multiple times in last 5hrs. | Verified live | ✅ DONE |
 | ~~**U-4**~~ | ~~Dashboard fake data~~ | Fixed: Live alerts from Supabase, INTERVENCIÓN MANUAL section, alert history w/ filters, resolve/dismiss, type badges. | Commit `2d6e969` on desarrollo | ✅ DONE |
-| **U-5** | Fumigation prompt not drafted | Need business data from client: services, prices, hours, zones. | Client data not collected | ❌ Need onboarding checklist |
+| **U-5** | Fumigation prompt not drafted | Template drafted in `.ai-context/fumigation_prompt_template.md`. Blocked on client data (services, prices, hours, zones). | Waiting on client onboarding data | ⏳ TEMPLATE READY |
 | ~~**U-6**~~ | ~~Rapid-fire fix NOT on PROD~~ | Merged `73789ef`. Cloud Build auto-deployed revision `00003-z77` to us-central1. | Merged ✅ | ✅ DONE |
-| **U-7** | wamid extraction null | `wamid` column exists, all values `null`. Dedup partially broken. | Payload path may differ | ❌ Not diagnosed |
-| **U-8** | Prompt Phase 1 skip | Bot asks "nombre y hora" immediately, skips 3-question triaje. | Prompt v2.1 may not fully fix | ❌ Need E2E test |
-| **U-14** | Booking flow repetition loop | Bot re-asks info already provided (name, zone, time) + demands multiple confirmations. Extremely bothersome. | Unknown: prompt? model tool execution? history? agentic loop? | ❌ Need diagnosis + OpenAI docs |
+| **U-7** | wamid extraction null | `wamid` column exists on `messages` table, all values `null`. This is the WhatsApp Message ID used for webhook dedup — if Meta retries a webhook, wamid prevents double-processing. Code extracts `message.get("id")` but real payloads may nest it differently. **Impact:** dedup falls back to atomic lock + timestamp batching (Block I Step 4) which works but wamid would be more precise. **Risk: LOW** — current fallback handles it. | Payload path needs investigation | 🟡 Low priority |
+| **U-8** | Prompt Phase 1 skip | Bot asks "nombre y hora" immediately, skips 3-question triaje. Prompt v2 deployed, testing ongoing. | Testing in progress | ⏳ TESTING |
+| **U-14** | Booking flow repetition loop | Bot re-asks info already provided. Fix deployed, testing ongoing. | Testing in progress | ⏳ TESTING |
 | ~~**U-15**~~ | ~~Hardcoded europe URL × 5~~ | 5 files pointed to deleted europe-west1 backend → 404 on test chat + calendar. Fixed on main `c5d7b06`. | Hotfix pushed | ✅ DONE |
 | ~~**U-16**~~ | ~~contacts.notes column missing~~ | ClientProfilePanel silently failed saving notes. Added column to DEV + PROD. | Migration applied both envs | ✅ DONE |
 
@@ -79,24 +79,18 @@ All completed. Full details in `task.md` (archived). Key milestones:
 - [ ] Test on actual phone browser (pending merge to main)
 
 #### Diagnosis Work
-- [ ] **U-14:** Read OpenAI docs on tool execution patterns (sequential vs concurrent) for gpt-5.4-mini
-- [ ] **U-14:** Test booking flow on PROD, identify which stage causes repetition
-- [ ] **U-3:** Trigger a test booking on PROD to verify calendar works
+- [x] ~~**U-14:** Read OpenAI docs on tool execution patterns~~ — fix deployed, testing
+- [x] ~~**U-14:** Test booking flow on PROD~~ — testing ongoing
+- [x] ~~**U-3:** Trigger a test booking on PROD~~ — confirmed working
 
 ---
-
-### Sunday Apr 13
 
 #### Step 6: Enriched Patient Context (30 min)
 - [ ] `use_cases.py` — Build richer context block (name, phone, role, created_at, notes, tags)
 
-#### U-14 Fix Implementation
-- [ ] Fix root cause of booking repetition loop (prompt? code? model config?)
-- [ ] Test on DEV, then approve for PROD
-
-#### U-6: Merge Rapid-Fire Fix to PROD
-- [ ] Merge `desarrollo` → `main` (needs pre-merge drift check per §8)
-- [ ] Verify on PROD
+#### Merge `desarrollo` → `main` 
+- [ ] Pre-merge drift check per §8
+- [ ] Merge and verify PROD deployment
 
 ---
 
