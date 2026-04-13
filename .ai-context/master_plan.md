@@ -1,7 +1,7 @@
 # 🗺️ Master Plan v6 — AI WhatsApp CRM SaaS (ALL DECISIONS FINALIZED)
 
-> **Documento vivo** — Última actualización: 2026-04-11 20:30 CLT  
-> **Estado:** APPROVED v6 — All model decisions FINALIZED, Sprint 1 v2 approved, 60+ doc URLs cited  
+> **Documento vivo** — Última actualización: 2026-04-13 01:50 CLT  
+> **Estado:** APPROVED v7 — Sprint 1 Blocks A-L COMPLETE, Blocks M-Q pending. All CC items resolved.  
 > **Deep Dives:** [A v3 (Response Quality)](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B v3 (Multi-Channel)](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C v3 (Dashboard + Observability)](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)
 
 > [!CAUTION]
@@ -29,9 +29,9 @@
 
 | Milestone | Date | Days Left | Status |
 |:---|:---|:---|:---|
-| **2nd Client Onboarding** (Fumigation) | Tue 2026-04-15 | **4 días** | 🔴 MVP scope |
-| **7 Paying Clients** | 2026-05-04 | **23 días** | Kill switch |
-| **Financial Independence** | 2026-07 | ~84 días | Legal entity + positive cash flow |
+| **2nd Client Onboarding** (Fumigation) | Tue 2026-04-15 | **2 días** | 🟡 Template ready, needs client data |
+| **7 Paying Clients** | 2026-05-04 | **21 días** | Kill switch |
+| **Financial Independence** | 2026-07 | ~82 días | Legal entity + positive cash flow |
 
 ### Key Business Decisions Made
 
@@ -278,15 +278,16 @@ WhatsApp → Cloud Run (FastAPI) → OpenAI → Supabase → Response → WhatsA
 ### Sprint 1: Emergency Stabilization (Apr 11-15) — REVISED v2
 
 > **See full execution plan:** [task.md §Sprint 1](file:///d:/WebDev/IA/.ai-context/task.md) (Blocks A-Q, 17 blocks, 4 days)
+> **Authoritative status:** [task_v2.md](file:///d:/WebDev/IA/.ai-context/task_v2.md)
 > **Key change (v2):** Dashboard MVP → Sprint 2. Time → system prompts + resilience layer.
 
-| Day | Tasks | Hours |
+| Day | Tasks | Status |
 |:---|:---|:---|
-| **Fri Apr 11** | Research DONE ✅ (50+ searches). Deep dives v3 + all docs enriched. Model decided. Sprint 1 restructured. | Done |
-| **Sat Apr 12** | Block A quick wins → **DEPLOY IMMEDIATELY**. Blocks B-H: strict tools, agentic loop rewrite, resilience layer (6 tasks), observability, DB migration. | 10h |
-| **Sun Apr 13** | System prompt engineering (3-4h), Escalation UX, Provisioning script, Simple status page. | 8h |
-| **Mon Apr 14** | Fumigation tenant setup via provisioning script, full E2E testing, Meta audit. | 8h |
-| **Tue Apr 15** | Onboarding 🚀, monitoring, post-onboarding (prompt refinement + rescue template). | 4h |
+| **Fri Apr 11** | Research DONE ✅ (50+ searches). Deep dives v3 + all docs enriched. Model decided. Sprint 1 restructured. | ✅ Done |
+| **Sat Apr 12** | Block A-H: strict tools, agentic loop, resilience, observability, BSUID, deploy. Block I: response quality fix (5 steps). Block J: escalation UX. Block L: dashboard + mobile frontend overhaul. | ✅ Done |
+| **Sun Apr 13** | Step 6: Enriched patient context. Merge `desarrollo` → `main` (needs drift check). | ⏳ In progress |
+| **Mon Apr 14** | Fumigation tenant setup via provisioning script, full E2E testing, Meta audit. | ⏳ Pending |
+| **Tue Apr 15** | Onboarding 🚀, monitoring, post-onboarding (prompt refinement + rescue template). | ⏳ Pending |
 
 ### Sprint 2: Product Expansion (Apr 16-25)
 
@@ -354,15 +355,15 @@ CRITICAL RULES:
 
 ## 9. Risk Register (UPDATED with Research Findings)
 
-| Risk | Likelihood | Impact | Mitigation | Owner |
+| Risk | Likelihood | Impact | Mitigation | Status |
 |:---|:---|:---|:---|:---|
-| **BSUID migration breaks contact lookups** | Medium (June 2026) | 🔴 Critical | Add `bsuid` column NOW, start storing from webhooks | Dev |
-| Meta WABA suspension | Medium | 🔴 Critical | Migrate to client-owned WABAs before #7 | You |
-| gpt-5.4-mini quality insufficient | Low | 🔴 Critical | Test extensively before deploy, Gemini as fallback | Both |
-| **Graph API v19 deprecated May 21** | Low | 🟡 High | Audit all API calls for version strings, use v25.0 | Dev |
-| Fumigation client disappointed at scope | Medium | 🟡 High | Set expectations BEFORE Tuesday | You |
-| **Instagram 24h window — can't re-engage** | High | 🟡 High | Collect email/phone as backup, prefer WhatsApp | Both |
-| **Strict mode breaks tool schemas** | Low | 🟡 Medium | Test each schema before deploy, keep `strict:false` fallback | Dev |
-| Cost explosion from o4-mini usage | Low | 🟡 High | Remove from selectable models, cost warnings | Dev |
-| Supabase free tier exhausted | Medium | 🟡 High | Monitor DB size, upgrade to Pro at tenant #3 | Both |
-| Single point of failure (you) | High | 🔴 Critical | Document everything, build for automation | Both |
+| **BSUID migration breaks contact lookups** | Medium (June 2026) | 🔴 Critical | Phase 1 DONE: `bsuid` column added, extraction active. Phase 2 (lookup swap) before June. | ✅ Phase 1 |
+| Meta WABA suspension | Medium | 🔴 Critical | Migrate to client-owned WABAs before #7 | ⏳ |
+| gpt-5.4-mini quality insufficient | Low | 🔴 Critical | Deployed + tested. Prompt v2 active. Working well. | ✅ Verified |
+| **Graph API v19 deprecated May 21** | Low | 🟡 High | Updated to v25.0 (Block A) | ✅ Fixed |
+| Fumigation client disappointed at scope | Medium | 🟡 High | Set expectations BEFORE Tuesday | ⏳ |
+| **Instagram 24h window — can't re-engage** | High | 🟡 High | Collect email/phone as backup, prefer WhatsApp | ⏳ Sprint 2 |
+| **Strict mode breaks tool schemas** | Low | 🟡 Medium | All 7 schemas validated in Block B | ✅ Fixed |
+| Cost explosion from o4-mini usage | Low | 🟡 High | Removed from selectable models, `max_completion_tokens=2048` cap | ✅ Fixed |
+| Supabase free tier exhausted | Medium | 🟡 High | Monitor DB size, upgrade to Pro at tenant #3 | ⏳ |
+| Single point of failure (you) | High | 🔴 Critical | Document everything, build for automation | ⏳ |

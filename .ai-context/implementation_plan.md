@@ -10,7 +10,7 @@
 > - [Deep Dive C v3 — Dashboard + Observability](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — 15+ Infrastructure doc URLs
 > - [Master Plan v5](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md) — Corrected financials, model decision
 
-## Status: Phase 0-5C COMPLETE ✅ | Phase 5D IN PROGRESS 🔴 | Sprint 1 PLANNED ⭐
+## Status: Phase 0-5D COMPLETE ✅ | Sprint 1 Blocks A-L COMPLETE ✅ | Blocks M-Q PENDING ⏳
 
 > [!CAUTION]
 > **CRITICAL CORRECTIONS (2026-04-11 v5 Research):**
@@ -37,7 +37,7 @@
 - ✅ Phase 5A: Simulation Suite — COMPLETE (9/9 scenarios, see README §0.8)
 - ✅ Phase 5B: Version Tag — `v1.0`, rev `00074-jx4`
 - ✅ Phase 5C: Meta/WhatsApp LIVE — Webhook verified, System User token, E2E confirmed
-- 🔴 Phase 5D: Production Validation — IN PROGRESS, critical issues found (BUG-5, BUG-6, see §0.9)
+- ✅ Phase 5D: Production Validation — COMPLETE. BUG-5 disabled, BUG-6 fixed (Block I Steps 1-5b), Escalation UX (Block J), Dashboard (Block L)
 
 ---
 
@@ -802,30 +802,29 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 - [x] System User permanent token installed (never-expiring)
 - [x] Direct Meta Graph API test call returned `200` with `wa_id` confirmation
 
-**Critical issues found in live testing 🔴:**
-- [ ] **BUG-6: Response Quality**: 7 root causes diagnosed. Fix spec: [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). Key docs: [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs).
-- [ ] **BUG-5: Silent Failure Detector**: 95%+ false positives. **Decisión: Desactivar completamente.**
-- [ ] **Escalation workflow**: NON-FUNCTIONAL in practice. Missing: chat highlighting, tracking, notifications, staff UX.
-- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` never worked. Full CIS needed.
+**Critical issues found in live testing — RESOLVED ✅ (Apr 12-13):**
+- [x] **BUG-6: Response Quality**: 7 root causes fixed. Block I Steps 1-5b. [Deep Dive A v3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md). Key docs: [Function Calling](https://platform.openai.com/docs/guides/function-calling), [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs).
+- [x] **BUG-5: Silent Failure Detector**: Disabled (Phase 5D decision).
+- [x] **Escalation workflow**: FUNCTIONAL — Block J (badge, resolve button, filter tabs, sorting, pulse, sidebar badge, NotificationFeed)
+- [ ] **Scoring/Customer Intelligence**: `UpdatePatientScoringTool` works but CIS redesign needed. Sprint 2.
 
-**Critical Corrections (v5 Research) 🔴:**
-- [ ] **CC-1:** Model string `gpt-4o-mini` DEPRECATED in 3 files. Change to `gpt-5.4-mini`. [Models](https://platform.openai.com/docs/models)
-- [ ] **CC-3:** BSUID dormant capture (Phase 1): add `bsuid` column, extract `user_id`, store + backfill. Phase 2 (lookup swap) before June 2026. [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md)
-- [ ] **CC-4:** Graph API `v19.0` → `v25.0`. Deprecated May 21. [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
-- [ ] **CC-5:** Add `strict: true` to all tool schemas. [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
+**Critical Corrections (v5 Research) — RESOLVED ✅:**
+- [x] **CC-1:** Model string updated to `gpt-5.4-mini` (Block A). [Models](https://platform.openai.com/docs/models)
+- [x] **CC-3:** BSUID dormant capture Phase 1 complete (Block G). Phase 2 before June 2026. [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md)
+- [x] **CC-4:** Graph API updated to `v25.0` (Block A). [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
+- [x] **CC-5:** `strict: true` on all 7 tool schemas (Block B). [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
 
 **Still pending 🟡:**
-- [ ] API Version Update: Code uses Graph API `v19.0`, Meta latest is `v25.0`. [Changelog](https://developers.facebook.com/docs/graph-api/changelog)
 - [ ] Publish App to Live Mode: App currently in Development mode. [App Review](https://developers.facebook.com/docs/app-review)
-- [ ] Calendar booking E2E via real WhatsApp conversation
+- [x] Calendar booking E2E via real WhatsApp conversation — confirmed working (multiple bookings)
 - [ ] Sentry cleanup: resolve/dismiss false positive warnings
-- [ ] System declared production-ready 🚀 (Resilient MVP)
+- [x] System prompt v2 deployed + mobile frontend stabilized
 
 ---
 
 ## Sprint 1: Emergency Stabilization (Apr 12-15, 2026) — REVISED v2
 
-> **⭐ ACTIVE SPRINT.** Goal: Fix BUG-6 + BUG-5, add resilience layer, onboard 2nd tenant.
+> **⭐ ACTIVE SPRINT.** Blocks A-L COMPLETE ✅. Remaining: M (tenant setup), N (E2E), O (audit), P (go-live), Q (post-onboarding).
 > **Strategy (user-approved):** Deploy quick wins FIRST. Dashboard MVP → Sprint 2. Time → prompts + resilience.
 > **Model decision: `gpt-5.4-mini`** for PROD, `gpt-5.4-nano` for dev/budget (both API-compatible).
 > **Full execution plan with per-step doc links:** See [task.md §Sprint 1](file:///d:/WebDev/IA/.ai-context/task.md).
@@ -848,36 +847,40 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 > [!IMPORTANT]
 > **Each block's "Key Docs" column lists ALL official documentation that MUST be reviewed before starting that block.** The implementing agent MUST open each URL and confirm understanding before writing any code. This is non-negotiable.
 
-| Block | Task | Est. | Day | Key Docs (MUST review before implementing) |
-|:---|:---|:---|:---|:---|
-| **A** | Quick wins + cost cap + **DEPLOY** | 30 min | Sat AM | [OpenAI Models](https://platform.openai.com/docs/models), [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog), [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) |
-| B | `strict: true` tool schemas (all 7 tools) | 1 hr | Sat | [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) §"Supported schemas", [Deep Dive A §3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
-| C | Adapter: preserve text + usage tracking | 30 min | Sat | [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) (response/usage objects), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
-| **D** | **Agentic loop rewrite** (role:tool, multi-round, parallel) | **3-5 hr** | Sat | [Function Calling](https://platform.openai.com/docs/guides/function-calling) §"Multi-turn" **CRITICAL**, [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create), [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
-| **E** | **Resilience: webhook sig, rate limit, lock TTL, shadow-forward, health, cache** | **90 min** | Sat | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages), [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits), [cachetools](https://pypi.org/project/cachetools/) |
-| F | Observability: correlation IDs + Sentry tags + logging | 30 min | Sat | [asgi-correlation-id](https://github.com/snok/asgi-correlation-id), [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/), [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) |
-| G | BSUID Dormant Capture (Phase 1): DB migration + webhook extract + store + backfill | 20 min | Sat | [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) (BSUID format), [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md), [BSUID Forensic](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/bsuid_full_forensic.md) |
-| H | Test & deploy Day 1 | 30 min | Sat PM | — |
-| **I** | **System prompt engineering** (CasaVitaCure + fumigation draft) | **3-4 hr** | Sun | [OpenAI Prompt Engineering](https://platform.openai.com/docs/guides/prompt-engineering), [Function Calling](https://platform.openai.com/docs/guides/function-calling) |
-| J | Escalation UX minimal | 2 hr | Sun | [Next.js 15](https://nextjs.org/docs) |
-| K | Tenant provisioning script | 1 hr | Sun | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
-| L | Simple status page (replaces Dashboard MVP) | 30 min | Sun | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
-| M | Fumigation tenant setup | 2 hr | Mon | [Phone Number Management](https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
-| N | Full E2E testing | 3 hr | Mon | All above — integration verification |
-| O | Meta audit (permissions, webhooks, token, mTLS) | 30 min | Mon | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started), [WhatsApp Business Management](https://developers.facebook.com/docs/whatsapp/business-management-api) |
-| P | Go-live 🚀 | — | Tue | [Meta App Review](https://developers.facebook.com/docs/app-review) |
-| Q | Post-onboarding: prompt refinement + rescue template | 1 hr | Tue PM | [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
+| Block | Task | Est. | Day | Status | Key Docs (MUST review before implementing) |
+|:---|:---|:---|:---|:---|:---|
+| **A** | Quick wins + cost cap + **DEPLOY** | 30 min | Sat AM | ✅ | [OpenAI Models](https://platform.openai.com/docs/models), [Graph API Changelog](https://developers.facebook.com/docs/graph-api/changelog), [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) |
+| B | `strict: true` tool schemas (all 7 tools) | 1 hr | Sat | ✅ | [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs) §"Supported schemas", [Deep Dive A §3](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
+| C | Adapter: preserve text + usage tracking | 30 min | Sat | ✅ | [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create) (response/usage objects), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
+| **D** | **Agentic loop rewrite** (role:tool, multi-round, parallel) | **3-5 hr** | Sat | ✅ | [Function Calling](https://platform.openai.com/docs/guides/function-calling) §"Multi-turn" **CRITICAL**, [Chat Completions API](https://platform.openai.com/docs/api-reference/chat/create), [Deep Dive A §3 Phase 4](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) |
+| **E** | **Resilience: webhook sig, rate limit, lock TTL, shadow-forward, health, cache** | **90 min** | Sat | ✅ | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks), [WhatsApp Send Message](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/text-messages), [Cloud Run Memory](https://cloud.google.com/run/docs/configuring/memory-limits), [cachetools](https://pypi.org/project/cachetools/) |
+| F | Observability: correlation IDs + Sentry tags + logging | 30 min | Sat | ✅ | [asgi-correlation-id](https://github.com/snok/asgi-correlation-id), [Sentry FastAPI](https://docs.sentry.io/platforms/python/integrations/fastapi/), [Deep Dive C §3](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) |
+| G | BSUID Dormant Capture (Phase 1): DB migration + webhook extract + store + backfill | 20 min | Sat | ✅ | [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) (BSUID format), [Deep Dive B §1](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md), [BSUID Forensic](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/bsuid_full_forensic.md) |
+| H | Test & deploy Day 1 | 30 min | Sat PM | ✅ | — |
+| **I** | **Block I: Response quality fix** (adapter, prompt v2, dedup, batching) | **3-4 hr** | Sat PM | ✅ | [OpenAI Prompt Engineering](https://platform.openai.com/docs/guides/prompt-engineering), [Function Calling](https://platform.openai.com/docs/guides/function-calling) |
+| J | Escalation UX (badge, resolve, filter, pulse, NotificationFeed) | 2 hr | Sat night | ✅ | [Next.js 15](https://nextjs.org/docs) |
+| K | Tenant provisioning script | 1 hr | — | ⏳ | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
+| L | Dashboard + Mobile Frontend Overhaul | 4 hr | Sat night | ✅ | [Supabase Python Client](https://supabase.com/docs/guides/getting-started/quickstarts/python) |
+| M | Fumigation tenant setup | 2 hr | Mon | ⏳ | [Phone Number Management](https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers), [WhatsApp Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks) |
+| N | Full E2E testing | 3 hr | Mon | ⏳ | All above — integration verification |
+| O | Meta audit (permissions, webhooks, token, mTLS) | 30 min | Mon | ⏳ | [Meta Webhook Security](https://developers.facebook.com/docs/graph-api/webhooks/getting-started), [WhatsApp Business Management](https://developers.facebook.com/docs/whatsapp/business-management-api) |
+| P | Go-live 🚀 | — | Tue | ⏳ | [Meta App Review](https://developers.facebook.com/docs/app-review) |
+| Q | Post-onboarding: prompt refinement + rescue template | 1 hr | Tue PM | ⏳ | [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates), [Prompt Caching](https://platform.openai.com/docs/guides/prompt-caching) |
 
 ### Deferred to Sprint 2
 
 | Item | Sprint 2 Priority |
 |:---|:---|
-| Dashboard MVP (Blocks 1-2) | 🔴 First thing Sprint 2 |
+| Responses API migration (`/v1/responses`) | 🔴 Enables reasoning + tools |
 | Instagram DM | 🔴 SELLING POINT |
 | Multi-squad booking | 🔴 SELLING POINT |
+| Dashboard MVP (Charts, KPIs) | 🔴 First thing Sprint 2 |
 | `gpt-5.4-nano` dev testing | 🟡 After mini stable |
+| Gemini adapter (SDK migration) | 🟡 `google.generativeai` deprecated |
+| Ideal rapid-fire (abort in-flight LLM) | 🟡 Current 80/20 works |
 
 **Detailed task breakdown with per-step doc links:** See [task.md §Sprint 1](file:///d:/WebDev/IA/.ai-context/task.md).
+**Authoritative status tracker:** See [task_v2.md](file:///d:/WebDev/IA/.ai-context/task_v2.md).
 
 
 

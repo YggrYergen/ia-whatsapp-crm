@@ -989,7 +989,7 @@ Docs consulted:
 
 ## 🔴 UNSOLVED ISSUES FROM DAY 2 (2026-04-12) — Updated 2026-04-13 01:40 CLT
 
-> **Status update:** Most items resolved during Apr 12-13 session. See `task_v2.md` for authoritative status.
+> **These must be resolved before Tuesday onboarding.** See `execution_tracker.md` Day 2 Unsolved section for full detail. **Status update:** Most items resolved during Apr 12-13 session. See `task_v2.md` for authoritative status.
 
 - [x] **U-1: Mobile frontend broken** — ✅ RESOLVED. Multiple fix passes: pb-sidebar, responsive grids, dark glassmorphic design, compact navbar (68→60px), header clearance for browser chrome, double padding elimination. Commits on `desarrollo`.
 - [x] **U-2: Escalation UX (Block J)** — ✅ RESOLVED. Full Block J: badge on ContactList, resolve button, filter tabs, sorting, pulse animation, sidebar badge, NotificationFeed with navigate-to-chat.
@@ -1036,4 +1036,4 @@ Docs consulted:
 ### Remaining for tonight:
 - [ ] Step 6: Enriched Patient Context (`use_cases.py`)
 - [ ] Pre-merge drift check per §8
-- [ ] Merge `desarrollo` → `main` and verify PROD deployment
+- [ ] Merge `desarrollo` → `main` and verify PROD deployment
