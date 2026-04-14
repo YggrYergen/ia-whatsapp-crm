@@ -31,6 +31,10 @@ import sentry_sdk
 from app.modules.communication.routers import router as webhook_router
 from app.modules.integrations.google_oauth_router import router as google_oauth_router
 
+# Block R: Onboarding API routes (newcomer auto-provisioning + config agent chat)
+from app.api.onboarding.provision import router as onboarding_provision_router
+from app.api.onboarding.chat_endpoint import router as onboarding_chat_router
+
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy
 from app.infrastructure.llm_providers.gemini_adapter import GeminiStrategy
@@ -190,6 +194,7 @@ def create_app() -> FastAPI:
 
     allowed_origins = [
         "https://dash.tuasistentevirtual.cl",
+        "https://ohno.tuasistentevirtual.cl",  # Block R: Private frontend for onboarding
         "https://ia-whatsapp-crm.tomasgemes.workers.dev",
         os.getenv("FRONTEND_URL", ""),
     ]
@@ -267,6 +272,10 @@ def create_app() -> FastAPI:
 
     app.include_router(webhook_router)
     app.include_router(google_oauth_router)
+    
+    # Block R: Onboarding routes
+    app.include_router(onboarding_provision_router)
+    app.include_router(onboarding_chat_router)
 
     @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():
