@@ -342,16 +342,24 @@ async def onboarding_chat(request: Request):
                         # Capture response_id for potential follow-up chaining
                         last_response_id = event.get("response_id")
                         
-                        # Only send 'done' to frontend if there are no pending tool calls
-                        # If there ARE tool calls, we'll send 'done' after the follow-up
-                        if not tool_calls_buffer:
-                            yield _format_sse("done", {
-                                "content": event.get("content", ""),
-                                "all_complete": all(
-                                    fields_status.get(f, False) for f in ONBOARDING_FIELDS
-                                ),
-                                "usage": event.get("usage"),
-                            })
+                        # Always send 'done' to finalize the current text into a
+                        # message on the frontend. If tool calls exist, the follow-up
+                        # stream will produce a SECOND 'done' for the follow-up text.
+                        # Previous approach (suppressing done) caused the first
+                        # stream's text to be lost — see incident 2026-04-14.
+                        done_content = event.get("content", "")
+                        yield _format_sse("done", {
+                            "content": done_content,
+                            "all_complete": all(
+                                fields_status.get(f, False) for f in ONBOARDING_FIELDS
+                            ),
+                            "usage": event.get("usage"),
+                        })
+                        logger.info(
+                            f"📨 [CONFIG-AGENT] Stream done | tenant={tenant_id} | "
+                            f"text_len={len(done_content)} | tool_calls={len(tool_calls_buffer)} | "
+                            f"response_id={last_response_id[:16] if last_response_id else 'NONE'}..."
+                        )
                 
                 # If there were tool calls, we need to continue the conversation
                 # by feeding tool results back using previous_response_id chaining.

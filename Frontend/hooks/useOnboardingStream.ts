@@ -245,6 +245,25 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
               try {
                 const data = JSON.parse(currentEventData)
 
+                // ── SSE Observability ──────────────────────────────────
+                // Log every event so streaming bugs are VISIBLE in DevTools.
+                // Without this, text disappearance bugs are completely invisible.
+                if (currentEventType !== 'text_delta' && currentEventType !== 'thinking') {
+                  // Don't spam on high-frequency events, but log all discrete ones
+                  console.debug(
+                    `[SSE:${currentEventType}]`,
+                    currentEventType === 'done'
+                      ? { content_len: (data.content || '').length, accumulated_len: accumulatedResponse.length }
+                      : data
+                  )
+                }
+                Sentry.addBreadcrumb({
+                  category: 'onboarding.sse',
+                  message: `SSE event: ${currentEventType}`,
+                  level: 'info',
+                  data: { type: currentEventType, content_preview: JSON.stringify(data).slice(0, 200) },
+                })
+
                 switch (currentEventType) {
                   case 'thinking': {
                     thinkingActive = true
