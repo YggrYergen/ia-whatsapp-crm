@@ -88,6 +88,7 @@ WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)
 | Meta WhatsApp Cloud API | **v25.0** | `infrastructure/messaging/meta_graph_api.py` |
 | Google Calendar API | v3 | `infrastructure/calendar/google_client.py` |
 | OpenAI Chat Completions | `/v1/chat/completions` | `infrastructure/llm_providers/openai_adapter.py` |
+| OpenAI Responses API | `/v1/responses` | `infrastructure/llm_providers/openai_responses_adapter.py` |
 | Google Generative AI | — | `infrastructure/llm_providers/gemini_adapter.py` (**MOCK — Sprint 2**) |
 | Sentry | SDK v10+ | Backend: `sentry_sdk`, Frontend: `@sentry/nextjs` |
 | Discord Webhooks | — | `infrastructure/telemetry/discord_notifier.py` |
@@ -117,7 +118,8 @@ Backend/app/
 │   ├── database/supabase_client.py        # AsyncClient singleton + get_db()
 │   ├── email/email_service.py             # Resend API email alerts
 │   ├── llm_providers/
-│   │   ├── openai_adapter.py              # AsyncOpenAI + multi-round tool calling + strict schemas
+│   │   ├── openai_adapter.py              # AsyncOpenAI + multi-round tool calling + strict schemas (Chat Completions)
+│   │   ├── openai_responses_adapter.py    # Responses API adapter: streaming + reasoning.effort + tools
 │   │   ├── gemini_adapter.py              # ⚠️ MOCK: returns static string (Sprint 2)
 │   │   └── mock_adapter.py               # Echo adapter for MOCK_LLM=True
 │   ├── messaging/meta_graph_api.py        # httpx singleton, Graph API v25.0, 50/100 pool
@@ -465,7 +467,8 @@ Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0, eslint-config-next@1
 
 | Priority | Feature |
 |:---|:---|
-| 🔴 | Responses API migration (`/v1/responses`) — enables `reasoning.effort` + tools |
+| 🟢 | Responses API adapter (`openai_responses_adapter.py`) — `reasoning.effort` + tools + streaming. Built for onboarding agent (Block R). |
+| 🔴 | WhatsApp pipeline → Responses API migration — swap `openai_adapter.py` after onboarding adapter proven |
 | 🔴 | Instagram DM integration — SELLING POINT |
 | 🔴 | Multi-squad booking engine — SELLING POINT |
 | 🔴 | Dashboard MVP (charts, KPIs, real metrics) |

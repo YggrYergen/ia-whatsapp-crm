@@ -173,7 +173,7 @@
 - [x] Error: "Function tools with reasoning_effort are not supported. Please use /v1/responses instead."
 - [x] Impact: every request was doubling (fail→retry) + spamming Discord (7+ alerts per test)
 - [x] Fix: removed entire experiment (commit `627c93e`). Zero quality impact — param never worked with tools
-- [ ] Sprint 2: Migrate adapter to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively
+- [x] Sprint 2: ~~Migrate adapter to Responses API~~ → **PULLED FORWARD to Block R2.1 (2026-04-14)**: New `openai_responses_adapter.py` built side-by-side for onboarding agent. Existing adapter untouched.
 - [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
 
 **Step 5b: Rapid-fire message batching ✅ MERGED TO PROD** (commit `1f7b250` → merged `73789ef`)
@@ -290,7 +290,27 @@
 #### Deferred to Monday
 - [ ] **Step 6:** Enriched Patient Context — deferred for proper design (interconnected: LLM context ↔ PacientesView ↔ staff actions)
 
-### Day 4: Monday April 14 — Fumigation Tenant Setup
+### Day 4: Monday April 14 — Newcomer Onboarding System + Fumigation Tenant Setup
+
+#### Block R: Newcomer Onboarding System ⏳ IN PROGRESS
+
+> **Design artifact:** [implementation_plan.md (Antigravity)](file:///C:/Users/tomas/.gemini/antigravity/brain/14a1ae64-2e9e-43fc-914f-fa365bcacc49/implementation_plan.md)
+> **Diagnostic reference:** [reasoning_effort_diagnostic.md](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
+
+**Architecture decision: Dual-Adapter Strategy**
+- Two OpenAI adapters coexist: `OpenAIStrategy` (Chat Completions, WhatsApp) + `OpenAIResponsesStrategy` (Responses API, onboarding)
+- Existing `openai_adapter.py` stays **100% untouched** — zero risk to production WhatsApp pipeline
+- New adapter unlocks `reasoning.effort` + tools + streaming for the onboarding configuration agent
+- Future: migrate WhatsApp pipeline to Responses API once onboarding adapter is battle-tested
+
+**Documentation updated across ALL project files:**
+- [x] `SESSION_PROMPT.md` — reasoning_effort status upgraded to 🟢, dual-adapter + onboarding decisions added
+- [x] `task_v2.md` — Block R added with R1 (DB), R2 (Backend), R3 (Frontend) subtasks
+- [x] `master_plan.md` — v8: architecture diagrams, Sprint 2 updated, risk register expanded
+- [x] `execution_tracker.md` — Step 5 reasoning_effort marked as pulled forward
+- [x] `README.md` — External APIs table, repo structure, roadmap updated
+- [x] Antigravity `implementation_plan.md` — Component 4 expanded with full dual-adapter spec
+- [ ] ⏳ Awaiting user approval on 5 open questions before execution begins
 
 #### Step 11: WhatsApp Number Setup (1 hour)
 - [ ] Buy SIM card (if not done)

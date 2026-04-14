@@ -64,6 +64,35 @@
 - [ ] **O2.** Verify webhook fields subscribed: `messages`, `message_template_status_update`
 - [ ] **O3.** Verify System User token: never-expiring, correct permissions
 
+#### Block R: Newcomer Onboarding System — NEW (Apr 14)
+
+##### R1. Database Schema (Migrations)
+- [ ] **R1.1** Create `profiles` table + trigger on `auth.users` insert (auto-profile creation)
+- [ ] **R1.2** Create `tenant_onboarding` table (stores config data from AI agent)
+- [ ] **R1.3** Add `is_setup_complete` column to `tenants` table
+- [ ] **R1.4** Superadmin RLS policies on all tables
+- [ ] **R1.5** Set `is_superadmin=true` for admin account, `is_setup_complete=true` for CasaVitaCure
+
+##### R2. Backend — Dual-Adapter Architecture
+- [ ] **R2.1** Create `openai_responses_adapter.py` — new adapter using `/v1/responses` API
+  - Supports `reasoning.effort` + tools + streaming (SSE)
+  - Uses `client.responses.create(stream=True)`
+  - Returns same `LLMResponse` DTO for interface compatibility
+  - ⚠️ Does NOT modify existing `openai_adapter.py` (Chat Completions — WhatsApp pipeline)
+  - 📚 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
+- [ ] **R2.2** Create `/api/onboarding/provision` endpoint (tenant auto-provisioning)
+- [ ] **R2.3** Create `/api/onboarding/chat` SSE endpoint (config agent with streaming)
+- [ ] **R2.4** Create `agent_prompt.py` (system prompt for configuration agent)
+
+##### R3. Frontend — Onboarding Wizard
+- [ ] **R3.1** Create `TenantContext.tsx` (tenant resolution + superadmin switching)
+- [ ] **R3.2** Modify `(panel)/layout.tsx` to gate on onboarding status
+- [ ] **R3.3** Create `OnboardingWizard.tsx` (3-step overlay: Welcome → Config → Celebrate)
+- [ ] **R3.4** Create `ConfigChat.tsx` (AI chat interface with SSE streaming)
+- [ ] **R3.5** Create `ConfigProgress.tsx` (visual field progress indicator)
+- [ ] **R3.6** Create `useOnboardingStream.ts` hook (SSE event parsing)
+- [ ] **R3.7** Modify Sidebar: superadmin tenant switcher dropdown
+
 ---
 
 ### Tuesday Apr 15 — Onboarding Day 🚀
@@ -161,7 +190,8 @@
 | Item | Why Deferred | Priority |
 |:---|:---|:---|
 | Dashboard MVP (Charts, KPIs) | Bot quality > dashboard for Tuesday | 🔴 First Sprint 2 |
-| Responses API migration | Enables `reasoning.effort` + tools. Major adapter rewrite | 🔴 |
+| ~~Responses API migration~~ | ~~Enables `reasoning.effort` + tools. Major adapter rewrite~~ | ~~🔴~~ **PULLED FORWARD (partial)** — `openai_responses_adapter.py` built in Block R2.1 for onboarding agent. Full WhatsApp pipeline migration deferred. |
+| WhatsApp pipeline → Responses API | Migrate existing `openai_adapter.py` from Chat Completions to Responses API | 🔴 After onboarding adapter proven |
 | Instagram DM integration | SELLING POINT but not needed Tuesday | 🔴 |
 | Multi-squad booking engine | SELLING POINT for scaling | 🔴 |
 | Gemini adapter (+ SDK migration) | `google.generativeai` deprecated → `google.genai` | 🟡 |
@@ -196,8 +226,11 @@
 |:---|:---|
 | OpenAI Function Calling | https://platform.openai.com/docs/guides/function-calling |
 | OpenAI Structured Outputs | https://platform.openai.com/docs/guides/structured-outputs |
+| OpenAI Responses API | https://platform.openai.com/docs/api-reference/responses |
+| OpenAI Streaming (Responses) | https://platform.openai.com/docs/guides/streaming |
 | Meta WhatsApp Cloud API | https://developers.facebook.com/docs/whatsapp/cloud-api/ |
 | Supabase Python Client | https://supabase.com/docs/guides/getting-started/quickstarts/python |
+| Supabase Auth (Managing User Data) | https://supabase.com/docs/guides/auth/managing-user-data |
 | Sentry FastAPI | https://docs.sentry.io/platforms/python/integrations/fastapi/ |
 
 ---
