@@ -1,16 +1,23 @@
 'use client'
 
-import React from 'react'
-import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle, ChevronDown, Building2, Shield } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCrm } from '@/contexts/CrmContext'
 import { useUI } from '@/contexts/UIContext'
+// Block R: Tenant switching for superadmins
+import { useTenant } from '@/contexts/TenantContext'
+import * as Sentry from '@sentry/nextjs'
 
 export default function Sidebar() {
     const pathname = usePathname()
     const { setMobileView, user, contacts } = useCrm()
     const { unreadCount, isNotificationFeedOpen, setIsNotificationFeedOpen } = useUI()
+    // Block R: Tenant context for superadmin switching
+    const { isSuperadmin, allTenants, currentTenant, switchTenant } = useTenant()
+    const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false)
+    const dropdownRef = useRef<HTMLDivElement>(null)
 
     // Count escalated contacts (bot_active=false, excluding test contact)
     const escalatedCount = contacts.filter((c: any) => !c.bot_active && c.phone_number !== '56912345678').length
@@ -24,6 +31,33 @@ export default function Sidebar() {
 
     const isActive = (path: string) => pathname === path
 
+    // Close dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setIsTenantDropdownOpen(false)
+            }
+        }
+        if (isTenantDropdownOpen) {
+            document.addEventListener('mousedown', handleClickOutside)
+            return () => document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [isTenantDropdownOpen])
+
+    const handleTenantSwitch = (tenantId: string) => {
+        const _where = 'Sidebar.handleTenantSwitch'
+        console.info(`[${_where}] Switching to tenant: ${tenantId}`)
+        Sentry.addBreadcrumb({
+            category: 'superadmin',
+            message: `Tenant switch: ${tenantId}`,
+            level: 'info',
+        })
+        switchTenant(tenantId)
+        setIsTenantDropdownOpen(false)
+        // Reload the page to refresh all data for the new tenant
+        window.location.reload()
+    }
+
     const navItems = [
         { href: '/dashboard', icon: LayoutDashboard, title: 'Panel', label: 'Panel' },
         { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', escalationBadge: true },
@@ -31,7 +65,8 @@ export default function Sidebar() {
         { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
         { href: '/finops', icon: Receipt, title: 'FinOps', desktopOnly: true },
-        ...(['tomasgemes@gmail.com', 'alejandra.tamar.rojas@gmail.com', 'instagramelectrimax@gmail.com'].includes(user?.email) ? [
+        // Block R: Use isSuperadmin instead of hardcoded email list for dev tools
+        ...(isSuperadmin ? [
             { href: '/admin-feedback', icon: Terminal, title: 'Auditoría Dev', label: 'Dev' }
         ] : [])
     ]
@@ -43,6 +78,67 @@ export default function Sidebar() {
             md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0 md:gap-6
             pb-safe md:pb-6
         `}>
+            {/* ─── Superadmin Tenant Switcher (desktop only) ─── */}
+            {isSuperadmin && allTenants.length > 1 && (
+                <div ref={dropdownRef} className="hidden md:block w-full px-2 relative mb-2">
+                    <button
+                        onClick={() => setIsTenantDropdownOpen(!isTenantDropdownOpen)}
+                        className={`
+                            w-full flex items-center justify-center gap-1 p-2 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all
+                            ${isTenantDropdownOpen
+                                ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                : 'bg-slate-800/60 text-slate-500 hover:text-violet-300 hover:bg-violet-500/10 border border-transparent'
+                            }
+                        `}
+                        title={`Tenant: ${currentTenant?.name || 'Sin asignar'}`}
+                    >
+                        <Shield className="w-3 h-3 flex-shrink-0" />
+                        <ChevronDown className={`w-3 h-3 transition-transform ${isTenantDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Dropdown */}
+                    {isTenantDropdownOpen && (
+                        <div className="absolute left-full top-0 ml-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/50 py-2 z-[60] animate-slide-in-right">
+                            <div className="px-3 py-1.5 border-b border-slate-800">
+                                <p className="text-[10px] text-violet-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                                    <Shield className="w-3 h-3" />
+                                    Superadmin
+                                </p>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto dark-scrollbar py-1">
+                                {allTenants.map((tenant) => (
+                                    <button
+                                        key={tenant.id}
+                                        onClick={() => handleTenantSwitch(tenant.id)}
+                                        className={`
+                                            w-full text-left px-3 py-2 flex items-center gap-2 transition-all text-xs
+                                            ${tenant.id === currentTenant?.id
+                                                ? 'bg-emerald-500/10 text-emerald-400'
+                                                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                            }
+                                        `}
+                                    >
+                                        <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-medium truncate">{tenant.name}</p>
+                                            <p className="text-[9px] text-slate-600 font-mono truncate">{tenant.id.slice(0, 8)}...</p>
+                                        </div>
+                                        {tenant.id === currentTenant?.id && (
+                                            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full flex-shrink-0" />
+                                        )}
+                                        {!tenant.is_setup_complete && (
+                                            <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1 py-0.5 rounded font-bold">
+                                                SETUP
+                                            </span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="hidden md:flex w-10 h-10 bg-emerald-500 rounded-xl items-center justify-center shadow-lg flex-shrink-0 ring-4 ring-emerald-500/20">
                 <Sparkles className="text-white w-6 h-6" />
             </div>

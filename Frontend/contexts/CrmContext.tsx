@@ -2,23 +2,27 @@
 
 /**
  * CrmContext — Backwards-compatible shim.
- * Re-exports from AuthContext, ChatContext, and UIContext so existing components
- * continue working without code changes while new components can import
- * the specific context they need.
+ * Re-exports from AuthContext, ChatContext, UIContext, and TenantContext
+ * so existing components continue working without code changes while new
+ * components can import the specific context they need.
  */
 import React from 'react'
 import { AuthProvider, useAuth } from './AuthContext'
 import { ChatProvider, useChat } from './ChatContext'
 import { UIProvider, useUI } from './UIContext'
+// Block R: Tenant resolution + newcomer detection + superadmin switching
+import { TenantProvider, useTenant } from './TenantContext'
 
 export function CrmProvider({ children }: { children: React.ReactNode }) {
     return (
         <AuthProvider>
-            <ChatProvider>
-                <UIProvider>
-                    {children}
-                </UIProvider>
-            </ChatProvider>
+            <TenantProvider>
+                <ChatProvider>
+                    <UIProvider>
+                        {children}
+                    </UIProvider>
+                </ChatProvider>
+            </TenantProvider>
         </AuthProvider>
     )
 }

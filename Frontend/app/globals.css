@@ -131,3 +131,96 @@ body {
 .animate-slide-in-right {
     animation: slide-in-right 0.25s ease-out forwards;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Block R: Onboarding — Matrix Thought Visualizer + Config Chat
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Matrix thought line fade cycle — oldest line fades out */
+@keyframes matrix-line-fade {
+    0% { opacity: 0; transform: translateY(4px); }
+    10% { opacity: 0.8; transform: translateY(0); }
+    85% { opacity: 0.8; }
+    100% { opacity: 0.15; }
+}
+.animate-matrix-line {
+    animation: matrix-line-fade 6s ease-out forwards;
+}
+
+/* Matrix character typing effect */
+@keyframes matrix-char-in {
+    0% { opacity: 0; }
+    100% { opacity: 0.8; }
+}
+.animate-matrix-char {
+    animation: matrix-char-in 0.04s ease-in forwards;
+}
+
+/* Matrix container glow — subtle ambient pulse */
+@keyframes matrix-glow {
+    0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 65, 0.08); }
+    50% { box-shadow: 0 0 16px rgba(0, 255, 65, 0.15); }
+}
+.animate-matrix-glow {
+    animation: matrix-glow 3s ease-in-out infinite;
+}
+
+/* Matrix container fade out — when text_delta arrives */
+@keyframes matrix-fade-out {
+    0% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+}
+.animate-matrix-exit {
+    animation: matrix-fade-out 0.4s ease-out forwards;
+}
+
+/* Onboarding overlay fade in */
+@keyframes onboarding-fade-in {
+    0% { opacity: 0; transform: scale(0.97); }
+    100% { opacity: 1; transform: scale(1); }
+}
+.animate-onboarding-in {
+    animation: onboarding-fade-in 0.5s ease-out forwards;
+}
+
+/* Field completion pulse — turns green */
+@keyframes field-complete {
+    0% { transform: scale(1); background-color: rgba(16, 185, 129, 0); }
+    50% { transform: scale(1.05); background-color: rgba(16, 185, 129, 0.2); }
+    100% { transform: scale(1); background-color: rgba(16, 185, 129, 0.1); }
+}
+.animate-field-complete {
+    animation: field-complete 0.5s ease-out forwards;
+}
+
+/* Celebration confetti float */
+@keyframes confetti-float {
+    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(-120px) rotate(720deg); opacity: 0; }
+}
+.animate-confetti {
+    animation: confetti-float 2s ease-out forwards;
+}
+
+/* Progress bar fill — smooth */
+@keyframes progress-fill {
+    0% { width: 0%; }
+}
+.animate-progress {
+    animation: progress-fill 0.6s ease-out;
+}
+
+/* Custom scrollbar for dark themed chat */
+.dark-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.dark-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.dark-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.3);
+    border-radius: 10px;
+}
+.dark-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.5);
+}

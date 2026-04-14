@@ -8,6 +8,9 @@ import GlobalFeedbackButton from '@/components/Layout/GlobalFeedbackButton'
 import { CrmProvider } from '@/contexts/CrmContext'
 import { createClient } from '@/lib/supabase'
 
+// Block R: Onboarding wizard for newcomers
+import OnboardingGate from './OnboardingGate'
+
 export default function PanelLayout({
   children,
 }: {
@@ -57,6 +60,8 @@ export default function PanelLayout({
 
   return (
     <CrmProvider>
+      {/* Block R: OnboardingGate checks newcomer/setup status and shows wizard overlay */}
+      <OnboardingGate />
       <GlobalNotifications />
       <GlobalFeedbackButton />
       <div className="flex flex-col md:flex-row h-screen w-full bg-slate-50 overflow-hidden relative">
