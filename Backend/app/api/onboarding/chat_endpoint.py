@@ -195,6 +195,7 @@ async def onboarding_chat(request: Request):
             """Generate SSE events from the streaming response."""
             tool_calls_buffer = []  # Collect tool calls for post-processing
             gen_step = "stream_main"
+            last_response_id = None  # Track response ID for chaining follow-ups
             
             try:
                 async for event in adapter.generate_response_stream(
@@ -311,29 +312,34 @@ async def onboarding_chat(request: Request):
                         gen_step = "stream_main"  # Reset step tracker
                     
                     elif event_type == "done":
-                        # Stream complete
-                        yield _format_sse("done", {
-                            "content": event.get("content", ""),
-                            "all_complete": all(
-                                fields_status.get(f, False) for f in ONBOARDING_FIELDS
-                            ),
-                            "usage": event.get("usage"),
-                        })
+                        # Capture response_id for potential follow-up chaining
+                        last_response_id = event.get("response_id")
+                        
+                        # Only send 'done' to frontend if there are no pending tool calls
+                        # If there ARE tool calls, we'll send 'done' after the follow-up
+                        if not tool_calls_buffer:
+                            yield _format_sse("done", {
+                                "content": event.get("content", ""),
+                                "all_complete": all(
+                                    fields_status.get(f, False) for f in ONBOARDING_FIELDS
+                                ),
+                                "usage": event.get("usage"),
+                            })
                 
                 # If there were tool calls, we need to continue the conversation
-                # by feeding tool results back and getting the model's text response
+                # by feeding tool results back using previous_response_id chaining.
+                # Ref: https://platform.openai.com/docs/api-reference/responses/create
                 if tool_calls_buffer:
                     gen_step = "tool_followup"
                     logger.info(
                         f"🔄 [CONFIG-AGENT] Follow-up call with {len(tool_calls_buffer)} tool results | "
-                        f"tenant={tenant_id}"
+                        f"tenant={tenant_id} | response_id={last_response_id[:20] if last_response_id else 'NONE'}..."
                     )
                     
-                    # Build tool result messages for follow-up
-                    tool_result_history = list(full_history)
-                    
+                    # Build ONLY the function_call_output items for the follow-up.
+                    # The Responses API chains via previous_response_id — we don't resend history.
+                    followup_input = []
                     for tc in tool_calls_buffer:
-                        # Add function_call_output for each tool call
                         if tc["name"] == "report_configuration_field":
                             result = json.dumps({
                                 "status": "saved",
@@ -348,19 +354,20 @@ async def onboarding_chat(request: Request):
                         else:
                             result = json.dumps({"status": "ok"})
                         
-                        tool_result_history.append({
-                            "role": "tool",
-                            "tool_call_id": tc["call_id"],
-                            "content": result,
+                        followup_input.append({
+                            "type": "function_call_output",
+                            "call_id": tc["call_id"],
+                            "output": result,
                         })
                     
-                    # Follow-up call to get the text response after tool execution
+                    # Follow-up call using previous_response_id chaining
                     try:
                         async for follow_event in adapter.generate_response_stream(
                             system_prompt=ONBOARDING_SYSTEM_PROMPT,
-                            message_history=tool_result_history,
+                            message_history=followup_input,  # function_call_output items — passed through by adapter
                             tools=ONBOARDING_TOOLS,
                             reasoning_effort="medium",
+                            previous_response_id=last_response_id,
                         ):
                             follow_type = follow_event.get("type")
                             
@@ -381,6 +388,7 @@ async def onboarding_chat(request: Request):
                         _msg = (
                             f"[{_WHERE}:{gen_step}] Follow-up stream FAILED | "
                             f"tenant={tenant_id} | tool_calls={len(tool_calls_buffer)} | "
+                            f"response_id={last_response_id} | "
                             f"env={settings.ENVIRONMENT} | error={str(followup_err)[:200]}"
                         )
                         logger.error(_msg, exc_info=True)
@@ -391,6 +399,7 @@ async def onboarding_chat(request: Request):
                                 f"**Where:** `{_WHERE}:{gen_step}`\n"
                                 f"**What:** Follow-up stream after {len(tool_calls_buffer)} tool calls failed\n"
                                 f"**Tenant:** `{tenant_id}`\n"
+                                f"**Response ID:** `{last_response_id}`\n"
                                 f"**Env:** {settings.ENVIRONMENT}\n"
                                 f"**Error:** ```{str(followup_err)[:300]}```\n"
                                 f"**Traceback (last 500 chars):** ```{_tb[-500:]}```"

@@ -204,6 +204,7 @@ class OpenAIResponsesStrategy(LLMStrategy):
         message_history: List[Dict[str, str]],
         tools: List[Dict[str, Any]],
         reasoning_effort: str = "medium",
+        previous_response_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Streaming response using Responses API — yields typed SSE events.
         
@@ -250,7 +251,10 @@ class OpenAIResponsesStrategy(LLMStrategy):
         })
         
         try:
-            input_items = self._convert_messages_to_input(system_prompt, message_history)
+            input_items = self._convert_messages_to_input(
+                system_prompt if not previous_response_id else "",
+                message_history
+            )
             
             api_kwargs = {
                 "model": self.model_id,
@@ -265,6 +269,14 @@ class OpenAIResponsesStrategy(LLMStrategy):
             
             if tools:
                 api_kwargs["tools"] = tools
+            
+            # Chain to a previous response (for tool call follow-ups)
+            # Ref: https://platform.openai.com/docs/api-reference/responses/create#responses-create-previous_response_id
+            if previous_response_id:
+                api_kwargs["previous_response_id"] = previous_response_id
+                logger.info(
+                    f"🔗 [STREAM] Chaining to previous response: {previous_response_id[:20]}..."
+                )
             
             stream = await self.client.responses.create(**api_kwargs)
             
@@ -324,19 +336,27 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 # Stream completed
                 elif event_type == "response.completed":
                     usage_data = None
-                    if hasattr(event, 'response') and hasattr(event.response, 'usage'):
-                        u = event.response.usage
-                        usage_data = {
-                            "input_tokens": u.input_tokens,
-                            "output_tokens": u.output_tokens,
-                        }
-                        logger.info(
-                            f"📊 [LLM Stream Usage] model={self.model_id} "
-                            f"input={u.input_tokens} output={u.output_tokens} "
-                            f"events_processed={events_processed} | env={settings.ENVIRONMENT}"
-                        )
+                    response_id = None
+                    if hasattr(event, 'response'):
+                        response_id = getattr(event.response, 'id', None)
+                        if hasattr(event.response, 'usage') and event.response.usage:
+                            u = event.response.usage
+                            usage_data = {
+                                "input_tokens": u.input_tokens,
+                                "output_tokens": u.output_tokens,
+                            }
+                            logger.info(
+                                f"📊 [LLM Stream Usage] model={self.model_id} "
+                                f"input={u.input_tokens} output={u.output_tokens} "
+                                f"events_processed={events_processed} | env={settings.ENVIRONMENT}"
+                            )
                     
-                    yield {"type": "done", "content": full_text, "usage": usage_data}
+                    yield {
+                        "type": "done",
+                        "content": full_text,
+                        "usage": usage_data,
+                        "response_id": response_id,  # For chaining follow-up calls
+                    }
                 
                 # Catch-all: log any unhandled event types for debugging
                 elif event_type not in (
@@ -384,11 +404,15 @@ class OpenAIResponsesStrategy(LLMStrategy):
         Chat Completions uses: [{"role": "system", "content": "..."}, {"role": "user", ...}]
         Responses API uses: [{"role": "developer", "content": "..."}, {"role": "user", ...}]
         
+        Also handles pre-formatted Responses API items (those with a 'type' key,
+        e.g. function_call_output) by passing them through unchanged.
+        
         Key mapping:
           - "system" → "developer" (Responses API renamed this)
           - "assistant" → "assistant" (same)
           - "user" → "user" (same)
           - "tool" → converted to function_call_output items
+          - items with "type" key → passed through as-is
         
         Ref: https://platform.openai.com/docs/api-reference/responses/create
         """
@@ -403,6 +427,12 @@ class OpenAIResponsesStrategy(LLMStrategy):
         
         # Convert message history
         for msg in message_history:
+            # If the item already has a 'type' key, it's already in Responses API format
+            # (e.g. function_call_output items from tool follow-ups). Pass through directly.
+            if "type" in msg:
+                input_items.append(msg)
+                continue
+            
             role = msg.get("role", "user")
             content = msg.get("content", "")
             
