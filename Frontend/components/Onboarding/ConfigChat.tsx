@@ -135,8 +135,8 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
           <ChatBubble key={i} message={msg} />
         ))}
 
-        {/* Currently streaming response */}
-        {currentText && !isStreaming ? null : currentText ? (
+        {/* Currently streaming response — show only while actively streaming */}
+        {isStreaming && currentText ? (
           <div className="flex gap-2 items-start">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
               <Bot className="w-4 h-4 text-emerald-400" />

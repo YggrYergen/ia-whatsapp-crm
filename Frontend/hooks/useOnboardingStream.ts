@@ -205,6 +205,10 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
       let accumulatedResponse = ''
       let buffer = ''
       let thinkingLines: string[] = []
+      // Local mutable flag — NOT React state. React state (isThinking) is a
+      // stale closure inside this async loop and can't be used for logic.
+      // This flag correctly tracks whether we're in the thinking phase.
+      let thinkingActive = false
 
       // Timeout guard
       const timeout = setTimeout(() => {
@@ -243,6 +247,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
 
                 switch (currentEventType) {
                   case 'thinking': {
+                    thinkingActive = true
                     setIsThinking(true)
                     const newText = data.text || ''
                     // Accumulate thinking text, keep max 3 lines
@@ -256,8 +261,11 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                   }
 
                   case 'text_delta': {
-                    // First text_delta → thinking phase ends
-                    if (isThinking) {
+                    // First text_delta → thinking phase ends. Must use local
+                    // mutable flag (not React state) because isThinking from
+                    // the closure is stale.
+                    if (thinkingActive) {
+                      thinkingActive = false
                       setIsThinking(false)
                       setThinkingText('')
                       thinkingLines = []
