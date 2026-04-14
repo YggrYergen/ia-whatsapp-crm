@@ -53,14 +53,35 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, currentText, thinkingText])
 
-  // When config is complete, wait a moment then advance
+  // ─── Provisioning progress animation ────────────────────────────────
+  const [provisionStep, setProvisionStep] = useState(-1) // -1 = not started
+  const PROVISION_STEPS = [
+    { label: 'Guardando configuración...', icon: '💾' },
+    { label: 'Generando personalidad de tu asistente...', icon: '🧠' },
+    { label: 'Activando herramientas...', icon: '🔧' },
+    { label: '¡Tu asistente está listo!', icon: '✅' },
+  ]
+
+  // When config is complete, animate through provisioning steps
   useEffect(() => {
-    if (isConfigComplete) {
-      const timer = setTimeout(() => {
-        onConfigComplete()
-      }, 2000) // Give time for final message to render
-      return () => clearTimeout(timer)
-    }
+    if (!isConfigComplete || provisionStep >= 0) return
+
+    // Start provisioning animation
+    setProvisionStep(0)
+    const timers: ReturnType<typeof setTimeout>[] = []
+
+    PROVISION_STEPS.forEach((_, i) => {
+      if (i === 0) return // Already at step 0
+      timers.push(setTimeout(() => setProvisionStep(i), (i) * 1500))
+    })
+
+    // After all steps, wait a beat then transition
+    timers.push(setTimeout(() => {
+      onConfigComplete()
+    }, PROVISION_STEPS.length * 1500 + 800))
+
+    return () => timers.forEach(clearTimeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfigComplete, onConfigComplete])
 
   // Auto-send initial greeting on mount (empty message triggers agent's first message)
@@ -104,6 +125,50 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col animate-onboarding-in">
+      {/* ─── Provisioning Progress Overlay ─── */}
+      {provisionStep >= 0 && (
+        <div className="absolute inset-0 z-[200] bg-slate-950/98 backdrop-blur-md flex items-center justify-center animate-fadeIn">
+          <div className="flex flex-col items-center gap-8 p-8">
+            {/* Spinning ring */}
+            <div className="relative w-24 h-24">
+              <div className={`absolute inset-0 rounded-full border-4 border-slate-800 ${provisionStep < PROVISION_STEPS.length - 1 ? 'animate-spin' : ''}`}
+                style={{ borderTopColor: provisionStep < PROVISION_STEPS.length - 1 ? '#10b981' : '#10b981', animationDuration: '1.5s' }} />
+              <div className={`absolute inset-2 rounded-full bg-slate-900/80 flex items-center justify-center transition-all duration-700
+                ${provisionStep === PROVISION_STEPS.length - 1 ? 'scale-110 shadow-[0_0_40px_rgba(16,185,129,0.4)]' : ''}`}>
+                <span className="text-3xl transition-all duration-500">{PROVISION_STEPS[provisionStep]?.icon}</span>
+              </div>
+              {/* Glow ring on completion */}
+              {provisionStep === PROVISION_STEPS.length - 1 && (
+                <div className="absolute -inset-2 rounded-full border-2 border-emerald-400/30 animate-ping" />
+              )}
+            </div>
+
+            {/* Steps list */}
+            <div className="flex flex-col gap-3 min-w-[280px]">
+              {PROVISION_STEPS.map((s, i) => (
+                <div key={i}
+                  className={`flex items-center gap-3 transition-all duration-500
+                    ${i <= provisionStep ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs transition-all duration-500
+                    ${i < provisionStep ? 'bg-emerald-500/20 text-emerald-400' :
+                      i === provisionStep ? 'bg-emerald-500/30 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]' :
+                      'bg-slate-800 text-slate-600'}`}>
+                    {i < provisionStep ? '✓' : i === provisionStep ? (
+                      <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                    ) : '·'}
+                  </div>
+                  <span className={`text-sm transition-colors duration-300
+                    ${i < provisionStep ? 'text-emerald-400/70' :
+                      i === provisionStep ? 'text-white font-medium' :
+                      'text-slate-600'}`}>
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {/* ─── Header ─── */}
       <div className="flex-shrink-0 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur-sm px-4 py-3 space-y-3">
         <div className="flex items-center gap-3">

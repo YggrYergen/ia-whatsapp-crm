@@ -79,7 +79,7 @@ const ONBOARDING_FIELDS = [
   'escalation_rules',
 ] as const
 
-const SSE_TIMEOUT_MS = 60_000 // 60s — config agent may think for a while
+const SSE_ACTIVITY_TIMEOUT_MS = 90_000 // 90s inactivity timeout — resets on each received event
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -210,20 +210,30 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
       // This flag correctly tracks whether we're in the thinking phase.
       let thinkingActive = false
 
-      // Timeout guard
-      const timeout = setTimeout(() => {
-        const errMsg = `[${_where}] Stream timeout after ${SSE_TIMEOUT_MS}ms | tenant=${tenantId}`
-        console.error(errMsg)
-        Sentry.captureMessage(errMsg, 'warning')
-        abortRef.current?.abort()
-        setError('La respuesta tardó demasiado. Intenta de nuevo.')
-        setIsStreaming(false)
-      }, SSE_TIMEOUT_MS)
+      // Activity-based timeout: resets every time we receive data.
+      // This prevents false timeouts on long sessions (10+ tool calls)
+      // while still catching genuinely stalled streams.
+      let timeoutId: ReturnType<typeof setTimeout>
+      const resetTimeout = () => {
+        clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => {
+          const errMsg = `[${_where}] Stream inactivity timeout after ${SSE_ACTIVITY_TIMEOUT_MS}ms | tenant=${tenantId}`
+          console.error(errMsg)
+          Sentry.captureMessage(errMsg, 'warning')
+          abortRef.current?.abort()
+          setError('La respuesta tardó demasiado. Intenta de nuevo.')
+          setIsStreaming(false)
+        }, SSE_ACTIVITY_TIMEOUT_MS)
+      }
+      resetTimeout() // Start initial timeout
 
       try {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
+
+          // Reset activity timeout — stream is alive
+          resetTimeout()
 
           buffer += decoder.decode(value, { stream: true })
 
@@ -383,7 +393,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
           }
         }
       } finally {
-        clearTimeout(timeout)
+        clearTimeout(timeoutId)
       }
     } catch (fetchErr: any) {
       if (fetchErr.name === 'AbortError') {
