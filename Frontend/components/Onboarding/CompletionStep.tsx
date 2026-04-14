@@ -203,26 +203,6 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         </div>
       </div>
 
-      {/* ─── Inline CSS for keyframe animations ─── */}
-      <style jsx>{`
-        @keyframes glitterFloat {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 0;
-          }
-          10% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(-100vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-        @keyframes checkDraw {
-          0% { stroke-dashoffset: 50; }
-          100% { stroke-dashoffset: 0; }
-        }
-      `}</style>
     </div>
   )
 }
