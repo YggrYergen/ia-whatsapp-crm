@@ -135,8 +135,33 @@ async def onboarding_chat(request: Request):
         
         message = body.get("message", "")
         tenant_id = body.get("tenant_id")
-        conversation_history = body.get("conversation_history", [])
+        raw_history = body.get("conversation_history", [])
         fields_status = body.get("fields_status", {})
+        
+        # ── Sanitize conversation history ──────────────────────────────────
+        # The frontend may include messages from previous turns that contain
+        # tool-call related items. The Responses API requires every
+        # function_call_output to have a matching function_call in the input,
+        # but we don't persist function_call items across turns.
+        # FIX: Strip everything except user/assistant text messages.
+        conversation_history = []
+        stripped_count = 0
+        for msg in raw_history:
+            role = msg.get("role", "")
+            if role in ("user", "assistant"):
+                conversation_history.append({
+                    "role": role,
+                    "content": msg.get("content", "")
+                })
+            else:
+                stripped_count += 1
+        if stripped_count > 0:
+            logger.warning(
+                f"[{_WHERE}:sanitize_history] Stripped {stripped_count} non-user/assistant "
+                f"messages from conversation_history | tenant={tenant_id} | "
+                f"original_len={len(raw_history)} | clean_len={len(conversation_history)}"
+            )
+        
         _tenant_ctx = f"tenant={tenant_id} | msg_len={len(message)} | history_len={len(conversation_history)} | env={settings.ENVIRONMENT}"
         
         if not tenant_id:
@@ -151,6 +176,8 @@ async def onboarding_chat(request: Request):
             "tenant_id": tenant_id,
             "message_length": len(message),
             "history_length": len(conversation_history),
+            "history_raw_length": len(raw_history),
+            "history_stripped": stripped_count,
             "fields_complete": sum(1 for v in fields_status.values() if v),
             "environment": settings.ENVIRONMENT,
         })
