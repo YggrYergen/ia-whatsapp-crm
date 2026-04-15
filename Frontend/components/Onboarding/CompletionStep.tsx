@@ -89,7 +89,8 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center overflow-hidden">
       {/* ─── INJECTED KEYFRAMES (Bypasses CSS caching and scoping issues) ─── */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes confettiBurst {
             0% { transform: translate(-50%, -50%) rotate(0deg) scale(1); opacity: 1; }
             70% { opacity: 1; }
@@ -117,7 +118,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         rounded-full blur-[150px] transition-all duration-[2000ms] ease-out
         ${phase >= 2 ? 'w-[800px] h-[800px] opacity-100' : 'w-[200px] h-[200px] opacity-0'}
         bg-gradient-radial from-emerald-500/15 via-cyan-500/8 to-transparent`} />
-      
+
       {/* Secondary ambient glow */}
       <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
         w-[400px] h-[400px] rounded-full blur-[100px] transition-all duration-[1500ms]
@@ -223,7 +224,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
                 width: p.size,
                 height: p.size,
                 backgroundColor: p.color,
-                boxShadow: \`0 0 \${p.size * 3}px \${p.color}60\`,
+                boxShadow: `0 0 ${p.size * 3}px ${p.color}60`,
               }}
             />
           </div>
@@ -232,7 +233,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
 
       {/* ─── Main content ─── */}
       <div className="relative z-10 max-w-lg w-full mx-4 text-center space-y-8">
-        
+
         {/* ─── Animated checkmark ─── */}
         <div className="flex justify-center mb-4">
           <div className="relative">
@@ -243,7 +244,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
             <div className={`absolute -inset-14 rounded-full transition-all duration-[1500ms] ease-out
               ${phase >= 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}
               border border-emerald-500/5`} />
-            
+
             {/* Pulsing glow behind checkmark */}
             <div className={`absolute -inset-4 rounded-full transition-all duration-[1000ms]
               ${phase >= 2 ? 'opacity-100' : 'opacity-0'}
@@ -251,7 +252,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
 
             {/* Shockwave ring */}
             {phase >= 2 && (
-              <div 
+              <div
                 className="absolute -inset-4 rounded-full border-2 border-emerald-400/40"
                 style={{
                   animation: 'shockwave 1s ease-out forwards',
@@ -265,7 +266,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
               ${phase >= 1 ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}
               bg-gradient-to-br from-emerald-500 to-cyan-500
               shadow-2xl shadow-emerald-500/40`}>
-              
+
               {/* SVG Checkmark with stroke animation */}
               <svg viewBox="0 0 52 52" className="w-14 h-14">
                 <path
