@@ -19,7 +19,6 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { flushSync } from 'react-dom'
 import * as Sentry from '@sentry/nextjs'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -385,6 +384,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                     const delta = data.delta || ''
                     accumulatedResponse += delta
                     setCurrentText(accumulatedResponse)
+                    console.warn(`[${_where}] text_delta received | len=${accumulatedResponse.length} | preview="${accumulatedResponse.slice(0,60)}…"`)
                     break
                   }
 
@@ -426,36 +426,35 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                   case 'done': {
                     // Finalize the assistant message
                     const finalContent = data.content || accumulatedResponse
-                    // FIX 2026-04-15: Use flushSync to batch setMessages + setCurrentText
-                    // into a single synchronous render. Without this, React renders them
-                    // separately in async contexts (ReadableStream loop), causing a frame
-                    // where currentText is '' but messages hasn't updated yet — the
-                    // message visually disappears then reappears ("flash" bug).
-                    flushSync(() => {
-                      if (finalContent.trim()) {
-                        setMessages(prev => [
+                    console.warn(
+                      `[${_where}] DONE event | finalContent.len=${finalContent.length} | ` +
+                      `preview="${finalContent.slice(0,80)}…" | all_complete=${data.all_complete}`
+                    )
+
+                    // FIX 2026-04-15 v3: DEDUP ARCHITECTURE — never clear currentText here.
+                    // Instead, add the message to the array and let currentText stay.
+                    // ConfigChat's rendering deduplicates: if the last message content
+                    // matches currentText, the streaming bubble is hidden automatically.
+                    // This guarantees zero gap frames — text is ALWAYS visible somewhere.
+                    if (finalContent.trim()) {
+                      setMessages(prev => {
+                        const updated = [
                           ...prev,
                           {
-                            role: 'assistant',
+                            role: 'assistant' as const,
                             content: finalContent,
                             timestamp: Date.now(),
                           },
-                        ])
-                      }
-                      // Clear streaming text — must be in same flushSync to avoid flash
-                      setCurrentText('')
-                      setIsThinking(false)
-                      setThinkingText('')
-                      // NOTE: Do NOT set isStreaming=false here! In multi-turn flows
-                      // (tool calls → follow-up responses), the first 'done' event fires
-                      // BEFORE the follow-up text arrives. Setting isStreaming=false kills
-                      // the streaming bubble for all subsequent text_delta events.
-                      // isStreaming is only set to false in the outer finally block.
-                    })
-                    if (finalContent.trim()) {
+                        ]
+                        console.warn(`[${_where}] DONE → setMessages | count=${updated.length}`)
+                        return updated
+                      })
                       historyRef.current.push({ role: 'assistant', content: finalContent })
                     }
-                    // Reset local variables (not React state, no render needed)
+                    // Clear thinking state (NOT currentText — that stays for dedup)
+                    setIsThinking(false)
+                    setThinkingText('')
+                    // Reset local accumulators for next turn
                     accumulatedResponse = ''
                     thinkingLines = []
 
@@ -541,7 +540,11 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
       })
       setError('Error de conexión. Verifica tu internet e intenta de nuevo.')
     } finally {
+      console.warn(`[${_where}] Stream ended (finally) | tenant=${tenantId}`)
       setIsStreaming(false)
+      setCurrentText('') // Safe to clear now — stream is truly done
+      setIsThinking(false)
+      setThinkingText('')
       abortRef.current = null
     }
   }, [tenantId, isStreaming, fields])

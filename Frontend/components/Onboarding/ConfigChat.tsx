@@ -209,18 +209,29 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
           <ChatBubble key={i} message={msg} />
         ))}
 
-        {/* Currently streaming response — show only while actively streaming */}
-        {isStreaming && currentText ? (
-          <div className="flex gap-2 items-start">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Bot className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="bg-slate-900/70 border border-slate-800/50 rounded-xl rounded-tl-sm px-3 py-2 max-w-[85%]">
-              <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{currentText}</p>
-              <span className="inline-block w-1.5 h-4 bg-emerald-400 rounded-sm animate-pulse ml-0.5" />
-            </div>
-          </div>
-        ) : null}
+        {/* Currently streaming response — show only while actively streaming
+            DEDUP: Hide when the last message already contains this exact text
+            (done handler adds msg to array but doesn't clear currentText,
+             so both would show the same text briefly without this check) */}
+        {(() => {
+          const lastMsg = messages[messages.length - 1]
+          const isDuplicate = lastMsg?.role === 'assistant' && lastMsg.content === currentText
+          const shouldShow = isStreaming && currentText && !isDuplicate
+          if (shouldShow) {
+            return (
+              <div className="flex gap-2 items-start">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Bot className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="bg-slate-900/70 border border-slate-800/50 rounded-xl rounded-tl-sm px-3 py-2 max-w-[85%]">
+                  <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{currentText}</p>
+                  <span className="inline-block w-1.5 h-4 bg-emerald-400 rounded-sm animate-pulse ml-0.5" />
+                </div>
+              </div>
+            )
+          }
+          return null
+        })()}
 
         {/* Typing indicator when no text yet but is streaming */}
         {isStreaming && !currentText && !isThinking && messages.length > 0 && (
