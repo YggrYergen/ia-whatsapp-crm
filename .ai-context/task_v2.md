@@ -1,4 +1,4 @@
-# AI CRM — Task Tracker v2 (2026-04-12)
+# AI CRM — Task Tracker v2 (updated 2026-04-15)
 
 > **Replaces:** `task.md` (v1 had 1000+ lines of completed Phase 0-5 history, many stale checkboxes)  
 > **Source of truth for daily status:** `execution_tracker.md`  
@@ -64,34 +64,49 @@
 - [ ] **O2.** Verify webhook fields subscribed: `messages`, `message_template_status_update`
 - [ ] **O3.** Verify System User token: never-expiring, correct permissions
 
-#### Block R: Newcomer Onboarding System — NEW (Apr 14)
+#### Block R: Newcomer Onboarding System — 🔧 STABILIZING (Apr 14-15)
 
-##### R1. Database Schema (Migrations)
-- [ ] **R1.1** Create `profiles` table + trigger on `auth.users` insert (auto-profile creation)
-- [ ] **R1.2** Create `tenant_onboarding` table (stores config data from AI agent)
-- [ ] **R1.3** Add `is_setup_complete` column to `tenants` table
-- [ ] **R1.4** Superadmin RLS policies on all tables
-- [ ] **R1.5** Set `is_superadmin=true` for admin account, `is_setup_complete=true` for CasaVitaCure
+> **Last updated:** 2026-04-15 11:40 CLT | Session 13d7385c
 
-##### R2. Backend — Dual-Adapter Architecture
-- [ ] **R2.1** Create `openai_responses_adapter.py` — new adapter using `/v1/responses` API
-  - Supports `reasoning.effort` + tools + streaming (SSE)
-  - Uses `client.responses.create(stream=True)`
-  - Returns same `LLMResponse` DTO for interface compatibility
-  - ⚠️ Does NOT modify existing `openai_adapter.py` (Chat Completions — WhatsApp pipeline)
-  - 📚 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)
-- [ ] **R2.2** Create `/api/onboarding/provision` endpoint (tenant auto-provisioning)
-- [ ] **R2.3** Create `/api/onboarding/chat` SSE endpoint (config agent with streaming)
-- [ ] **R2.4** Create `agent_prompt.py` (system prompt for configuration agent)
+##### R1–R3: Core Implementation ✅ ALL COMPLETE
+- [x] **R1** DB: `tenant_onboarding`, `onboarding_messages`, `profiles`, `is_setup_complete`, RLS policies
+- [x] **R2** Backend: `openai_responses_adapter.py`, `/api/onboarding/chat` SSE endpoint, `agent_prompt.py`, follow-up loop, finalization, 3-channel observability
+- [x] **R3** Frontend: `TenantContext.tsx`, `OnboardingWizard.tsx`, `ConfigChat.tsx`, `ConfigProgress.tsx`, `CompletionStep.tsx`, `useOnboardingStream.ts`
 
-##### R3. Frontend — Onboarding Wizard
-- [ ] **R3.1** Create `TenantContext.tsx` (tenant resolution + superadmin switching)
-- [ ] **R3.2** Modify `(panel)/layout.tsx` to gate on onboarding status
-- [ ] **R3.3** Create `OnboardingWizard.tsx` (3-step overlay: Welcome → Config → Celebrate)
-- [ ] **R3.4** Create `ConfigChat.tsx` (AI chat interface with SSE streaming)
-- [ ] **R3.5** Create `ConfigProgress.tsx` (visual field progress indicator)
-- [ ] **R3.6** Create `useOnboardingStream.ts` hook (SSE event parsing)
-- [ ] **R3.7** Modify Sidebar: superadmin tenant switcher dropdown
+##### Bugs Fixed (Apr 15 session)
+- [x] **FIX-BUILD** CSS scoping (styled-jsx incompatible with keyframes → moved to `globals.css`)
+- [x] **FIX-DEDUP** Message flash: streaming bubble hidden when content matches last `messages[]` entry
+- [x] **FIX-MULTITN** `setIsStreaming(false)` moved to outer finally (was killing follow-up bubbles)
+- [x] **FIX-SSE-ROOT** `currentEventType/Data` declared inside `while` loop → reset on each `reader.read()` → TCP-split SSE events silently dropped. Moved before loop. Commit `2c5d2a5`.
+
+##### Remaining Items (Priority Order)
+
+###### R-WELCOME: WelcomeStep never shown — HIGH
+- [ ] Investigate OnboardingWizard `getInitialStep()` — user jumps straight to ConfigChat
+- [ ] Verify step guard logic and data loading sequence
+
+###### R-CONFETTI: Completion confetti/fireworks not firing — MEDIUM
+- [ ] Check `CompletionStep.tsx` class names match `globals.css` keyframe names
+- [ ] Verify trigger condition (`isConfigComplete` → `onConfigComplete()` chain)
+
+###### R-SANDBOX: Standalone sandbox route — HIGH (architecture change)
+- [ ] **DECISION MADE:** Option A — `/chats/sandbox` dedicated route, no contacts table dependency
+- [ ] NEW: `Frontend/app/(panel)/chats/sandbox/page.tsx` — self-contained chat, always available
+- [ ] NEW: `Backend/app/api/sandbox/chat_endpoint.py` — uses tenant `system_prompt` to answer
+- [ ] MODIFY: `CompletionStep.tsx` — CTA button → `router.push('/chats/sandbox')`
+- [ ] MODIFY: Sidebar — permanent "🧪 Chat de Pruebas" link to `/chats/sandbox`
+- [ ] MODIFY: `Backend/app/main.py` — mount sandbox router
+
+###### R-PHONE: Phone number as 2nd onboarding field — MEDIUM (priority over PROD migration)
+- [ ] MODIFY: `agent_prompt.py` — add `phone_number` field, instruct as 2nd question asked
+- [ ] MODIFY: `chat_endpoint.py` — handle `phone_number` in tool schema + `_save_field()`
+- [ ] MODIFY: `useOnboardingStream.ts` — add to `ONBOARDING_FIELDS` array (→ 11 fields)
+- [ ] MODIFY: `ConfigProgress.tsx` — update total field count display
+- [ ] MIGRATION (DEV): `ALTER TABLE tenant_onboarding ADD COLUMN phone_number TEXT`
+- [ ] MIGRATION (PROD): ⏳ PENDING APPROVAL
+
+###### R-PROD-MIGRATION: onboarding_messages table to PROD — BLOCKED PENDING APPROVAL
+- [ ] `onboarding_messages` table + RLS policy + index → DEV ✅ | PROD ⏳
 
 ---
 

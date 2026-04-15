@@ -292,25 +292,48 @@
 
 ### Day 4: Monday April 14 — Newcomer Onboarding System + Fumigation Tenant Setup
 
-#### Block R: Newcomer Onboarding System ⏳ IN PROGRESS
+#### Block R: Newcomer Onboarding System 🔧 IN STABILIZATION
 
-> **Design artifact:** [implementation_plan.md (Antigravity)](file:///C:/Users/tomas/.gemini/antigravity/brain/14a1ae64-2e9e-43fc-914f-fa365bcacc49/implementation_plan.md)
-> **Diagnostic reference:** [reasoning_effort_diagnostic.md](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
+> **Session:** 13d7385c (2026-04-15)  
+> **Commit:** `2c5d2a5` — SSE parser root cause fix  
+> **Last updated:** 2026-04-15 11:30 CLT
 
-**Architecture decision: Dual-Adapter Strategy**
-- Two OpenAI adapters coexist: `OpenAIStrategy` (Chat Completions, WhatsApp) + `OpenAIResponsesStrategy` (Responses API, onboarding)
-- Existing `openai_adapter.py` stays **100% untouched** — zero risk to production WhatsApp pipeline
-- New adapter unlocks `reasoning.effort` + tools + streaming for the onboarding configuration agent
-- Future: migrate WhatsApp pipeline to Responses API once onboarding adapter is battle-tested
+##### R1–R3: Core Implementation ✅ COMPLETE
 
-**Documentation updated across ALL project files:**
-- [x] `SESSION_PROMPT.md` — reasoning_effort status upgraded to 🟢, dual-adapter + onboarding decisions added
-- [x] `task_v2.md` — Block R added with R1 (DB), R2 (Backend), R3 (Frontend) subtasks
-- [x] `master_plan.md` — v8: architecture diagrams, Sprint 2 updated, risk register expanded
-- [x] `execution_tracker.md` — Step 5 reasoning_effort marked as pulled forward
-- [x] `README.md` — External APIs table, repo structure, roadmap updated
-- [x] Antigravity `implementation_plan.md` — Component 4 expanded with full dual-adapter spec
-- [ ] ⏳ Awaiting user approval on 5 open questions before execution begins
+All backend, DB, and frontend components built:
+- [x] `onboarding_messages` Supabase table (DEV ✅ | PROD ⏳ PENDING APPROVAL)
+- [x] `openai_responses_adapter.py` — new Responses API adapter (reasoning + tools + streaming)
+- [x] `chat_endpoint.py` — full config-agent SSE endpoint (10-field wizard, follow-up loop, finalization)
+- [x] `useOnboardingStream.ts` — SSE consumer hook with persistence, history load, progress tracking
+- [x] `ConfigChat.tsx` — streaming chat UI with dedup rendering
+- [x] `CompletionStep.tsx` — confetti/fireworks celebration (CSS keyframes in globals.css)
+- [x] `OnboardingWizard.tsx` — multi-step wizard (Welcome → Chat → Completion)
+
+##### Block R: Bugs Fixed (April 15 session)
+
+| Fix | Commit | Description |
+|:---|:---|:---|
+| Build: CSS scoping | `f7d705a` | Moved keyframes from styled-jsx to globals.css; flattened multiline classNames |
+| Rendering: DEDUP arch | `f7d705a` | Eliminated flushSync; streaming bubble hides when content matches last message |
+| Multi-turn: isStreaming | `f7d705a` | Moved setIsStreaming(false) to outer finally — no longer kills follow-up bubbles |
+| **SSE Parser: ROOT CAUSE** | `2c5d2a5` | `currentEventType/Data` declared inside while loop → reset on every read() call → events split across TCP chunks were silently dropped. Moved before loop. |
+
+##### Block R: Remaining Known Issues (Post-Fix)
+
+| ID | Issue | Priority | Status |
+|:---|:---|:---|:---|
+| **R-1** | WelcomeStep (Step 1) not seen — user goes straight to ConfigChat | High | ⏳ To investigate |
+| **R-2** | Confetti/fireworks at completion not firing | Medium | ⏳ CompletionStep CSS paths to verify |
+| **R-3** | After completion, user sent to `/chats` (empty for newcomers) | High | ⏳ Needs sandbox route |
+| **R-4** | Sandbox "Chat de Pruebas" requires DB contact row to display | Critical | ⏳ Architecture change needed |
+| **R-5** | `onboarding_messages` migration not applied to PROD | Critical | PENDING APPROVAL |
+| **R-6** | Phone number not collected during onboarding (11th field) | Medium | Backlog |
+
+##### Block R: Architecture Decision — Sandbox Route (APPROVED DIRECTION)
+
+> Option A chosen: dedicated `/chats/sandbox` standalone route, no contacts table dependency.
+> Self-contained, always available for newcomers, powered by tenant's `system_prompt`.
+> CompletionStep CTA → `router.push('/chats/sandbox')` instead of `/chats`.
 
 #### Step 11: WhatsApp Number Setup (1 hour)
 - [ ] Buy SIM card (if not done)

@@ -10,12 +10,12 @@
 ## ✏️ [MODIFIABLE] §0 — Session Identity
 
 ```
-SESSION DATE:    2026-04-12
-CURRENT SPRINT:  Sprint 1
-CURRENT DAY:     Day 2 of Sprint (Saturday)
-SESSION GOAL:    Block 0 (emergency incident fix) + Block I (diagnose + fix 7 response quality bugs)
-SESSION BLOCKS:  Block 0 (⏳ EMERGENCY), Block I (⏳ DIAGNOSTIC FIRST)
-LAST COMMIT:     030ef94 (main) — HMAC fix + debug cleanup, synced desarrollo↔main
+SESSION DATE:    2026-04-15
+CURRENT SPRINT:  Sprint 1 (final stabilization)
+CURRENT DAY:     Day 5 — Onboarding Polish
+SESSION GOAL:    Complete onboarding flow: WelcomeStep + confetti + sandbox route + phone number field
+SESSION BLOCKS:  Block R (onboarding stabilization)
+LAST COMMIT:     2c5d2a5 (desarrollo) — fix(sse-parser): ROOT CAUSE — event type lost across TCP chunk boundaries
 ```
 
 ---
@@ -105,47 +105,34 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 
 ### What Is Being Done RIGHT NOW (This Session)
 
-**🔴 Block 0 (EMERGENCY) — Production incident fix from April 12 00:47 CLT**
-- Contact 83dc2480 permanently locked (`is_processing_llm=true`) — must unlock
-- `updated_at` column missing from PROD — Block E3 TTL is dead in production
-- Lock release retry/finally pattern needed in `use_cases.py`
-- Full incident report: `.ai-context/incident_report_apr12.md`
+**🔧 Block R — Onboarding Flow Polish (April 15)**
 
-**🔴 Block I — Assistant Response Quality — DIAGNOSTIC FIRST, THEN FIX**
-- 7 bugs identified from PROD conversation analysis (`.ai-context/conversation_diagnostic_apr12.md`)
-- Phase 1: Root cause investigation across 5 tracks (history, OpenAI API, tools, prompt, dedup)
-- Phase 2: Implement fixes ONLY after diagnosis is confirmed
-- DO NOT prescribe fixes until we understand WHY each bug occurs
+The core message-disappearing bug is FIXED (commit `2c5d2a5`). Root cause: SSE parser `currentEventType/Data` declared inside `while` loop — reset on each TCP chunk — events split across chunks were silently dropped. The full onboarding flow E2E works (greeting → config → provisioning animation → completion). Remaining polish in priority order:
 
-### What Comes Next (After This Session)
-- Day 3 (Sun): Blocks J (escalation UX), K (provisioning script), L (status page)
-- Day 4 (Mon): Blocks M (fumigation tenant setup), N (E2E testing), O (Meta audit)
-- Day 5 (Tue): Blocks P (go-live 🚀), Q (post-onboarding)
-- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking, gpt-5.4-nano testing
+1. **R-WELCOME** — WelcomeStep (Step 1 of wizard) never shown. User jumps directly to ConfigChat.
+2. **R-CONFETTI** — Completion confetti/fireworks animation not firing.
+3. **R-SANDBOX** — After completion, user sent to empty `/chats`. Need standalone `/chats/sandbox` route (Option A approved: no contacts table dependency).
+4. **R-PHONE** — Config chat doesn't collect newcomer's phone number. Add as 2nd onboarding question (11th field).
+5. **R-PROD-MIGRATION** — `onboarding_messages` table not on PROD. BLOCKED pending user approval.
+
+### What Comes Next (After Onboarding Complete)
+- Merge `desarrollo → main` (drift check first — `onboarding_messages` DEV-only, may block)
+- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking
+- PROD migration for `onboarding_messages` (user must approve)
 
 ### Known Blockers & Risks
-- ~~⚠️ `META_APP_SECRET` env var needed for Block E1~~ → **Stored in Google Secret Manager, set on both DEV + PROD**
-- ~~⚠️ Block D (agentic loop) is the highest-risk block~~ → **DONE ✅ — tested via sandbox, all 5 tests passed**
-- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to PROD**
-- ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
-- ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` on META_APP_SECRET — `.strip()` added**
-- ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **PROD migrated to us-central1 (2026-04-11)**
-- ~~⚠️ Old europe-west1 `ia-backend-prod` still exists~~ → **DELETED (2026-04-12)**
-- ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
-- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
-- ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
-- ⚠️ Shadow-forwarding (E4) uses tenant's WABA phone → admin number. Requires active 24h conversation window on admin's WhatsApp. If window expired, forward silently fails (non-blocking).
-- ⚠️ **Cloud Build trigger** on `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` auto-deploys from `main` push. ALWAYS push to main before expecting PROD to have new code.
-- 🔴 **PROD calendar booking UNVERIFIED** (2026-04-12) — No `book_round_robin` tool call has been triggered on PROD in 24+ hours. Cannot confirm if CasaVitaCure booking works. Must trigger a test booking to verify before Tuesday.
-- 🔴 **Mobile frontend BROKEN** (2026-04-12) — Dashboard and chat UI completely unusable on mobile. Clients would not be able to use it. Must fix before Tuesday onboarding.
-- 🔴 **Escalation UX missing** (2026-04-12) — Block J not started. No visual badge for escalated contacts, no "resolve" button, no filter. Staff cannot see or handle escalated chats. First client interaction could trigger escalation.
-- 🔴 **Booking flow repetition loop (U-14)** (2026-04-12) — On PROD, assistant re-asks info already provided (name, zone, time) and demands multiple confirmations before booking. Extremely bothersome — will anger clients. Root cause unclear: prompt phrasing, model tool execution limitations on `/v1/chat/completions`, history not surfacing provided info, or agentic loop re-processing. **Must diagnose with OpenAI official docs** on sequential/concurrent tool calling patterns for gpt-5.4-mini.
-- 🟡 **wamid extraction broken** (2026-04-12) — `wamid` values in messages table are `null`. Webhook payload structure may differ from expected. Dedup relies on wamid uniqueness; without it, duplicate messages may still process.
-- 🟡 **Rapid-fire batching on DEV only** (2026-04-12) — Fix committed to `desarrollo` (`1f7b250`) but NOT merged to `main`. PROD still silently drops rapid-fire messages 2+.
-- 🟡 **Gemini adapter deprecation** (2026-04-12) — PROD startup logs show: `google.generativeai` package deprecated, must migrate to `google.genai`. Not blocking (Gemini not used for any tenant), but will break when package is removed.
-- 🟢 **reasoning_effort → Dual-Adapter Strategy** (2026-04-14) — OpenAI hard-rejects `reasoning_effort` + tools on `/v1/chat/completions` for gpt-5.4-mini (full diagnostic: `deep_dives_&_misc/reasoning_effort_diagnostic.md`). **RESOLUTION:** New `OpenAIResponsesStrategy` adapter (`openai_responses_adapter.py`) built side-by-side using `/v1/responses` API. Supports `reasoning.effort` + tools + streaming + reasoning summaries natively. Used EXCLUSIVELY by the onboarding configuration agent for now. Existing `OpenAIStrategy` (`openai_adapter.py`) on `/v1/chat/completions` stays **100% untouched** for the WhatsApp conversation pipeline. Future: migrate WhatsApp pipeline to Responses API once onboarding adapter is battle-tested.
-- 🟡 **Prompt Phase 1 skip regression** (2026-04-12) — Multiple PROD messages show bot asking "¿Me compartes tu nombre y hora?" immediately, skipping the 3-question triaje (Phase 1). Prompt v2.1 was applied but may not have fully fixed this. Needs E2E test.
-- 🟡 **Dashboard shows fake data** (2026-04-12) — Block L not started. Dashboard still displays mock/placeholder numbers. Must replace with real Supabase queries.
+- ~~⚠️ SSE message disappearance~~ → **FIXED `2c5d2a5` (2026-04-15)** — `currentEventType/Data` scope bug in reader loop
+- ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` — `.strip()` added**
+- ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **Migrated to us-central1**
+- ⚠️ OpenAI platform docs return 403 programmatically — use `search_web` instead
+- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN**
+- ⚠️ `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK serializes None as JSON null
+- ⚠️ **Cloud Build trigger** auto-deploys on push to `desarrollo` AND `main`. ALWAYS push first, then verify.
+- ⚠️ **`onboarding_messages` table on DEV only** — PROD merge BLOCKED until user approves migration
+- 🟢 **Dual-Adapter Strategy** — `OpenAIResponsesStrategy` for onboarding (Responses API), `OpenAIStrategy` for WhatsApp (Chat Completions). Zero cross-contamination.
+- 🟡 **wamid extraction null** — dedup falls back to atomic lock (working). Low priority.
+- 🟡 **Gemini adapter deprecation** — `google.generativeai` deprecated. Not blocking (not used).
+- 🟡 **Prompt Phase 1 skip** — Prompt v2 deployed, testing ongoing.
 
 ---
 
