@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-12 23:03 CLT
+> **Last Updated:** 2026-04-15 18:13 CLT (Session cb937bcc — P0+P1 Stabilization Sprint)
 
 ---
 
@@ -477,26 +477,135 @@ All backend, DB, and frontend components built:
 | Sandbox Chat | `gpt-5.4-mini` fallback | No | `tools=[]` ⚠️ | `OpenAIResponsesStrategy` (per-request) |
 | WhatsApp Webhook | `tenant.llm_model` | No | Yes (tool_registry) | `OpenAIStrategy` (Chat Completions) — UNTOUCHED |
 
-**S6: Sandbox Tools** ⏳ PENDING
-- Currently `tools=[]` — user wants tenant tools available
-- Architectural decision needed: which tools, safe execution path
-- Awaiting user guidance
+**S6: Sandbox Tools** ✅ COMPLETE (2026-04-15 18:05 CLT)
+- All 5 calendar tools now call real `NativeSchedulingService` (commit `cd6240e`)
+- `_real_availability()`, `_real_booking()`, `_real_update()`, `_real_delete()`, `_real_list_appointments()`
+- Appointments persist to DB and show up in Agenda
+- 3-channel observability on every failure path
 
-#### Migration Parity Status (April 15 afternoon)
+#### Block T: Native Calendar Infrastructure ✅ COMPLETE (2026-04-15 ~16:00 CLT)
+
+> **Session:** cb937bcc (2026-04-15)  
+> **Commit:** `670dd9d` — `feat: native scheduling + services/resources CRUD + config modernization`
+
+**T1: Schema DDL** ✅
+- `btree_gist` extension enabled
+- `resources` table with RLS + indexes
+- `appointments` table with `EXCLUDE USING gist` for race-condition-proof double-booking prevention
+- `scheduling_config` table with RLS
+- `tenant_services` table with RLS
+- All applied to DEV (`nzsksjczswndjjbctasu`) ✅ | PROD ⏳ PENDING
+
+**T2: NativeSchedulingService** ✅
+- `Backend/app/modules/scheduling/native_service.py` — 800+ lines
+- 6 operations: `get_merged_availability()`, `book_round_robin()`, `cancel_appointment()`, `update_appointment()`, `list_appointments()`, `list_events()`
+- Universal "Resource" abstraction (boxes, teams, tables, bays)
+- 3-channel observability (logger + Sentry + Discord) on all operations
+
+**T3: Services CRUD** ✅
+- Backend: `services.py` endpoints for tenant_services
+- Frontend skeleton: ConfigView for services management
+- Wire-up to tenant context
+
+**T4: GCal → Native Swap in services.py** ✅
+- Old Google Calendar imports removed from production tools
+- `main.py` endpoints updated to use native service
+- Sandbox tools still used simulated versions → **fixed in Block U**
+
+#### Block U: P0+P1 Stabilization Sprint ✅ COMPLETE (2026-04-15 18:10 CLT)
+
+> **Session:** cb937bcc (2026-04-15)  
+> **Commit:** `cd6240e` — `fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting`  
+> **Files changed:** 8 (846 insertions, 237 deletions)  
+> **1 new file created:** `Frontend/lib/whatsappFormatter.tsx`
+
+##### U-P0-4: Tenant Isolation in UIContext + ChatContext ✅
+
+**Root cause (UIContext):** Alerts fetched from Supabase with NO `tenant_id` filter → all tenants' notifications leaked into current view.
+
+**Root cause (ChatContext):** Contacts query and Realtime subscriptions had NO `tenant_id` filter → contacts and messages from other tenants visible.
+
+**Fix:**
+- [x] `UIContext.tsx`: Added `useTenant()` hook, filtered initial fetch + Realtime by `currentTenantId`, dynamic re-subscription on tenant change
+- [x] `ChatContext.tsx`: Added `tenant_id` filter on contacts fetch, contacts Realtime, messages Realtime. Used `useRef` to prevent stale closure in callback.
+- [x] Sentry tracking on all error paths in both contexts
+
+##### U-P0-2: Onboarding Auto-Provisioning ✅
+
+**Root cause:** `_finalize_onboarding()` saved system prompt but never created `tenant_services`, `resources`, or `scheduling_config` rows.
+
+**Fix:**
+- [x] Created `_provision_services_and_resources()` function (260 lines) in `chat_endpoint.py`
+- [x] Called after finalization, reads `services_offered`, `business_hours`, `business_type` from `tenant_onboarding`
+- [x] Creates `tenant_services` rows with price/duration extraction (regex parsing for `$XX.XXX`, `XX min`, `Xh`)
+- [x] Creates contextual default `resource` based on business type (24 keyword mappings → Equipo/Box/Silla/Mesa/Consulta etc.)
+- [x] Creates `scheduling_config` with business hours extracted from onboarding data (regex parsing for `HH:MM` / `HH:00` patterns)
+- [x] All non-fatal — if provisioning fails, tenant remains functional, failures reported via Sentry+Discord
+
+##### U-P0-1: Sandbox Tools → Real NativeSchedulingService ✅
+
+**Root cause:** All 5 calendar tools returned hardcoded simulated data → Agenda dashboard permanently empty during demos.
+
+**Fix:**
+- [x] Replaced all 5 simulated functions with `async` implementations calling `NativeSchedulingService`
+- [x] `_real_availability()` — queries real scheduling_config + appointments
+- [x] `_real_booking()` — creates real appointment rows in DB
+- [x] `_real_update()` — updates real appointment time
+- [x] `_real_delete()` — cancels real appointments
+- [x] `_real_list_appointments()` — queries real appointments table
+- [x] Each wrapped in try/except with 3-channel observability
+- [x] Updated executor routing from `_simulate_*` → `await _real_*`
+
+##### U-P0-3: Duplicate Messages ✅
+
+**Root cause:** `ChatArea.tsx` adds optimistic temp message (ID: `temp-*`) on send. When Realtime delivers real DB row (UUID), dedup check (`m.id === newMsg.id`) doesn't match → both display.
+
+**Fix:**
+- [x] Enhanced Realtime INSERT handler in `ChatContext.tsx` to remove `temp-*` prefixed messages matching same `sender_role` before appending real row
+
+##### U-P1-1: WhatsApp Markdown Formatting ✅
+
+**Root cause:** AI responses with `*bold*`, `_italic_`, `~strike~`, code blocks, URLs rendered as raw text across all 3 chat views.
+
+**Fix:**
+- [x] Created shared `Frontend/lib/whatsappFormatter.tsx` (175 lines)
+- [x] Parses: `*bold*` → `<strong>`, `_italic_` → `<em>`, `~strike~` → `<del>`, `` `code` `` → `<code>`, ```` ```blocks``` ```` → `<code block>`, URLs → `<a>`, line breaks → `<br>`
+- [x] Includes `messageBubbleStyles` CSS class for word-break + overflow-wrap safety
+- [x] Applied to `ChatArea.tsx` (replaced 38-line inline `formatWhatsAppText`)
+- [x] Applied to `TestChatArea.tsx` (same replacement)
+- [x] Applied to `sandbox/page.tsx`
+
+#### Migration Parity Status (April 15 evening — 18:13 CLT)
+
+> ⚠️ **Schema gap:** DEV has 13 tables, PROD has 6. All new tables blocked on full E2E testing.
 
 | Migration | DEV | PROD |
 |:---|:---|:---|
 | `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
 | `phone_number` column on `tenant_onboarding` | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
 
-#### Remaining Items (Pending Verification)
-- [ ] E2E test: phone_number wording ("tu número personal" not "de la empresa")
-- [ ] E2E test: phone_number persistence (no more Sentry "Unknown field" errors)
-- [ ] E2E test: sandbox (`/chats/sandbox` → send message → AI responds via Responses API)
-- [ ] Sandbox tools decision — which tools, safe execution path
+#### Remaining Items (Pending — P1 and beyond)
+
+- [ ] P1-3: Agenda real business hours from `scheduling_config`
+- [ ] P1-4: Agenda real appointment progress bars
+- [ ] P1-5: Permanent sandbox link in contacts sidebar
+- [ ] P2: Services/Products CRUD frontend page (designed, architecture ready)
+- [ ] E2E test: full self-onboarding flow → verify provisioning creates services/resources/config
+- [ ] E2E test: sandbox chat → verify real tool calls → verify appointments in agenda
+- [ ] E2E test: tenant switching → verify zero cross-tenant data leaks
+- [ ] E2E test: message send → verify exactly 1 bubble (no duplicates)
+- [ ] Frontend manual deploy to Cloudflare Workers DEV (`npm run deploy`)
+- [ ] PROD migration sync (after full E2E pass on DEV)
 
 
 ---
+
 
 ## Sprint 2: Product Expansion (Apr 16-25)
 

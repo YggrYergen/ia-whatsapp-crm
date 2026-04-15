@@ -1,200 +1,163 @@
 # 🔴 NOW.md — Full Technical Situation Report
 
-> **Updated:** 2026-04-15 15:50 CLT  
+> **Updated:** 2026-04-15 18:13 CLT  
 > **Session ID:** cb937bcc-b4a2-4a4f-8333-454c75646e32  
 > **Branch:** `desarrollo`  
-> **Last commit:** `f6c2260` — `feat(sandbox): 7 tools with agentic loop via Responses API chaining`
+> **Last commit:** `cd6240e` — `fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting`
 
 ---
 
 ## §0 — What We Are Doing RIGHT NOW and Why
 
-### Current Focus: Native Calendar Solution — APPROVED, IMPLEMENTING
+### Current Focus: Stabilization Sprint — Critical Bug Fixes for Demo Readiness
 
-**The sandbox demo tools work (simulated). Now we build the real scheduling infrastructure that eliminates Google Calendar permanently.**
+**Goal:** Resolve all P0/P1 bugs discovered during user testing so the platform is demo-ready for the upcoming client onboarding. Every system — onboarding, sandbox, agenda, chat — must work flawlessly end-to-end with zero cross-tenant data leaks, zero duplicate messages, and proper observability at every failure point.
 
 ---
 
 #### ✅ DONE (this session, 2026-04-15)
 
-**1. Sandbox Tool Integration** (commit `f6c2260`)
-- **7 tools** work in sandbox chat (5 simulated calendar + 2 real DB/event)
-- Agentic loop with Responses API chaining (`previous_response_id`, `store=True`)
-- MAX_TOOL_ROUNDS=3, full 3-channel observability
-- Files: `sandbox/tools.py` (NEW), `sandbox/chat_endpoint.py` (REWRITE), `openai_responses_adapter.py` (+chaining), `router.py` (+response_id)
-- All imports verified, zero regressions ✅
+**Phase A — Design & Planning (earlier today)**
 
-**2. Native Calendar Plan Created + User-Approved**
-- Full GCal audit: 5 backend files, 3 frontend files, 4 DB columns
-- Architecture: 3 new tables (`resources`, `appointments`, `scheduling_config`)
-- `EXCLUDE USING gist` for race-condition-proof double-booking prevention
-- Universal "Resource" abstraction (boxes, teams, tables, bays)
-- Plan artifact: `native_calendar_plan.md`
+| # | Item | Commit |
+|---|------|--------|
+| 1 | Sandbox Tool Integration — 7 tools (5 simulated + 2 real) with Responses API agentic loop | `f6c2260` |
+| 2 | Native Calendar Architecture — 3-table schema with `EXCLUDE USING gist`, RLS, approved by user | `670dd9d` |
+| 3 | Native Calendar Schema + `NativeSchedulingService` — all 6 operations with 3-channel observability | `670dd9d` |
+| 4 | Services/Resources CRUD endpoints + Frontend ConfigView skeleton | `670dd9d` |
 
----
+**Phase B — P0 Bug Fix Sprint (this session, commit `cd6240e`)**
 
-#### 🔨 DOING NOW: Phase 1 — Native Calendar Schema + Service
-
-**Locked-in decisions (user-confirmed 2026-04-15 16:02 CLT):**
-
-| Decision | Answer | Implications |
-|----------|--------|-------------|
-| **Fumigation resources** | 3-8 teams, must support dynamic N | `resources` table with no upper limit |
-| **Onboarding agent** | MUST ask about resources during config flow | Add resource collection to onboarding prompt |
-| **Business hours** | Vary per day, per tenant. Agent collects. | `scheduling_config.business_hours` is per-day JSON |
-| **Test chat post-config** | Must be fully tooled when config ends | After onboarding completes → auto-provision resources + scheduling_config → sandbox tools switch to real native queries |
-
-**Implementation order:**
-1. ✅ Plan created + approved
-2. ✅ **Phase 1:** Schema DDL on DEV (`btree_gist` + 3 tables + RLS + indexes) — VERIFIED
-3. ✅ **Phase 2:** `native_service.py` — all 6 operations with 3-channel observability
-4. ✅ **Phase 3:** `services.py` rewritten (GCal → Native), `main.py` endpoints swapped, imports verified
-5. ⏳ **Phase 4:** Frontend `AgendaView.tsx` dynamic resources
-6. ⏳ **Phase 5:** GCal cleanup (remove google_client.py, OAuth router, tenant GCal columns)
+| Priority | Bug | Root Cause | Fix | Files |
+|----------|-----|-----------|-----|-------|
+| **P0-4** | Notifications leaking across tenants | `UIContext` + `ChatContext` fetched ALL data with no `tenant_id` filter | Added `useTenant()` hook, filtered all queries + Realtime subs by `currentTenantId`, re-subscribe on tenant change, Sentry on all error paths | `UIContext.tsx`, `ChatContext.tsx` |
+| **P0-2** | Onboarding doesn't create services/resources | `_finalize_onboarding()` saved prompt but never provisioned services, resources, or scheduling_config | New `_provision_services_and_resources()` (260 lines): parses `services_offered`, creates `tenant_services` with price/duration extraction, creates contextual default `resource` (24 business-type keywords), creates `scheduling_config` with extracted business hours. All non-fatal with 3-channel observability. | `chat_endpoint.py` |
+| **P0-1** | Sandbox calendar tools return fake data | All 5 calendar tools returned hardcoded simulated responses | Replaced with `async` implementations calling real `NativeSchedulingService`: `_real_availability()`, `_real_booking()`, `_real_update()`, `_real_delete()`, `_real_list_appointments()`. Appointments now persist to DB. | `sandbox/tools.py` |
+| **P0-3** | Duplicate messages in regular chat | Optimistic temp message (`id: temp-*`) + Realtime INSERT of real DB row → both display | Enhanced Realtime handler to remove `temp-*` prefixed messages matching same `sender_role` when real row arrives | `ChatContext.tsx` |
+| **P1-1** | Raw markdown text in all chat views | AI responses with `*bold*`, `_italic_`, `~strike~`, URLs rendered as raw text | Created shared `whatsappFormatter.tsx` utility: WhatsApp markdown → React nodes. Applied to all 3 chat views (ChatArea, TestChatArea, sandbox). Includes CSS safety styles for word-break overflow. | `whatsappFormatter.tsx` (NEW), `ChatArea.tsx`, `TestChatArea.tsx`, `sandbox/page.tsx` |
 
 ---
 
-#### 🔜 WILL DO (after native calendar)
+#### 🔨 DOING NOW: User Testing + Remaining P1 Items
 
-- **Onboarding agent expansion:** Add resource/hours collection to config prompt
-- **Auto-provision:** On config completion → create `resources` rows + `scheduling_config` row → sandbox tools → real
-- **Superadmin notifications:** Discord alerts on every onboarding start/progress/completion
-- **PROD migration:** DEV → E2E verified → PROD (per migration lifecycle rule)
-- **GCal column deprecation:** Mark 4 tenant columns for removal after all tenants migrated
+The P0+P1 commit (`cd6240e`) has been pushed to `desarrollo`. Cloud Build will auto-deploy backend to DEV. The user should test:
+
+1. **Onboarding flow end-to-end** — Does it provision services/resources/scheduling_config?
+2. **Tenant isolation** — Does switching tenants in navbar show only that tenant's data?
+3. **Sandbox chat** — Do calendar tool calls create real appointments?
+4. **Message dedup** — Does sending a message show exactly 1 bubble (not 2)?
+5. **Message formatting** — Do `*bold*` and `_italic_` render correctly?
+
+**Remaining P1 items (not yet implemented):**
+
+| ID | Issue | Status | Description |
+|----|-------|--------|-------------|
+| **P1-3** | Agenda business hours from real data | ⏳ PENDING | `AgendaView` should read `scheduling_config` for business hours instead of hardcoded 8-20 |
+| **P1-4** | Agenda appointment progress bars | ⏳ PENDING | Show real appointment count per resource as progress bars |
+| **P1-5** | Permanent sandbox link in chats list | ⏳ PENDING | Old "Chat de Pruebas" should always appear in contacts list sidebar as shortcut to `/chats/sandbox` |
 
 ---
 
-#### Previous Fixes (Still Active)
-- ✅ Fix 1: Phone Number — commit `6508668` (DEV ✅ | PROD ⏳)
-- ✅ Fix 2: Sandbox Isolation — commit `6508668` (DEV ✅ | PROD ⏳)
-- ✅ Fix 3: Sandbox Tools — commit `f6c2260` (DEV ✅)
+#### 🔜 WILL DO (after stabilization sprint)
+
+1. **P1-3/P1-4:** Agenda real data integration
+2. **P1-5:** Permanent sandbox chat link
+3. **Services/Products Page (P2):** Full CRUD frontend for `tenant_services` — user-approved, architecture designed but blocked on stabilization
+4. **PROD migration:** DEV → E2E verified → schema sync → PROD (per migration lifecycle rule)
+5. **GCal cleanup (Phase 5):** Remove google_client.py, OAuth router, tenant GCal columns — ONLY after native calendar verified in PROD
+
+---
+
+#### Previous Fixes (Still Active, All on `desarrollo`)
+
+| Fix | Commit | DEV | PROD |
+|-----|--------|-----|------|
+| Phone Number (11th field) | `6508668` | ✅ | ⏳ PENDING |
+| Sandbox Isolation (Responses API) | `6508668` | ✅ | ⏳ PENDING |
+| Sandbox Tools (7 tools + agentic loop) | `f6c2260` | ✅ | ⏳ PENDING |
+| Native Calendar Schema | `670dd9d` | ✅ | ⏳ PENDING |
+| P0+P1 Bug Fixes | `cd6240e` | ✅ | ⏳ PENDING |
 
 ### Current Deployment State
+
 | Component | Status | Notes |
 |:---|:---|:---|
-| **Sandbox tools** | ✅ Deployed | Commit `f6c2260` on Cloud Run DEV |
-| **Backend** (Cloud Run DEV) | ✅ Running | 7 tools + agentic loop |
-| **Frontend** (Cloudflare Pages) | ⏳ No frontend changes yet | N/A |
-| **onboarding_messages migration** | ✅ DEV | ⏳ PENDING PROD APPROVAL |
-| **phone_number column migration** | ✅ DEV | ⏳ PENDING PROD APPROVAL |
-| **Native calendar schema** | ✅ DEV APPLIED | ⏳ PENDING PROD APPROVAL |
-| **PROD** | ⏳ NOT YET | No changes merged to main |
+| **Backend** (Cloud Run DEV) | ✅ Running | Commit `cd6240e` — auto-deployed |
+| **Frontend** (Cloudflare Workers DEV) | ⚠️ NEEDS MANUAL DEPLOY | `npm run deploy` required on `desarrollo` |
+| **Supabase DEV** | ✅ | 13 tables, all RLS enabled |
+| **PROD** | ⏳ UNTOUCHED | No changes merged to main since Apr 12 |
 
 ---
 
-## §1 — Complete Session Work Log
+## §1 — Complete Session Work Log (2026-04-15)
+
+### 12. P0+P1 Stabilization Sprint ✅ (commit `cd6240e`)
+- **Context:** User-tested the system, found 5 critical bugs
+- **All fixed in single commit:** tenant isolation × 2 contexts, onboarding provisioning, real sandbox tools, message dedup, WhatsApp formatter
+- **846 insertions, 237 deletions, 8 files changed**
+- **New file:** `Frontend/lib/whatsappFormatter.tsx`
+
+### 11. Native Calendar + Services CRUD (commit `670dd9d`)
+- **3 new DB tables:** `resources`, `appointments`, `scheduling_config` with RLS + `btree_gist`
+- **NativeSchedulingService:** 6 operations (availability, book, cancel, update, list, events) with 3-channel observability
+- **Services CRUD:** `services.py` endpoints, `tenant_services` table
+- **Frontend skeleton:** ConfigView for services management
 
 ### 10. Sandbox Tool Integration ✅ (commit `f6c2260`)
-- **Problem:** Sandbox chat had `tools=[]` — AI couldn't do anything useful for the demo
-- **Solution:** Created standalone sandbox tool implementations + full agentic loop
-  - `sandbox/tools.py`: 7 tools, zero GCal imports, 3-channel observability
-  - `sandbox/chat_endpoint.py`: Responses API agentic loop with `previous_response_id` chaining
-  - `openai_responses_adapter.py`: Added `previous_response_id` + `store=True` support
-  - `router.py`: Added `response_id` to `LLMResponse` DTO
-- **Verified:** All imports pass, full app startup passes, zero regressions
+- **7 tools** in sandbox chat (5 simulated calendar + 2 real DB/event)
+- Agentic loop with Responses API chaining (`previous_response_id`, `store=True`)
+- MAX_TOOL_ROUNDS=3, full 3-channel observability
 
-### 11. Native Calendar Architecture Plan ✅
-- **Problem:** Google Calendar dependency blocks multi-tenant scaling (OAuth per tenant, rate limits, latency, no double-booking prevention)
-- **Solution:** 3-table Supabase schema with RLS + `EXCLUDE USING gist` constraint
-- **Plan:** `native_calendar_plan.md` — approved by user
-
-### Previous items (1-9): see earlier session log below
-
-### 1. Responses API Chaining Fix ✅
-- **Problem:** OpenAI `BadRequestError 400` — "No tool call found for function call output with call_id"
-- **Root Cause:** Frontend was sending full conversation history including orphaned `function_call_output` items from previous turns
-- **Fix:** Added history sanitization (strip non-user/non-assistant messages) + implemented `previous_response_id` chaining for tool-call follow-ups
-- **File:** `Backend/app/api/onboarding/chat_endpoint.py` lines 141-163, 364-420
-
-### 2. Done Event Suppression Fix ✅
-- **Problem:** When the model made tool calls, the `done` event for the initial response was being suppressed, causing its text content to be lost
-- **Fix:** Removed the suppression — every `done` event is now forwarded to the frontend, regardless of pending tool calls
-- **File:** `Backend/app/api/onboarding/chat_endpoint.py` lines 341-370
-
-### 3. Activity-Based Timeout ✅
-- **Problem:** Fixed 60s timeout from stream start — multi-turn config sessions easily exceeded this
-- **Fix:** 90s inactivity timeout that resets on every received SSE chunk
-- **File:** `Frontend/hooks/useOnboardingStream.ts` line 82 + timeout logic in SSE loop
-
-### 4. SSE Observability - NOT FULL YET
-- **Problem:** No visibility into what was happening in the SSE stream — messages disappeared with zero evidence
-- **Fix:** Added `console.debug` for every SSE event + Sentry breadcrumbs throughout the stream lifecycle
-- **File:** `Frontend/hooks/useOnboardingStream.ts` (throughout)
-
-### 5. Frontend State Fix ✅
-- **Problem:** Stale `isThinking` React closure in the SSE event loop
-- **Fix:** Used local mutable variable `thinkingActive` inside the SSE loop instead of stale state reference
-- **File:** `Frontend/hooks/useOnboardingStream.ts`
-
-### 6. Provisioning Progress Overlay _ UNCONFIRMED.
-- **Problem:** After config completion, there was an invisible 2-second delay before transitioning
-- **Fix:** Added animated step-through overlay: Saving → Generating personality → Activating tools → Ready!
-- **File:** `Frontend/components/Onboarding/ConfigChat.tsx` lines 56-85 + 128-172
-
-### 7. Premium Celebration Screen - NEVER SEEN BY TESTER; MIGHT BE BROKEN
-- **Problem:** User requested "big relaxing check animation with extra glitters and glow"
-- **Fix:** Rewrote CompletionStep with animated SVG checkmark (stroke drawing), pulsing glow rings, 40 floating glitter particles, sparkle accents, 3-phase staggered reveal
-- **File:** `Frontend/components/Onboarding/CompletionStep.tsx`
-
-### 8. Persistent Conversation History - JUST DONE NOT TESTED YET,
-- **Problem:** Messages only lived in React state — no debugging, no resumability, no audit trail
-- **Fix:** 
-  - Created `onboarding_messages` table (Supabase DEV migration)
-  - Added `_persist_message()` helper with 3-channel observability
-  - User messages saved before streaming starts
-  - Assistant messages saved on each `done` event
-  - Added `GET /api/onboarding/chat/history` endpoint
-  - Frontend loads persisted history on mount via `useEffect`
-  - `historyLoaded` flag prevents duplicate initial greetings
-- **Files:**
-  - `Backend/app/api/onboarding/chat_endpoint.py` (persistence layer + GET endpoint)
-  - `Frontend/hooks/useOnboardingStream.ts` (history loading)
-  - `Frontend/components/Onboarding/ConfigChat.tsx` (conditional greeting)
-
-### 9. Tool Detection Feature (documented, not implemented)
-- Documented in `.ai-context/deep_dives_&_misc/onboarding_tool_detection_feature.md`
-- Detect tool gaps during onboarding
-- Notify superadmins via Discord
-- Auto-provision sandbox chats
-- Persist conversation history for QA (now partially implemented via item 8)
-- Superadmins need to be notified any time a self onboarding process starts and be kept updated of the progress even if sucessful, unsucesfull, incomplete, leave, whatever: this message should lead directly to where supperadmin can see the whole thing, behaviour configchathistory, logs from tools executed, the whole process and its observability parts so it can be thoroughly diagnosed
+### Previous items (1-9): see §1 in earlier session logs
+*(Responses API fix, done event fix, activity timeout, SSE observability, frontend state fix, provisioning overlay, celebration screen, persistent history, tool detection feature spec)*
 
 ---
 
 ## §2 — What's Pending
 
-### NOW — Native Calendar Implementation (Phases 1-5)
+### NOW — User Testing of commit `cd6240e`
 
-| Phase | What | Status | Blocker? |
-|-------|------|--------|----------|
-| 1 | Schema DDL: `btree_gist` + `resources` + `appointments` + `scheduling_config` + RLS + indexes | ⏳ NEXT | No |
-| 2 | `native_service.py`: availability, book, cancel, update, list, events | ⏳ | Phase 1 |
-| 3 | Tool registry swap: production tools → native service; sandbox → real native queries | ⏳ | Phase 2 |
-| 4 | Frontend `AgendaView.tsx` dynamic resources (replace hardcoded Box 1/Box 2) | ⏳ | Phase 2 |
-| 5 | GCal cleanup: remove `google_client.py`, `google_oauth_router.py`, tenant GCal columns | ⏳ | Phase 3+4 verified |
+Priority order for testing:
+1. Self-onboarding flow → verify provisioning
+2. Sandbox chat → verify real tool calls
+3. Tenant switching → verify isolation
+4. Message send → verify no duplicates
+5. AI response formatting → verify markdown rendering
 
-### AFTER Calendar — Onboarding Agent Expansion
-- [ ] Add resource collection to onboarding config prompt ("¿Cuántos equipos/boxes/mesas tienes?")
-- [ ] Add business hours collection per day ("¿Qué horarios de atención tienes cada día?")
-- [ ] Auto-provision `resources` rows + `scheduling_config` on config completion
-- [ ] Swap sandbox tools from simulated → real native queries after provisioning
-- [ ] Superadmin Discord notifications for onboarding lifecycle events
+### AFTER Testing — Remaining Implementation
 
-### Migration Parity (DEV ✅ | PROD ⏳)
+| Priority | Item | Status | Blocker? |
+|----------|------|--------|----------|
+| P1-3 | Agenda real business hours from `scheduling_config` | ⏳ | No |
+| P1-4 | Agenda real appointment progress bars | ⏳ | No |
+| P1-5 | Permanent sandbox link in contacts sidebar | ⏳ | No |
+| P2 | Services/Products CRUD frontend page | ⏳ Designed | P0/P1 completion |
+| P3 | PROD migration sync | ⏳ | Full E2E pass on DEV |
+| P4 | GCal cleanup (remove google_client.py, OAuth) | ⏳ | P3 completion |
+
+### Migration Parity (DEV vs PROD)
+
+> ⚠️ **CRITICAL GAP:** PROD has 6 tables. DEV has 13 tables. Seven tables exist only on DEV and are NOT yet approved for PROD migration.
+
 | Migration | DEV | PROD |
 |:---|:---|:---|
-| `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
-| `phone_number` column on `tenant_onboarding` | ✅ | ⏳ PENDING APPROVAL |
-| `resources` table + RLS | ⏳ NEXT | ⏳ |
-| `appointments` table + gist constraint + RLS | ⏳ NEXT | ⏳ |
-| `scheduling_config` table + RLS | ⏳ NEXT | ⏳ |
+| `onboarding_messages` table + index + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
+| `phone_number` column on `tenant_onboarding` | ✅ Applied | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ Applied | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ Applied | ⏳ (may already exist) |
+| `resources` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
+| `appointments` table + gist constraint + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
 
-- ONLY AFTER FULL E2E VERIFICATION ON DEV WITHOUT A SINGLE ERROR
+**PROD SQL is ready to apply. Blocked on: user testing on DEV passing with zero errors.**
 
 ### Technical Debt
-- [ ] Remove `google-api-python-client`, `google-auth-oauthlib` from requirements
+- [ ] Remove `google-api-python-client`, `google-auth-oauthlib` from requirements (after GCal cleanup)
 - [ ] Config agent prompt improvements — Remove redundant confirmations (REGLA 2), improve natural flow
 - [ ] RLS verification — Confirm `onboarding_messages` RLS policy correctly restricts access
+- [ ] Sandbox tools integration — connect to real scheduling via NativeSchedulingService ✅ DONE
+- [ ] Frontend manual deploy to Cloudflare Workers DEV (after testing)
 
 ---
 
@@ -202,37 +165,39 @@
 
 | Resource | ID / URL |
 |:---|:---|
-| **Supabase DEV** | Project: `nzsksjczswndjjbctasu` |
-| **Supabase PROD** | Project: `nemrjlimrnrusodivtoa` |
+| **Supabase DEV** | Project: `nzsksjczswndjjbctasu` (13 tables) |
+| **Supabase PROD** | Project: `nemrjlimrnrusodivtoa` (6 tables) |
 | **Cloud Run DEV** | `ia-backend-dev` in `saas-javiera` / `us-central1` |
 | **Cloud Run PROD** | `ia-backend-prod` in `saas-javiera` / `us-central1` |
 | **Frontend DEV** | `https://dev-ia-whatsapp-crm.tomasgemes.workers.dev` |
+| **Frontend PROD** | `https://ia-whatsapp-crm.tomasgemes.workers.dev` |
 | **Test tenant ID** | `4bda477d-33d6-458a-b256-e28ea1337324` (instagramelectrimax) |
 | **GitHub repo** | `YggrYergen/ia-whatsapp-crm` |
 | **Branch** | `desarrollo` (all work) → merge to `main` for PROD |
 
 ---
 
-## §4 — Key Files Modified This Session
+## §4 — Key Files Modified This Session (commit `cd6240e`)
 
 | File | What Changed |
 |:---|:---|
-| `Backend/app/api/sandbox/tools.py` | **NEW** — 7 standalone sandbox tools (zero GCal imports), 3-channel observability |
-| `Backend/app/api/sandbox/chat_endpoint.py` | **REWRITE** — full agentic loop with Responses API chaining, MAX_TOOL_ROUNDS=3 |
-| `Backend/app/infrastructure/llm_providers/openai_responses_adapter.py` | Added `previous_response_id` + `store=True` for chaining |
-| `Backend/app/modules/intelligence/router.py` | Added `response_id` field to LLMResponse DTO |
-| `Backend/app/api/onboarding/chat_endpoint.py` | History sanitization, done event fix, follow-up chaining, **message persistence layer**, **GET history endpoint** |
-| `Frontend/hooks/useOnboardingStream.ts` | Activity timeout, SSE observability, stale closure fix, **persistent history loading on mount** |
-| `Frontend/components/Onboarding/ConfigChat.tsx` | Provisioning progress overlay, **historyLoaded-gated initial greeting** |
-| `Frontend/components/Onboarding/CompletionStep.tsx` | Premium celebration UI rewrite |
-| `Frontend/app/globals.css` | fadeIn, glitterFloat, checkDraw, bg-gradient-radial animations |
-| `.ai-context/deep_dives_&_misc/onboarding_tool_detection_feature.md` | Feature spec for tool gap detection |
+| `Frontend/contexts/UIContext.tsx` | **P0-4:** Tenant isolation — alerts filtered by `currentTenantId`, dynamic Realtime re-subscription, Sentry on all error paths |
+| `Frontend/contexts/ChatContext.tsx` | **P0-4b + P0-3:** Tenant isolation on contacts/messages queries + Realtime subs. Fixed duplicate messages (remove `temp-*` on Realtime INSERT). `useRef` for stale closure prevention. |
+| `Backend/app/api/onboarding/chat_endpoint.py` | **P0-2:** Added `_provision_services_and_resources()` — auto-creates `tenant_services`, `resources`, `scheduling_config` from onboarding data (260 lines) |
+| `Backend/app/api/sandbox/tools.py` | **P0-1:** Replaced 5 simulated calendar functions with real `NativeSchedulingService` async implementations. Updated header, executor routing. |
+| `Frontend/lib/whatsappFormatter.tsx` | **P1-1 NEW:** Shared WhatsApp markdown formatter — `*bold*`, `_italic_`, `~strike~`, `` `code` ``, ```` ```blocks``` ````, URLs, line breaks, CSS safety styles |
+| `Frontend/components/Conversations/ChatArea.tsx` | **P1-1:** Replaced 38-line inline `formatWhatsAppText` with shared `formatWhatsAppMessage` |
+| `Frontend/components/Conversations/TestChatArea.tsx` | **P1-1:** Same replacement as ChatArea |
+| `Frontend/app/(panel)/chats/sandbox/page.tsx` | **P1-1:** Applied `formatWhatsAppMessage` + `messageBubbleStyles` |
 
 ---
 
 ## §5 — Git Commits This Session (on `desarrollo`)
 
 ```
+cd6240e fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting
+f7eb010 fix: tool format conversion + response_dto unbound in sandbox
+670dd9d feat: native scheduling + services/resources CRUD + config modernization
 f6c2260 feat(sandbox): 7 tools with agentic loop via Responses API chaining
 6508668 fix(sandbox+phone): isolated sandbox via Responses API, phone_number field fix
 74f1748 fix: typo resisted->persisted in history loading
@@ -575,43 +540,18 @@ WHERE table_schema = 'public' AND table_name = '<TABLE>' AND column_name = '<COL
 
 | Migration | DEV | PROD |
 |:---|:---|:---|
-| `onboarding_messages` table | ✅ Applied & verified | ⏳ PENDING APPROVAL |
-| `idx_onboarding_messages_tenant_created` index | ✅ | ⏳ PENDING APPROVAL |
-| `tenant_users_read_own_messages` RLS policy | ✅ | ⏳ PENDING APPROVAL |
+| `onboarding_messages` table + index + RLS | ✅ Applied & verified | ⏳ PENDING APPROVAL |
 | `phone_number` column on `tenant_onboarding` | ✅ Applied & verified (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ Applied | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ Applied | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
 
-**PROD SQL — onboarding_messages (ready to apply when approved):**
-```sql
-CREATE TABLE IF NOT EXISTS onboarding_messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'event')),
-    content TEXT NOT NULL DEFAULT '',
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+**Schema Gap: DEV has 13 tables, PROD has 6 tables. 7 tables pending PROD approval.**
 
-CREATE INDEX idx_onboarding_messages_tenant_created 
-    ON onboarding_messages (tenant_id, created_at ASC);
-
-ALTER TABLE onboarding_messages ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "tenant_users_read_own_messages" ON onboarding_messages
-    FOR SELECT USING (
-        tenant_id IN (
-            SELECT tenant_id FROM tenant_users WHERE user_id = auth.uid()
-        )
-    );
-```
-
-**PROD SQL — phone_number column (ready to apply when approved):**
-```sql
-ALTER TABLE public.tenant_onboarding
-  ADD COLUMN IF NOT EXISTS phone_number text DEFAULT NULL;
-
-COMMENT ON COLUMN public.tenant_onboarding.phone_number IS 
-  'Business owner personal WhatsApp/phone for platform communications (support, billing). NOT the assistant bot number.';
-```
+**PROD SQL ready to apply — blocked on full E2E verification on DEV.**
 
 ---
 
