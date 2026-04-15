@@ -19,6 +19,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { flushSync } from 'react-dom'
 import * as Sentry from '@sentry/nextjs'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -423,22 +424,32 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                   case 'done': {
                     // Finalize the assistant message
                     const finalContent = data.content || accumulatedResponse
+                    // FIX 2026-04-15: Use flushSync to batch setMessages + setCurrentText
+                    // into a single synchronous render. Without this, React renders them
+                    // separately in async contexts (ReadableStream loop), causing a frame
+                    // where currentText is '' but messages hasn't updated yet — the
+                    // message visually disappears then reappears ("flash" bug).
+                    flushSync(() => {
+                      if (finalContent.trim()) {
+                        setMessages(prev => [
+                          ...prev,
+                          {
+                            role: 'assistant',
+                            content: finalContent,
+                            timestamp: Date.now(),
+                          },
+                        ])
+                      }
+                      // Clear streaming text — must be in same flushSync to avoid flash
+                      setCurrentText('')
+                      setIsThinking(false)
+                      setThinkingText('')
+                    })
                     if (finalContent.trim()) {
-                      setMessages(prev => [
-                        ...prev,
-                        {
-                          role: 'assistant',
-                          content: finalContent,
-                          timestamp: Date.now(),
-                        },
-                      ])
                       historyRef.current.push({ role: 'assistant', content: finalContent })
                     }
-                    // Reset streaming state
+                    // Reset local variables (not React state, no render needed)
                     accumulatedResponse = ''
-                    setCurrentText('')
-                    setIsThinking(false)
-                    setThinkingText('')
                     thinkingLines = []
 
                     // ── Auto-complete fallback ────────────────────────────
