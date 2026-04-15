@@ -400,15 +400,52 @@ All backend, DB, and frontend components built:
 - [ ] Smoke test both tenants (CVC + fumigation)
 - [ ] Prepare onboarding notes for tomorrow
 
-### Day 5: Tuesday April 15 — Client Onboarding
+### Day 5: Tuesday April 15 — Block R: Self-Onboarding Stabilization
 
-- [ ] **Morning:** Walk fumigation owner through dashboard
-- [ ] **Morning:** Show conversation management, how to read chats
-- [ ] **Morning:** Explain escalation (when human needs to intervene)
-- [ ] **Morning:** Test with owner — have them message the WhatsApp number
-- [ ] **All day:** Monitor Sentry + Discord for any errors
-- [ ] **As needed:** Hotfix any issues discovered during onboarding
-- [ ] **End of day:** Check CasaVitaCure is still working properly (regression test)
+> **Session** (13d7385c) — 10:00-16:50 CLT
+
+#### Block R: Newcomer Onboarding Flow ✅ (Core flow)
+
+**R1: SSE Parser Fix (ROOT CAUSE)** ✅
+- `currentEventType` and `currentEventData` re-initialized inside `while(true)` loop
+- TCP chunk splits caused event type to be lost → messages vanished
+- Fix: move declarations outside the loop (useOnboardingStream.ts:318-319)
+
+**R2: TenantContext Optimization** ✅
+- Token refreshes caused redundant DB re-resolves → wizard unmounted
+- Added guard in TenantContext to skip resolve when tenantId unchanged
+
+**R3: CompletionStep CSS Fix** ✅
+- Keyframe animations (confettiBurst, fireworkBurst, glitterFloat, shockwave) not loading
+- Root cause: CSS module scoping + caching
+- Fix: Injected raw `<style>` blocks directly in CompletionStep.tsx
+
+**R4: Confetti Unmount Fix (ROOT CAUSE)** ✅
+- `markSetupComplete()` → `isSetupComplete=true` → `OnboardingGate returns null`
+- Wizard unmounted BEFORE CompletionStep (confetti/fireworks) could render
+- Fix: OnboardingGate now tracks `wizardActive` locally — wizard stays alive until CTA click
+
+**R5: /chats/sandbox Route** ✅
+- Standalone testing page with zero contacts dependency
+- Auto-creates sandbox pseudo-contact (phone=`sandbox-test-000`)
+- Realtime subscription for message updates
+- Suggestion chips for first-time users
+- Sidebar nav item added ("Chat de Pruebas")
+
+**R6: Phone Number (11th Field)** ✅
+- Added `phone_number` to `ONBOARDING_FIELDS` (backend + frontend)
+- Updated system prompt: field 11, completion threshold 10→11
+- Agent now collects WhatsApp number at end of configuration
+
+**R7: onboarding_messages Table** ✅ DEV | ❌ PROD PENDING APPROVAL
+- Migration applied to DEV (nzsksjczswndjjbctasu)
+- PROD blocked — user has not approved yet
+
+#### Remaining Block R Items (Pending Verification)
+- [ ] E2E test with fresh tenant: WelcomeStep → ConfigChat → CompletionStep (confetti) → /chats/sandbox
+- [ ] Verify phone_number field is collected and reported correctly
+- [ ] Verify sandbox auto-creates contact and processes messages
+
 
 ---
 
