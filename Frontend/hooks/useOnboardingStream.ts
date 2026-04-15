@@ -309,6 +309,15 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
       }
       resetTimeout() // Start initial timeout
 
+      // SSE parser state — MUST persist across reader.read() calls!
+      // When TCP splits an SSE event across two chunks, the 'event:' line
+      // arrives in chunk N and the 'data:' line in chunk N+1. If these
+      // variables are re-initialized per read(), the event type from chunk N
+      // is lost and the data line is silently dropped.
+      // ROOT CAUSE of message disappearance bug (discovered 2026-04-15).
+      let currentEventType = ''
+      let currentEventData = ''
+
       try {
         while (true) {
           const { done, value } = await reader.read()
@@ -322,9 +331,6 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
           // Parse SSE events from buffer
           const lines = buffer.split('\n')
           buffer = lines.pop() || '' // Keep incomplete line in buffer
-
-          let currentEventType = ''
-          let currentEventData = ''
 
           for (const line of lines) {
             if (line.startsWith('event: ')) {
