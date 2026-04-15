@@ -88,6 +88,30 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center overflow-hidden">
+      {/* ─── INJECTED KEYFRAMES (Bypasses CSS caching and scoping issues) ─── */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes confettiBurst {
+            0% { transform: translate(-50%, -50%) rotate(0deg) scale(1); opacity: 1; }
+            70% { opacity: 1; }
+            100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) rotate(var(--rot)) scale(0.3); opacity: 0; }
+        }
+        @keyframes fireworkFlash {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            30% { transform: translate(-50%, -50%) scale(3); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+        }
+        @keyframes fireworkSpark {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(calc(-50% + var(--sx)), calc(-50% + var(--sy))) scale(0); opacity: 0; }
+        }
+        @keyframes glitterFloat {
+            0% { transform: translateY(0) scale(1); opacity: 0; }
+            20% { transform: translateY(-20px) scale(1.2); opacity: 1; }
+            80% { transform: translateY(-80px) scale(0.8); opacity: 0.8; }
+            100% { transform: translateY(-120px) scale(0.5); opacity: 0; }
+        }
+      `}} />
+
       {/* ─── Ambient background glow ─── */}
       <div className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 
         rounded-full blur-[150px] transition-all duration-[2000ms] ease-out
@@ -182,7 +206,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
       )}
 
       {/* ─── Floating glitter particles (continuous) ─── */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden hover:pointer-events-none">
         {PARTICLES.map((p) => (
           <div
             key={p.id}
@@ -199,7 +223,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
                 width: p.size,
                 height: p.size,
                 backgroundColor: p.color,
-                boxShadow: `0 0 ${p.size * 3}px ${p.color}60`,
+                boxShadow: \`0 0 \${p.size * 3}px \${p.color}60\`,
               }}
             />
           </div>
