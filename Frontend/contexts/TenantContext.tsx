@@ -13,7 +13,7 @@
  * Observability: Every failure → console.error + Sentry with full context.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from './AuthContext'
 import * as Sentry from '@sentry/nextjs'
@@ -66,6 +66,12 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [allTenants, setAllTenants] = useState<TenantInfo[]>([])
   const [isLoadingTenant, setIsLoadingTenant] = useState(true)
   const [tenantError, setTenantError] = useState<string | null>(null)
+  // Track whether initial resolution is done — prevents re-resolve from
+  // flipping isLoadingTenant back to true and unmounting the wizard.
+  const initialResolvedRef = useRef(false)
+  // Track the last resolved user ID to skip redundant re-resolves
+  // (e.g., Supabase token refresh fires onAuthStateChange with same user).
+  const lastResolvedUserIdRef = useRef<string | null>(null)
 
   // ─── Resolve tenant on user change ───
   useEffect(() => {
@@ -84,7 +90,14 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
     const resolveTenant = async () => {
       const _where = 'TenantContext.resolveTenant'
-      setIsLoadingTenant(true)
+
+      // FIX 2026-04-15: Only show loading spinner on FIRST resolution.
+      // On subsequent re-resolves (e.g., Supabase token refresh triggers a new
+      // user object ref), keep the current UI visible so components like the
+      // OnboardingWizard don't unmount and lose all their state.
+      if (!initialResolvedRef.current) {
+        setIsLoadingTenant(true)
+      }
       setTenantError(null)
 
       try {
@@ -225,7 +238,18 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
       } finally {
         setIsLoadingTenant(false)
+        initialResolvedRef.current = true
+        lastResolvedUserIdRef.current = user.id
       }
+    }
+
+    // FIX 2026-04-15: Skip re-resolve if the user ID hasn't changed.
+    // Supabase fires onAuthStateChange on token refresh, visibility change,
+    // etc. — each time creating a new user object ref. Without this guard,
+    // every token refresh triggers a full DB re-resolve cycle, setting
+    // isLoadingTenant=true and unmounting the wizard.
+    if (initialResolvedRef.current && user.id === lastResolvedUserIdRef.current) {
+      return // Same user, no need to re-resolve
     }
 
     resolveTenant()
