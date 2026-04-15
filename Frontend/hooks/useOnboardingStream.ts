@@ -78,7 +78,7 @@ const ONBOARDING_FIELDS = [
   'business_name', 'business_type', 'business_description',
   'target_audience', 'services_offered', 'business_hours',
   'tone_of_voice', 'special_instructions', 'greeting_message',
-  'escalation_rules',
+  'escalation_rules', 'phone_number',
 ] as const
 
 const SSE_ACTIVITY_TIMEOUT_MS = 90_000 // 90s inactivity timeout — resets on each received event

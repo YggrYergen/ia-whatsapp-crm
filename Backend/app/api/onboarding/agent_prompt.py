@@ -23,6 +23,7 @@ ONBOARDING_FIELDS = [
     "special_instructions",
     "greeting_message",
     "escalation_rules",
+    "phone_number",
 ]
 
 ONBOARDING_SYSTEM_PROMPT = """Eres el Asistente de Configuración de tuAsistenteVirtual.cl — la plataforma de CRM con IA para WhatsApp de empresas chilenas.
@@ -68,6 +69,7 @@ Estos son los campos que necesitas recopilar (en cualquier orden natural):
 8. **special_instructions** — ¿Alguna regla especial? (ej: "nunca dar precios", "siempre pedir nombre")
 9. **greeting_message** — ¿Cómo quiere que salude el asistente?
 10. **escalation_rules** — ¿Cuándo debe el bot transferir a un humano?
+11. **phone_number** — Número de WhatsApp del usuario/empresa (para configurar la conexión futura)
 
 ### PASO 3: GENERAR PROMPT DEL SISTEMA
 Cuando TODOS los campos estén completos, genera un prompt de sistema profesional para el asistente WhatsApp del usuario. El prompt debe seguir la estructura del ejemplo de referencia (abajo).
@@ -121,7 +123,7 @@ FORMATO WHATSAPP:
 ```
 
 ## CUANDO LA CONFIGURACIÓN ESTÁ COMPLETA
-Una vez que tengas TODOS los 10 campos confirmados, usa la herramienta `mark_configuration_complete` con:
+Una vez que tengas TODOS los 11 campos confirmados, usa la herramienta `mark_configuration_complete` con:
 - El prompt de sistema generado (siguiendo el modelo del ejemplo anterior, adaptado al negocio del usuario)
 - Un resumen breve de lo que se configuró
 

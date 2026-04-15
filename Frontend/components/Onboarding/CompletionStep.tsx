@@ -83,7 +83,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
 
   const handleContinue = () => {
     onContinue()
-    router.push('/chats')
+    router.push('/chats/sandbox')
   }
 
   return (

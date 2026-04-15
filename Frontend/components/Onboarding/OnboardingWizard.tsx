@@ -6,10 +6,16 @@
  * Steps:
  *   1. WelcomeStep — "Bienvenido" + provision tenant on CTA click
  *   2. ConfigChat — AI-guided configuration with SSE streaming
- *   3. CompletionStep — Celebration + redirect to /chats
+ *   3. CompletionStep — Celebration (confetti/fireworks) + redirect to /chats/sandbox
  *
- * This component is rendered as a full-screen overlay by the panel layout
+ * This component is rendered as a full-screen overlay by OnboardingGate
  * when `isNewcomer || !isSetupComplete`.
+ *
+ * ROOT CAUSE FIX (2026-04-15): The wizard now receives `onDismiss` from
+ * OnboardingGate. CompletionStep calls it when the user clicks the CTA,
+ * ensuring the wizard stays mounted through the entire celebration animation.
+ * Previously, `markSetupComplete()` caused the gate to unmount the wizard
+ * before confetti could render.
  *
  * Observability: Step transitions logged to console + Sentry breadcrumbs.
  */
@@ -24,7 +30,12 @@ import * as Sentry from '@sentry/nextjs'
 
 type WizardStep = 'welcome' | 'config' | 'complete'
 
-export default function OnboardingWizard() {
+interface OnboardingWizardProps {
+  /** Called when the user dismisses the wizard (clicks CTA on CompletionStep) */
+  onDismiss: () => void
+}
+
+export default function OnboardingWizard({ onDismiss }: OnboardingWizardProps) {
   const { user } = useAuth()
   const { currentTenantId, currentTenant, isNewcomer, isSetupComplete, setProvisionedTenant, markSetupComplete } = useTenant()
 
@@ -69,17 +80,18 @@ export default function OnboardingWizard() {
     setStep('complete')
   }, [wizardTenantId, markSetupComplete])
 
-  // ─── Step 3 → Dashboard ───
+  // ─── Step 3 → Dismiss: After user clicks CTA on CompletionStep ───
   const handleFinalContinue = useCallback(() => {
     const _where = 'OnboardingWizard.handleFinalContinue'
-    console.info(`[${_where}] Onboarding finished — redirecting to /chats`)
+    console.info(`[${_where}] Onboarding finished — dismissing wizard, redirecting to /chats/sandbox`)
     Sentry.addBreadcrumb({
       category: 'onboarding',
-      message: 'Step 3→Dashboard: Onboarding complete',
+      message: 'Step 3→Dismiss: Onboarding complete',
       level: 'info',
     })
-    // The CompletionStep handles the actual router.push
-  }, [])
+    // Tell OnboardingGate to unmount us AFTER the user has seen the celebration
+    onDismiss()
+  }, [onDismiss])
 
   // ─── Render current step ───
   switch (step) {

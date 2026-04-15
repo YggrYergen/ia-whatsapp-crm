@@ -2,25 +2,53 @@
 
 /**
  * OnboardingGate — Decides whether to show the onboarding wizard overlay.
- * 
+ *
  * Logic:
  *   - If tenant is still loading → show nothing (let layout spinner handle it)
  *   - If user is a newcomer (no tenant) → show OnboardingWizard (Step 1: Welcome)
  *   - If user has tenant but setup not complete → show OnboardingWizard (Step 2: Config)
- *   - If setup is complete → show nothing (normal panel)
+ *   - If setup is complete AND wizard was never shown → show nothing (normal panel)
+ *   - If setup becomes complete WHILE wizard is showing → KEEP wizard mounted
+ *     so CompletionStep (confetti/fireworks) can render. The wizard self-dismisses
+ *     when the user clicks the CTA.
  *
- * This component is rendered inside CrmProvider, so it has access to
- * TenantContext and AuthContext.
+ * ROOT CAUSE FIX (2026-04-15): markSetupComplete() used to flip isSetupComplete=true,
+ * which immediately unmounted OnboardingWizard before CompletionStep could render.
+ * Now we track `wizardActive` locally so the wizard stays alive.
  *
- * Observability: State transitions logged to console.
+ * Observability: State transitions logged to console + Sentry.
  */
 
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useTenant } from '@/contexts/TenantContext'
 import OnboardingWizard from '@/components/Onboarding/OnboardingWizard'
+import * as Sentry from '@sentry/nextjs'
 
 export default function OnboardingGate() {
   const { isNewcomer, isSetupComplete, isLoadingTenant, tenantError } = useTenant()
+
+  // Track whether the wizard has been activated this session.
+  // Once true, stays true until explicitly dismissed by CompletionStep CTA.
+  const [wizardActive, setWizardActive] = useState(false)
+
+  // Activate wizard when conditions are met
+  useEffect(() => {
+    if (isLoadingTenant) return
+    if (wizardActive) return // Already showing — don't re-evaluate
+
+    if (isNewcomer || !isSetupComplete) {
+      console.info('[OnboardingGate] Activating wizard | isNewcomer=%s | isSetupComplete=%s', isNewcomer, isSetupComplete)
+      Sentry.addBreadcrumb({ category: 'onboarding', message: 'Wizard activated', level: 'info' })
+      setWizardActive(true)
+    }
+  }, [isLoadingTenant, isNewcomer, isSetupComplete, wizardActive])
+
+  // Called by OnboardingWizard when the user clicks the final CTA
+  const handleWizardDismiss = useCallback(() => {
+    console.info('[OnboardingGate] Wizard dismissed by user')
+    Sentry.addBreadcrumb({ category: 'onboarding', message: 'Wizard dismissed', level: 'info' })
+    setWizardActive(false)
+  }, [])
 
   // Still resolving tenant — don't render anything
   if (isLoadingTenant) {
@@ -45,11 +73,11 @@ export default function OnboardingGate() {
     )
   }
 
-  // Newcomer or setup not complete → show onboarding wizard
-  if (isNewcomer || !isSetupComplete) {
-    return <OnboardingWizard />
+  // Wizard is active — keep it mounted regardless of isSetupComplete
+  if (wizardActive) {
+    return <OnboardingWizard onDismiss={handleWizardDismiss} />
   }
 
-  // Setup complete — render nothing, let the normal panel show
+  // Setup complete and wizard never activated — render nothing, show normal panel
   return null
 }

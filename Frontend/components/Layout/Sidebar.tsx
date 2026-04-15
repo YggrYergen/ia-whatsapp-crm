@@ -61,6 +61,7 @@ export default function Sidebar() {
     const navItems = [
         { href: '/dashboard', icon: LayoutDashboard, title: 'Panel', label: 'Panel' },
         { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', escalationBadge: true },
+        { href: '/chats/sandbox', icon: Sparkles, title: 'Chat de Pruebas', label: 'Pruebas' },
         { href: '/agenda', icon: CalendarIcon, title: 'Agenda', label: 'Agenda' },
         { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
