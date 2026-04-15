@@ -45,6 +45,7 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
     progress,
     isConfigComplete,
     error,
+    historyLoaded,
     sendMessage,
   } = useOnboardingStream(tenantId)
 
@@ -84,18 +85,21 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfigComplete, onConfigComplete])
 
-  // Auto-send initial greeting on mount (empty message triggers agent's first message)
+  // Auto-send initial greeting — only after persisted history loads.
+  // If history has messages (resumed session), skip the greeting.
   useEffect(() => {
-    if (messages.length === 0 && !isStreaming) {
-      sendMessage('').catch((err) => {
-        console.error('[ConfigChat] Initial greeting failed:', err)
-        Sentry.captureException(err, {
-          extra: { where: 'ConfigChat.initialGreeting', tenant_id: tenantId },
-        })
+    if (!historyLoaded) return // Wait for DB history to load first
+    if (messages.length > 0) return // Already have messages (resumed session)
+    if (isStreaming) return // Already streaming
+
+    sendMessage('').catch((err) => {
+      console.error('[ConfigChat] Initial greeting failed:', err)
+      Sentry.captureException(err, {
+        extra: { where: 'ConfigChat.initialGreeting', tenant_id: tenantId },
       })
-    }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [historyLoaded])
 
   const handleSend = async () => {
     const trimmed = inputValue.trim()

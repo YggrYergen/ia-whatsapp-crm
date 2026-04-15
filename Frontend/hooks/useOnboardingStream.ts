@@ -18,7 +18,7 @@
  * Ref: https://platform.openai.com/docs/api-reference/responses/streaming
  */
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import * as Sentry from '@sentry/nextjs'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,6 +64,8 @@ interface UseOnboardingStreamReturn {
   generatedPrompt: string
   /** Error message if something went wrong */
   error: string | null
+  /** Whether persisted history has been loaded (true = ready for initial greeting) */
+  historyLoaded: boolean
   /** Send a message to the config agent */
   sendMessage: (message: string) => Promise<void>
   /** Reset all state */
@@ -103,6 +105,64 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
   const abortRef = useRef<AbortController | null>(null)
   // Conversation history ref (avoids stale closure in sendMessage)
   const historyRef = useRef<Array<{ role: string; content: string }>>([])
+  // Whether persisted history has been loaded from server
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  // ─── Load persisted history on mount ──────────────────────────────
+  // Enables: session resumability + superadmin debugging.
+  // If the DB has messages, we populate state from them instead of starting fresh.
+  useEffect(() => {
+    if (!tenantId || historyLoaded) return
+
+    const loadPersistedHistory = async () => {
+      const _where = 'useOnboardingStream.loadPersistedHistory'
+      try {
+        console.debug(`[${_where}] Loading persisted history | tenant=${tenantId}`)
+        Sentry.addBreadcrumb({ category: 'onboarding', message: 'Loading persisted history', data: { tenantId } })
+
+        const response = await fetch(`/api/onboarding/chat/history?tenant_id=${tenantId}`)
+        if (!response.ok) {
+          console.warn(`[${_where}] History fetch failed: HTTP ${response.status}`)
+          setHistoryLoaded(true) // Don't block — proceed without history
+          return
+        }
+
+        const data = await response.json()
+        const persisted = data.messages || []
+
+        if (persisted.length > 0) {
+          console.info(`[${_where}] Resuming session with ${persisted.length} persisted messages | tenant=${tenantId}`)
+          Sentry.addBreadcrumb({ category: 'onboarding', message: `Resumed with ${persisted.length} messages` })
+
+          // Rebuild messages array and history ref from persisted data
+          const restoredMessages: OnboardingMessage[] = persisted
+            .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+            .map((m: any) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              timestamp: new Date(m.created_at).getTime(),
+            }))
+
+          setMessages(restoredMessages)
+          historyRef.current = resisted
+            .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+            .map((m: any) => ({ role: m.role, content: m.content }))
+        } else {
+          console.debug(`[${_where}] No persisted messages — fresh session | tenant=${tenantId}`)
+        }
+      } catch (loadErr: any) {
+        console.error(`[${_where}] Failed to load history:`, loadErr)
+        Sentry.captureException(loadErr, {
+          extra: { where: _where, tenant_id: tenantId },
+        })
+        // Non-fatal: proceed with empty state
+      } finally {
+        setHistoryLoaded(true)
+      }
+    }
+
+    loadPersistedHistory()
+  }, [tenantId, historyLoaded])
 
   const reset = useCallback(() => {
     setMessages([])
@@ -429,6 +489,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
     isConfigComplete,
     generatedPrompt,
     error,
+    historyLoaded,
     sendMessage,
     reset,
   }

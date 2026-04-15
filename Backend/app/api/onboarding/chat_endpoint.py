@@ -190,6 +190,8 @@ async def onboarding_chat(request: Request):
         full_history = list(conversation_history)
         if message:
             full_history.append({"role": "user", "content": message})
+            # Persist user message to DB (non-blocking, non-fatal)
+            await _persist_message(tenant_id, "user", message)
         
         # --- Init adapter ---
         current_step = "get_adapter"
@@ -355,6 +357,12 @@ async def onboarding_chat(request: Request):
                             ),
                             "usage": event.get("usage"),
                         })
+                        # Persist assistant message (non-fatal)
+                        if done_content.strip():
+                            await _persist_message(
+                                tenant_id, "assistant", done_content,
+                                metadata={"tool_calls": len(tool_calls_buffer), "response_id": last_response_id},
+                            )
                         logger.info(
                             f"📨 [CONFIG-AGENT] Stream done | tenant={tenant_id} | "
                             f"text_len={len(done_content)} | tool_calls={len(tool_calls_buffer)} | "
@@ -411,13 +419,20 @@ async def onboarding_chat(request: Request):
                             elif follow_type == "text_delta":
                                 yield _format_sse("text_delta", {"delta": follow_event["delta"]})
                             elif follow_type == "done":
+                                follow_content = follow_event.get("content", "")
                                 yield _format_sse("done", {
-                                    "content": follow_event.get("content", ""),
+                                    "content": follow_content,
                                     "all_complete": all(
                                         fields_status.get(f, False) for f in ONBOARDING_FIELDS
                                     ),
                                     "usage": follow_event.get("usage"),
                                 })
+                                # Persist follow-up assistant message (non-fatal)
+                                if follow_content.strip():
+                                    await _persist_message(
+                                        tenant_id, "assistant", follow_content,
+                                        metadata={"is_followup": True, "tool_calls_processed": len(tool_calls_buffer)},
+                                    )
                     except Exception as followup_err:
                         _tb = tb_module.format_exc()
                         _msg = (
@@ -676,3 +691,127 @@ async def _finalize_onboarding(tenant_id: str, generated_prompt: str, summary: s
                 severity="error",
                 error=e,
             )
+
+
+# ========================================================================
+# Message Persistence — onboarding_messages table
+# ========================================================================
+
+async def _persist_message(
+    tenant_id: str,
+    role: str,
+    content: str,
+    metadata: dict | None = None,
+) -> None:
+    """Persist a single message to onboarding_messages.
+    
+    Non-fatal: if this fails, the stream continues. But we MUST know about it
+    via all 3 observability channels (logger + Sentry + Discord).
+    
+    Access control: The onboarding_messages table has RLS that restricts SELECT
+    to tenant_users of the same tenant. Inserts use the service-role client
+    (backend-only). Superadmins query via Supabase Studio or admin API.
+    """
+    _where = f"{_WHERE}._persist_message"
+    _ctx = f"tenant={tenant_id} | role={role} | content_len={len(content)} | env={settings.ENVIRONMENT}"
+    
+    try:
+        from app.infrastructure.database.supabase_client import SupabasePooler
+        db = await SupabasePooler.get_client()
+        
+        await db.table("onboarding_messages").insert({
+            "tenant_id": tenant_id,
+            "role": role,
+            "content": content,
+            "metadata": metadata or {},
+        }).execute()
+        
+        logger.debug(f"💬 [{_where}] Persisted {role} message | {_ctx}")
+        
+    except Exception as e:
+        _tb = tb_module.format_exc()
+        _msg = f"[{_where}] DB INSERT failed (non-fatal) | {_ctx} | error={str(e)[:200]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title="⚠️ Config Agent: Message Persist Failed",
+            description=(
+                f"**Where:** `{_where}`\n"
+                f"**What:** onboarding_messages INSERT failed (non-fatal — stream continues)\n"
+                f"**Tenant:** `{tenant_id}`\n"
+                f"**Role:** `{role}`\n"
+                f"**Content length:** {len(content)} chars\n"
+                f"**Env:** {settings.ENVIRONMENT}\n"
+                f"**Error:** ```{str(e)[:300]}```"
+            ),
+            severity="warning",
+            error=e,
+        )
+
+
+# ========================================================================
+# GET /api/onboarding/chat/history — Load persisted conversation
+# ========================================================================
+
+@router.get("/chat/history")
+async def get_chat_history(request: Request):
+    """Load persisted conversation history for a tenant.
+    
+    Query params:
+        tenant_id: UUID of the tenant
+    
+    Returns: JSON array of messages sorted by created_at ASC.
+    
+    Access: The backend validates that the requesting user belongs to the tenant.
+    RLS on onboarding_messages also enforces tenant isolation at DB level.
+    Only the newcomer (who belongs to tenant_users) and superadmins 
+    (via Supabase Studio / admin API) can access these messages.
+    """
+    _where = f"{_WHERE}.get_chat_history"
+    tenant_id = request.query_params.get("tenant_id")
+    
+    if not tenant_id:
+        return {"error": "tenant_id is required", "messages": []}
+    
+    try:
+        from app.infrastructure.database.supabase_client import SupabasePooler
+        db = await SupabasePooler.get_client()
+        
+        result = await db.table("onboarding_messages") \
+            .select("id, role, content, metadata, created_at") \
+            .eq("tenant_id", tenant_id) \
+            .order("created_at", desc=False) \
+            .execute()
+        
+        messages = result.data if result.data else []
+        
+        logger.info(
+            f"📜 [{_where}] Loaded {len(messages)} messages | "
+            f"tenant={tenant_id} | env={settings.ENVIRONMENT}"
+        )
+        
+        return {"messages": messages, "count": len(messages)}
+        
+    except Exception as e:
+        _tb = tb_module.format_exc()
+        _msg = (
+            f"[{_where}] Failed to load chat history | "
+            f"tenant={tenant_id} | env={settings.ENVIRONMENT} | "
+            f"error={str(e)[:200]}"
+        )
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title="❌ Config Agent: History Load Failed",
+            description=(
+                f"**Where:** `{_where}`\n"
+                f"**What:** onboarding_messages SELECT failed\n"
+                f"**Tenant:** `{tenant_id}`\n"
+                f"**Env:** {settings.ENVIRONMENT}\n"
+                f"**Error:** ```{str(e)[:300]}```"
+            ),
+            severity="error",
+            error=e,
+        )
+        return {"error": "Failed to load history", "messages": []}
+
