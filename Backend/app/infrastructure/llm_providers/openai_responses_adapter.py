@@ -70,14 +70,15 @@ class OpenAIResponsesStrategy(LLMStrategy):
         system_prompt: str,
         message_history: List[Dict[str, str]],
         tools: List[Dict[str, Any]],
-        tool_choice_override: Optional[Any] = None
+        tool_choice_override: Optional[Any] = None,
+        previous_response_id: Optional[str] = None,
     ) -> LLMResponse:
         """Non-streaming response using Responses API (for compatibility with LLMStrategy interface).
         
         Converts the Chat Completions-style message_history to Responses API input format.
         """
         _where = "OpenAIResponsesStrategy.generate_response"
-        _ctx = f"model={self.model_id} | history_len={len(message_history)} | tools={len(tools)} | env={settings.ENVIRONMENT}"
+        _ctx = f"model={self.model_id} | history_len={len(message_history)} | tools={len(tools)} | chain={'→'+previous_response_id[:20] if previous_response_id else 'none'} | env={settings.ENVIRONMENT}"
         
         if not AsyncOpenAI or not self.client:
             _msg = f"[{_where}] SDK not available — cannot generate response | {_ctx}"
@@ -102,12 +103,18 @@ class OpenAIResponsesStrategy(LLMStrategy):
         try:
             # Convert Chat Completions message format → Responses API input format
             # Ref: https://platform.openai.com/docs/api-reference/responses/create
-            input_items = self._convert_messages_to_input(system_prompt, message_history)
+            # When chaining, skip system prompt (already in the chain)
+            # Ref: https://platform.openai.com/docs/api-reference/responses/create
+            effective_system = system_prompt if not previous_response_id else ""
+            input_items = self._convert_messages_to_input(effective_system, message_history)
             
             api_kwargs = {
                 "model": self.model_id,
                 "input": input_items,
                 "max_output_tokens": 4096,
+                # store=True required for previous_response_id chaining
+                # Ref: https://platform.openai.com/docs/api-reference/responses/create
+                "store": True,
                 # Reasoning config — works WITH tools on Responses API
                 "reasoning": {
                     "effort": "medium",
@@ -115,8 +122,17 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 },
             }
             
+            # Tools must be re-supplied every request (not inherited from chain)
+            # Ref: OpenAI docs confirmed via web search 2026-04-15
             if tools:
                 api_kwargs["tools"] = tools
+            
+            # Chain to a previous response (for tool call follow-ups)
+            if previous_response_id:
+                api_kwargs["previous_response_id"] = previous_response_id
+                logger.info(
+                    f"🔗 [{_where}] Chaining to previous response: {previous_response_id[:20]}..."
+                )
             
             response = await self.client.responses.create(**api_kwargs)
             
@@ -135,6 +151,7 @@ class OpenAIResponsesStrategy(LLMStrategy):
             # Parse the response output items
             dto = LLMResponse()
             dto.model_used = self.model_id
+            dto.response_id = getattr(response, 'id', None)
             
             for item in response.output:
                 if item.type == "message":

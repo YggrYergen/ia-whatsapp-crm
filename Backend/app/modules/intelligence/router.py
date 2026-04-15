@@ -30,6 +30,9 @@ class LLMResponse(BaseModel):
     # Ref: https://platform.openai.com/docs/api-reference/chat/object#choices-finish_reason
     finish_reason: Optional[str] = None
     was_truncated: bool = False
+    # Responses API: response.id for chaining via previous_response_id
+    # Ref: https://platform.openai.com/docs/api-reference/responses/create
+    response_id: Optional[str] = None
 
 class LLMStrategy(ABC):
     def __init__(self, api_key: str, model_id: str):
