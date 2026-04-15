@@ -11,11 +11,11 @@
 
 ```
 SESSION DATE:    2026-04-15
-CURRENT SPRINT:  Sprint 1 (final stabilization)
-CURRENT DAY:     Day 5 — Onboarding Polish
-SESSION GOAL:    Complete onboarding flow: WelcomeStep + confetti + sandbox route + phone number field
-SESSION BLOCKS:  Block R (onboarding stabilization)
-LAST COMMIT:     2c5d2a5 (desarrollo) — fix(sse-parser): ROOT CAUSE — event type lost across TCP chunk boundaries
+CURRENT SPRINT:  Sprint 1 (final stabilization) → transitioning to Sprint 2
+CURRENT DAY:     Day 5 — Onboarding Polish + Sandbox Isolation
+SESSION GOAL:    Complete onboarding flow: WelcomeStep + confetti + isolated sandbox + phone number + model config
+SESSION BLOCKS:  Block R (onboarding stabilization) + Block S (sandbox isolation)
+LAST COMMIT:     6508668 (desarrollo) — fix(sandbox+phone): isolated sandbox via Responses API, phone_number field fix
 ```
 
 ---
@@ -105,31 +105,42 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 
 ### What Is Being Done RIGHT NOW (This Session)
 
-**🔧 Block R — Onboarding Flow Polish (April 15)**
+**🔧 Block R — Onboarding Flow Polish (April 15) ✅ MOSTLY COMPLETE**
 
-The core message-disappearing bug is FIXED (commit `2c5d2a5`). Root cause: SSE parser `currentEventType/Data` declared inside `while` loop — reset on each TCP chunk — events split across chunks were silently dropped. The full onboarding flow E2E works (greeting → config → provisioning animation → completion). Remaining polish in priority order:
+The core message-disappearing bug is FIXED (commit `2c5d2a5`). The full onboarding flow E2E works (greeting → config → provisioning animation → completion → confetti/fireworks). Sub-items completed:
 
-1. **R-WELCOME** — WelcomeStep (Step 1 of wizard) never shown. User jumps directly to ConfigChat.
-2. **R-CONFETTI** — Completion confetti/fireworks animation not firing.
-3. **R-SANDBOX** — After completion, user sent to empty `/chats`. Need standalone `/chats/sandbox` route (Option A approved: no contacts table dependency).
-4. **R-PHONE** — Config chat doesn't collect newcomer's phone number. Add as 2nd onboarding question (11th field).
-5. **R-PROD-MIGRATION** — `onboarding_messages` table not on PROD. BLOCKED pending user approval.
+1. **R-WELCOME** ✅ — WelcomeStep (Step 1 of wizard) now shows correctly.
+2. **R-CONFETTI** ✅ — Completion confetti/fireworks animation fires as expected.
+3. **R-SANDBOX** ✅ — Isolated `/api/sandbox/chat` endpoint (Responses API), standalone `/chats/sandbox` page.
+4. **R-PHONE** ✅ — Phone number collected as 11th field; wording changed to personal contact; persistence fixed via `valid_columns` + DB column.
+5. **R-PROD-MIGRATION** ⏳ — `onboarding_messages` + `phone_number` column NOT on PROD. BLOCKED pending user approval.
+
+**🔧 Block S — Sandbox Isolation (April 15) ✅ CORE COMPLETE**
+
+The sandbox testing endpoint is now completely decoupled from the WhatsApp webhook pipeline:
+- `Backend/app/api/sandbox/chat_endpoint.py` — uses `OpenAIResponsesStrategy` (Responses API)
+- Does NOT import: `TenantContext`, `ProcessMessageUseCase`, `MetaGraphAPIClient`, `LLMFactory`, `tool_registry`
+- Queries `system_prompt` directly from `tenants` table (zero `TenantContext` dependency)
+- Model: `gpt-5.4-mini` (tenant default or fallback), non-streaming
+- **⚠️ Pending:** Sandbox currently has `tools=[]`. User wants tenant tools available; architectural decision needed.
 
 ### What Comes Next (After Onboarding Complete)
-- Merge `desarrollo → main` (drift check first — `onboarding_messages` DEV-only, may block)
+- **Sandbox tools decision** — which tools, safe execution, tenant-scoped
+- Merge `desarrollo → main` (drift check first — `onboarding_messages` + `phone_number` DEV-only, may block)
 - Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking
-- PROD migration for `onboarding_messages` (user must approve)
+- PROD migration for `onboarding_messages` + `phone_number` (user must approve)
 
 ### Known Blockers & Risks
-- ~~⚠️ SSE message disappearance~~ → **FIXED `2c5d2a5` (2026-04-15)** — `currentEventType/Data` scope bug in reader loop
-- ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` — `.strip()` added**
-- ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **Migrated to us-central1**
+- ~~⚠️ SSE message disappearance~~ → **FIXED `2c5d2a5` (2026-04-15)**
+- ~~⚠️ Sandbox TenantContext crash~~ → **FIXED `6508668` (2026-04-15)** — isolated endpoint, zero TenantContext
+- ~~⚠️ Phone number field not persisting~~ → **FIXED `6508668`** — added to valid_columns + DB column
 - ⚠️ OpenAI platform docs return 403 programmatically — use `search_web` instead
 - ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN**
 - ⚠️ `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK serializes None as JSON null
-- ⚠️ **Cloud Build trigger** auto-deploys on push to `desarrollo` AND `main`. ALWAYS push first, then verify.
 - ⚠️ **`onboarding_messages` table on DEV only** — PROD merge BLOCKED until user approves migration
+- ⚠️ **`phone_number` column on DEV only** — PROD merge BLOCKED until user approves migration
 - 🟢 **Dual-Adapter Strategy** — `OpenAIResponsesStrategy` for onboarding (Responses API), `OpenAIStrategy` for WhatsApp (Chat Completions). Zero cross-contamination.
+- 🟢 **Triple-Adapter Strategy** — Sandbox also uses `OpenAIResponsesStrategy` but with separate instance (non-streaming, `gpt-5.4-mini`). Zero conflict with onboarding adapter (streaming, `gpt-5.4`).
 - 🟡 **wamid extraction null** — dedup falls back to atomic lock (working). Low priority.
 - 🟡 **Gemini adapter deprecation** — `google.generativeai` deprecated. Not blocking (not used).
 - 🟡 **Prompt Phase 1 skip** — Prompt v2 deployed, testing ongoing.
@@ -153,7 +164,7 @@ The core message-disappearing bug is FIXED (commit `2c5d2a5`). Root cause: SSE p
 | Rate limit behavior | Auto-resume when limit refreshes + notify us | 2026-04-11 | Don't permanently block contacts, just throttle + alert. |
 | Config cache | 3-min TTL, ~250KB for 50 tenants | 2026-04-11 | Negligible memory vs 512MB Cloud Run limit. |
 | WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
-| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap, nullable phone, tool updates) is separate task. |
+| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap) before June 2026. |
 | BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
 | reasoning_effort | Dual-adapter: new `openai_responses_adapter.py` for `/v1/responses` | 2026-04-14 | Hard-rejected on chat/completions. New adapter uses Responses API with `reasoning.effort` + tools + streaming. Existing adapter untouched. |
 | Dual-adapter architecture | `OpenAIStrategy` (chat/completions) + `OpenAIResponsesStrategy` (responses) | 2026-04-14 | Zero risk to WhatsApp pipeline. New adapter for onboarding agent; future path for full migration. |
@@ -161,6 +172,11 @@ The core message-disappearing bug is FIXED (commit `2c5d2a5`). Root cause: SSE p
 | Rapid-fire batching | Re-fetch history after 3s sleep | 2026-04-12 | 80/20 fix. Ideal solution (abort in-flight LLM) deferred to S2 backlog. |
 | PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies (Supabase us-east-2, OpenAI US, Meta US) are in the US. Europe added 600-1000ms per request. |
 | Secret Manager values | Always `.strip()` before use | 2026-04-11 | GCP Secret Manager stores values with trailing `\r\n`. Caused HMAC mismatch (34 chars vs 32). |
+| **Sandbox isolation** | **Dedicated `/api/sandbox/chat` via Responses API** | **2026-04-15** | **Sandbox must NOT touch ProcessMessageUseCase or TenantContext. Separate `OpenAIResponsesStrategy` instance. Zero shared state with WhatsApp webhook.** |
+| **Phone number field** | **User's personal contact number (NOT business assistant number)** | **2026-04-15** | **Used for platform communications: support, billing, WhatsApp contact. Added to `tenant_onboarding` table.** |
+| **Sandbox model** | **`gpt-5.4-mini` with reasoning.effort=medium, non-streaming** | **2026-04-15** | **Per user requirement. Docs confirm reasoning + tools work simultaneously on all GPT-5.4 models.** |
+| **Onboarding model** | **`gpt-5.4` (flagship) with streaming + reasoning** | **2026-04-15** | **Fixed — onboarding always uses top model for best config experience. Separate singleton adapter instance.** |
+| **Three adapters, zero conflict** | **Webhook=OpenAIStrategy(ChatCompletions), Onboarding=ResponsesStrategy(gpt-5.4), Sandbox=ResponsesStrategy(gpt-5.4-mini)** | **2026-04-15** | **Three completely independent code paths with separate adapter instances. Zero shared state.** |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |

@@ -196,52 +196,48 @@ export default function ConfigPanel() {
                                         <Calendar size={36} className="text-white" />
                                     </div>
                                     <div>
-                                        <CardTitle className="text-3xl font-black tracking-tight">Google Calendar</CardTitle>
-                                        <CardDescription className="text-slate-400 font-medium text-lg mt-1">Conecta la agenda clínica (Google Workspace).</CardDescription>
+                                        <CardTitle className="text-3xl font-black tracking-tight">Agenda y Reservas</CardTitle>
+                                        <CardDescription className="text-slate-400 font-medium text-lg mt-1">Configuración de recursos, servicios y horarios.</CardDescription>
                                     </div>
                                 </div>
+                                <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 px-4 py-1 font-black uppercase tracking-widest text-[10px]">
+                                    <CheckCircle2 size={12} className="mr-1" /> Activo
+                                </Badge>
                             </div>
                         </CardHeader>
-                        
-                        <CardContent className="p-8 md:p-10 space-y-10 bg-white">
-                            <div className="flex items-center justify-between p-6 bg-slate-50 border border-slate-200 rounded-2xl">
-                                <div>
-                                    <h4 className="text-lg font-bold text-slate-800">Estado de Conexión</h4>
-                                    {tenant.google_calendar_status === 'connected' ? (
-                                        <div className="flex flex-col mt-2">
-                                            <span className="flex items-center gap-2 text-emerald-600 font-bold"><CheckCircle2 size={16} /> Conectado</span>
-                                            <span className="text-sm text-slate-500 font-medium mt-1">Cuenta: {tenant.google_calendar_email || 'Oculta'}</span>
-                                        </div>
-                                    ) : (
-                                        <span className="flex items-center gap-2 text-rose-500 font-bold mt-2"><XCircle size={16} /> Desconectado</span>
-                                    )}
-                                </div>
-                                <div>
-                                    {tenant.google_calendar_status === 'connected' ? (
-                                        <Button 
-                                            onClick={async () => {
-                                                const res = await fetch(`/api/google/disconnect?tenant_id=${tenant.id}`, { method: 'POST' });
-                                                if (res.ok) {
-                                                    setTenant({ ...tenant, google_calendar_status: 'disconnected', google_calendar_email: null });
-                                                    alert('Google Calendar Desconectado exitosamente');
-                                                }
-                                            }}
-                                            variant="destructive"
-                                            className="font-bold px-6 py-6 rounded-xl text-md"
-                                        >
-                                            Desconectar
-                                        </Button>
-                                    ) : (
-                                        <Button 
-                                            onClick={() => {
-                                                window.location.href = `/api/google/auth?tenant_id=${tenant.id}`;
-                                            }}
-                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-6 rounded-xl shadow-lg shadow-blue-600/20 text-md"
-                                        >
-                                            Conectar Google Calendar
-                                        </Button>
-                                    )}
-                                </div>
+
+                        <CardContent className="p-8 md:p-10 space-y-6 bg-white">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <Link href="/servicios" className="group p-6 bg-violet-50 border border-violet-100 rounded-2xl hover:shadow-lg hover:border-violet-300 transition-all">
+                                    <div className="w-10 h-10 bg-violet-500 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <Sparkles size={20} className="text-white" />
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-lg">Servicios</h4>
+                                    <p className="text-sm text-slate-500 mt-1">Precios, duraciones y catálogo visible al asistente.</p>
+                                </Link>
+
+                                <Link href="/recursos" className="group p-6 bg-blue-50 border border-blue-100 rounded-2xl hover:shadow-lg hover:border-blue-300 transition-all">
+                                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <Calendar size={20} className="text-white" />
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-lg">Recursos</h4>
+                                    <p className="text-sm text-slate-500 mt-1">Boxes, equipos o mesas para round-robin.</p>
+                                </Link>
+
+                                <Link href="/agenda" className="group p-6 bg-emerald-50 border border-emerald-100 rounded-2xl hover:shadow-lg hover:border-emerald-300 transition-all">
+                                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <Zap size={20} className="text-white" />
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-lg">Agenda</h4>
+                                    <p className="text-sm text-slate-500 mt-1">Vista calendario con todas las citas del día.</p>
+                                </Link>
+                            </div>
+                            
+                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+                                <Info className="text-blue-500 flex-shrink-0 mt-0.5" size={18} />
+                                <p className="text-xs text-blue-700 font-semibold leading-relaxed">
+                                    Tu agenda usa el sistema nativo con round-robin automático. Las citas se distribuyen entre tus recursos activos, evitando doble-agendamiento con protección a nivel de base de datos.
+                                </p>
                             </div>
                         </CardContent>
                     </Card>

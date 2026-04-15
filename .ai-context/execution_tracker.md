@@ -400,11 +400,12 @@ All backend, DB, and frontend components built:
 - [ ] Smoke test both tenants (CVC + fumigation)
 - [ ] Prepare onboarding notes for tomorrow
 
-### Day 5: Tuesday April 15 — Block R: Self-Onboarding Stabilization
+### Day 5: Tuesday April 15 — Block R + S: Onboarding + Sandbox Isolation
 
-> **Session** (13d7385c) — 10:00-16:50 CLT
+> **Session** (13d7385c) — 10:00 CLT → ongoing  
+> **Last updated:** 2026-04-15 13:35 CLT
 
-#### Block R: Newcomer Onboarding Flow ✅ (Core flow)
+#### Block R: Newcomer Onboarding Flow ✅ (All core items COMPLETE)
 
 **R1: SSE Parser Fix (ROOT CAUSE)** ✅
 - `currentEventType` and `currentEventData` re-initialized inside `while(true)` loop
@@ -432,19 +433,67 @@ All backend, DB, and frontend components built:
 - Suggestion chips for first-time users
 - Sidebar nav item added ("Chat de Pruebas")
 
-**R6: Phone Number (11th Field)** ✅
+**R6: Phone Number (11th Field)** ✅ — REFINED 2026-04-15 13:00
 - Added `phone_number` to `ONBOARDING_FIELDS` (backend + frontend)
 - Updated system prompt: field 11, completion threshold 10→11
-- Agent now collects WhatsApp number at end of configuration
+- **Wording fix:** Changed from "de la empresa" → "tu número personal de WhatsApp o celular (para que NOSOTROS podamos contactarte a TI — soporte, avisos, facturación)"
+- **Persistence fix:** Added `phone_number` to `valid_columns` in `_save_field()` (was causing Sentry "Unknown onboarding field: phone_number")
+- **DB migration:** `ALTER TABLE tenant_onboarding ADD COLUMN phone_number text` applied to DEV ✅ | PROD ⏳
 
 **R7: onboarding_messages Table** ✅ DEV | ❌ PROD PENDING APPROVAL
 - Migration applied to DEV (nzsksjczswndjjbctasu)
 - PROD blocked — user has not approved yet
 
-#### Remaining Block R Items (Pending Verification)
-- [ ] E2E test with fresh tenant: WelcomeStep → ConfigChat → CompletionStep (confetti) → /chats/sandbox
-- [ ] Verify phone_number field is collected and reported correctly
-- [ ] Verify sandbox auto-creates contact and processes messages
+#### Block S: Sandbox Isolation ✅ CORE COMPLETE (2026-04-15 13:00 CLT)
+
+> **Architecture:** Completely isolated `/api/sandbox/chat` endpoint using OpenAI Responses API.  
+> **Ref:** [Responses API docs](https://platform.openai.com/docs/api-reference/responses/create)
+
+**S1: Backend Endpoint** ✅
+- Created `Backend/app/api/sandbox/chat_endpoint.py` (269 lines)
+- Uses `OpenAIResponsesStrategy` (NOT `OpenAIStrategy`)
+- Direct `tenants` table query for `system_prompt` (NOT `TenantContext`)
+- History loaded from `messages` table, response persisted back
+- Every except block → logger + Sentry + Discord (3 channels)
+
+**S2: Frontend Proxy** ✅
+- Created `Frontend/app/api/sandbox/chat/route.ts` (Next.js API route)
+- Proxies requests to backend Cloud Run service
+- Updated `/chats/sandbox/page.tsx` to call `/api/sandbox/chat`
+
+**S3: Registration** ✅
+- `Backend/app/main.py` — added `include_router(sandbox_chat_router)`
+- Zero changes to WhatsApp webhook path
+
+**S4: Isolation Guarantee** ✅
+- Does NOT import: `ProcessMessageUseCase`, `TenantContext`, `MetaGraphAPIClient`, `LLMFactory`, `tool_registry`
+- Separate `OpenAIResponsesStrategy` instance per request (not singleton)
+- Zero shared state with production webhook pipeline
+
+**S5: Model Configuration Review** ✅ (report generated)
+| Path | Model | Streaming | Tools | Adapter |
+|:---|:---|:---|:---|:---|
+| Onboarding Config Agent | `gpt-5.4` (flagship) | Yes (SSE) | Yes (ONBOARDING_TOOLS) | `OpenAIResponsesStrategy` (singleton) |
+| Sandbox Chat | `gpt-5.4-mini` fallback | No | `tools=[]` ⚠️ | `OpenAIResponsesStrategy` (per-request) |
+| WhatsApp Webhook | `tenant.llm_model` | No | Yes (tool_registry) | `OpenAIStrategy` (Chat Completions) — UNTOUCHED |
+
+**S6: Sandbox Tools** ⏳ PENDING
+- Currently `tools=[]` — user wants tenant tools available
+- Architectural decision needed: which tools, safe execution path
+- Awaiting user guidance
+
+#### Migration Parity Status (April 15 afternoon)
+
+| Migration | DEV | PROD |
+|:---|:---|:---|
+| `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
+| `phone_number` column on `tenant_onboarding` | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+
+#### Remaining Items (Pending Verification)
+- [ ] E2E test: phone_number wording ("tu número personal" not "de la empresa")
+- [ ] E2E test: phone_number persistence (no more Sentry "Unknown field" errors)
+- [ ] E2E test: sandbox (`/chats/sandbox` → send message → AI responds via Responses API)
+- [ ] Sandbox tools decision — which tools, safe execution path
 
 
 ---

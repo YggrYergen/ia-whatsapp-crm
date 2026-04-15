@@ -563,7 +563,81 @@ class ProcessMessageUseCase:
             # prompt and [CONTEXTO]. These are system-level safety rules
             # the tenant cannot edit or accidentally delete.
             # ============================================================
-            system_prompt = f"{tenant.system_prompt}\n\n{INTERNAL_TOOL_RULES}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nTeléfono: {patient_phone}\nRol: {contact_role}\nHora: {current_time_str}\n"
+
+            # ============================================================
+            # Service Catalog Injection — fetched fresh from DB per-message
+            # This makes service changes "real-time" without Supabase Realtime.
+            # Every incoming WhatsApp message triggers handle_incoming() which
+            # calls this code, so updated prices/durations take effect immediately.
+            # ============================================================
+            services_block = ""
+            try:
+                services_res = await db.table("tenant_services") \
+                    .select("name, description, price, price_is_variable, duration_minutes") \
+                    .eq("tenant_id", str(tenant.id)) \
+                    .eq("is_active", True) \
+                    .order("sort_order") \
+                    .execute()
+
+                if services_res.data and len(services_res.data) > 0:
+                    lines = ["[CATÁLOGO DE SERVICIOS]"]
+                    for svc in services_res.data:
+                        parts = [f"- {svc['name']}"]
+                        if svc.get("description"):
+                            parts.append(f"  ({svc['description'][:80]})")
+                        if svc.get("price") is not None:
+                            prefix = "Desde " if svc.get("price_is_variable") else ""
+                            parts.append(f"  — {prefix}${svc['price']:,}".replace(",", "."))
+                        if svc.get("duration_minutes"):
+                            parts.append(f"  — {svc['duration_minutes']} min")
+                        lines.append("".join(parts))
+
+                    raw_catalog = "\n".join(lines)
+                    # Truncation safety: prevent prompt overflow
+                    if len(raw_catalog) > 2000:
+                        services_block = raw_catalog[:1980] + "\n... (catálogo truncado)"
+                        _trunc_msg = (
+                            f"[ProcessMsgUC] Service catalog truncated: {len(raw_catalog)} chars > 2000 | "
+                            f"tenant={tenant.id} | services={len(services_res.data)} | env={settings.ENVIRONMENT}"
+                        )
+                        logger.warning(_trunc_msg)
+                        sentry_sdk.capture_message(_trunc_msg, level="warning")
+                        await send_discord_alert(
+                            title=f"⚠️ Service Catalog Truncated | Tenant {tenant.id}",
+                            description=(
+                                f"**Where:** `ProcessMsgUC.prompt_assembly`\n"
+                                f"**What:** Catalog has {len(raw_catalog)} chars (max 2000)\n"
+                                f"**Services count:** {len(services_res.data)}\n"
+                                f"**Env:** {settings.ENVIRONMENT}"
+                            ),
+                            severity="warning",
+                        )
+                    else:
+                        services_block = raw_catalog
+                    logger.debug(f"[ProcessMsgUC] Injected {len(services_res.data)} services into prompt | tenant={tenant.id}")
+            except Exception as svc_err:
+                # Graceful degradation: if catalog fetch fails, proceed without it
+                _svc_msg = (
+                    f"[ProcessMsgUC] Service catalog fetch FAILED (non-fatal) | "
+                    f"tenant={tenant.id} | env={settings.ENVIRONMENT} | error={str(svc_err)[:200]}"
+                )
+                logger.error(_svc_msg, exc_info=True)
+                sentry_sdk.capture_exception(svc_err)
+                await send_discord_alert(
+                    title=f"❌ Service Catalog Fetch Failed | Tenant {tenant.id}",
+                    description=(
+                        f"**Where:** `ProcessMsgUC.prompt_assembly`\n"
+                        f"**What:** tenant_services query failed — LLM proceeds WITHOUT catalog\n"
+                        f"**Tenant:** `{tenant.id}`\n"
+                        f"**Env:** {settings.ENVIRONMENT}\n"
+                        f"**Error:** ```{str(svc_err)[:300]}```"
+                    ),
+                    severity="error", error=svc_err,
+                )
+
+            # Assemble final prompt: tenant prompt + tool rules + catalog + context
+            catalog_section = f"\n\n{services_block}" if services_block else ""
+            system_prompt = f"{tenant.system_prompt}\n\n{INTERNAL_TOOL_RULES}{catalog_section}\n\n[CONTEXTO]\nPaciente: {contact_data.get('name', 'Lead') if contact_data else 'Lead'}\nTeléfono: {patient_phone}\nRol: {contact_role}\nHora: {current_time_str}\n"
             if force_escalation:
                 system_prompt += "\n⚠️ RIESGO: Avisa amablemente que derivas a humano y usa 'request_human_escalation'."
 

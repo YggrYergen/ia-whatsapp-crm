@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle, ChevronDown, Building2, Shield } from 'lucide-react'
+import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle, ChevronDown, Building2, Shield, Package, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCrm } from '@/contexts/CrmContext'
@@ -64,6 +64,8 @@ export default function Sidebar() {
         { href: '/chats/sandbox', icon: Sparkles, title: 'Chat de Pruebas', label: 'Pruebas' },
         { href: '/agenda', icon: CalendarIcon, title: 'Agenda', label: 'Agenda' },
         { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
+        { href: '/servicios', icon: Package, title: 'Servicios', label: 'Servicios' },
+        { href: '/recursos', icon: Layers, title: 'Recursos', label: 'Recursos' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
         { href: '/finops', icon: Receipt, title: 'FinOps', desktopOnly: true },
         // Block R: Use isSuperadmin instead of hardcoded email list for dev tools
