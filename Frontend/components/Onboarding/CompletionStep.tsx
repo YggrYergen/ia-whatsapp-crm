@@ -294,8 +294,7 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         {/* ─── Next steps card ─── */}
         <div className={`transition-all duration-700 delay-200
           ${phase >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-5 text-left space-y-3 max-w-md mx-auto
-            backdrop-blur-sm">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-5 text-left space-y-3 max-w-md mx-auto backdrop-blur-sm">
             <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
               <Rocket className="w-4 h-4 text-emerald-400" />
               Próximos pasos
@@ -333,65 +332,6 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         </div>
       </div>
 
-      {/* ─── Confetti & Firework animations ─── */}
-      <style jsx>{`
-        @keyframes confettiBurst {
-          0% {
-            transform: translate(-50%, -50%) rotate(0deg) scale(1);
-            opacity: 1;
-          }
-          70% {
-            opacity: 1;
-          }
-          100% {
-            transform: translate(
-              calc(-50% + var(--tx)),
-              calc(-50% + var(--ty))
-            ) rotate(var(--rot)) scale(0.3);
-            opacity: 0;
-          }
-        }
-
-        @keyframes fireworkFlash {
-          0% {
-            transform: translate(-50%, -50%) scale(0);
-            opacity: 0;
-          }
-          30% {
-            transform: translate(-50%, -50%) scale(3);
-            opacity: 1;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(0);
-            opacity: 0;
-          }
-        }
-
-        @keyframes fireworkSpark {
-          0% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: translate(
-              calc(-50% + var(--sx)),
-              calc(-50% + var(--sy))
-            ) scale(0);
-            opacity: 0;
-          }
-        }
-
-        @keyframes shockwave {
-          0% {
-            transform: scale(1);
-            opacity: 0.6;
-          }
-          100% {
-            transform: scale(4);
-            opacity: 0;
-          }
-        }
-      `}</style>
     </div>
   )
 }
