@@ -875,6 +875,11 @@ async def _finalize_onboarding(tenant_id: str, generated_prompt: str, summary: s
             severity="info",
         )
         
+        # Step 3: Provision services, resources, and scheduling config from onboarding data
+        # Non-fatal: if any of these fail, the tenant is still fully functional
+        # (they can add services/resources manually from the frontend).
+        await _provision_services_and_resources(db, tenant_id)
+        
     except Exception as e:
         # Only reaches here if tenant update raised (re-raised above)
         # or if something truly unexpected happened
@@ -899,8 +904,269 @@ async def _finalize_onboarding(tenant_id: str, generated_prompt: str, summary: s
 
 
 # ========================================================================
-# Message Persistence — onboarding_messages table
+# Provisioning — Create services, resources, and scheduling config
 # ========================================================================
+
+# Map business_type keywords → sensible default resource labels
+_RESOURCE_LABEL_MAP = {
+    "fumigación": ("Equipo", "equipo"),
+    "fumigacion": ("Equipo", "equipo"),
+    "control de plagas": ("Equipo", "equipo"),
+    "clínica": ("Box", "box_sala"),
+    "clinica": ("Box", "box_sala"),
+    "estética": ("Box", "box_sala"),
+    "estetica": ("Box", "box_sala"),
+    "belleza": ("Box", "box_sala"),
+    "restaurant": ("Mesa", "mesa"),
+    "restaurante": ("Mesa", "mesa"),
+    "café": ("Mesa", "mesa"),
+    "cafe": ("Mesa", "mesa"),
+    "peluquería": ("Silla", "silla"),
+    "peluqueria": ("Silla", "silla"),
+    "barbería": ("Silla", "silla"),
+    "barberia": ("Silla", "silla"),
+    "consultorio": ("Consulta", "consulta"),
+    "médico": ("Consulta", "consulta"),
+    "medico": ("Consulta", "consulta"),
+    "dental": ("Silla", "silla"),
+}
+
+
+async def _provision_services_and_resources(db, tenant_id: str):
+    """Provision tenant_services, resources, and scheduling_config from onboarding data.
+    
+    Called after _finalize_onboarding succeeds. Reads saved fields from
+    tenant_onboarding and converts them into real operational records.
+    
+    Entirely non-fatal: if ANY step fails, the tenant is still operational
+    (they can add services/resources manually via the frontend). But we
+    MUST know about every failure via 3-channel observability.
+    """
+    _where = f"{_WHERE}._provision_services_and_resources"
+    _ctx = f"tenant={tenant_id} | env={settings.ENVIRONMENT}"
+    
+    logger.info(f"🏗️ [{_where}] Starting service/resource provisioning | {_ctx}")
+    
+    try:
+        # ── 1. Read onboarding data ──
+        try:
+            onb_res = await db.table("tenant_onboarding").select(
+                "services_offered, business_hours, business_type"
+            ).eq("tenant_id", tenant_id).single().execute()
+        except Exception as read_err:
+            _msg = f"[{_where}:read_onboarding] Failed to read tenant_onboarding | {_ctx} | error={str(read_err)[:200]}"
+            logger.error(_msg, exc_info=True)
+            sentry_sdk.capture_exception(read_err)
+            await send_discord_alert(
+                title=f"⚠️ Service Provisioning: Failed to read onboarding data | {tenant_id}",
+                description=f"**Where:** `{_where}:read_onboarding`\n**Tenant:** `{tenant_id}`\n**Error:** ```{str(read_err)[:300]}```\n**Impact:** Services/resources NOT provisioned. User must add them manually.",
+                severity="warning", error=read_err
+            )
+            return  # Non-fatal
+        
+        if not onb_res.data:
+            logger.warning(f"[{_where}] No onboarding data found for tenant={tenant_id} — skipping provisioning")
+            return
+        
+        onb_data = onb_res.data
+        raw_services = onb_data.get("services_offered") or []
+        business_hours = onb_data.get("business_hours") or ""
+        business_type = (onb_data.get("business_type") or "").lower().strip()
+        
+        # ── 2. Create tenant_services from services_offered ──
+        services_created = 0
+        if raw_services:
+            # raw_services can be a JSON list or a string
+            if isinstance(raw_services, str):
+                try:
+                    raw_services = json.loads(raw_services)
+                except json.JSONDecodeError:
+                    raw_services = [s.strip() for s in raw_services.split(",") if s.strip()]
+            
+            if isinstance(raw_services, list):
+                for svc in raw_services:
+                    try:
+                        # Parse service: could be "Fumigación general ($85.000)" or just "Limpieza"
+                        svc_str = str(svc).strip()
+                        if not svc_str:
+                            continue
+                        
+                        # Basic price extraction
+                        price = None
+                        duration = None
+                        name = svc_str
+                        
+                        # Try to extract price from parentheses: "servicio ($85.000)"
+                        import re
+                        price_match = re.search(r'\$\s*([\d.,]+)', svc_str)
+                        if price_match:
+                            price_str = price_match.group(1).replace(".", "").replace(",", "")
+                            try:
+                                price = int(price_str)
+                            except ValueError:
+                                pass
+                            # Clean the name (remove price part)
+                            name = re.sub(r'\s*\([^)]*\$[^)]*\)', '', svc_str).strip()
+                        
+                        # Try to extract duration: "3 horas" or "1 hora" or "45 min"
+                        dur_match = re.search(r'(\d+)\s*(hora|horas|hr|min|minutos)', svc_str, re.IGNORECASE)
+                        if dur_match:
+                            dur_val = int(dur_match.group(1))
+                            dur_unit = dur_match.group(2).lower()
+                            if 'hora' in dur_unit or 'hr' in dur_unit:
+                                duration = dur_val * 60
+                            else:
+                                duration = dur_val
+                        
+                        # Clean name further
+                        if not name or len(name) < 2:
+                            name = svc_str[:50]  # fallback to original
+                        
+                        svc_row = {
+                            "tenant_id": tenant_id,
+                            "name": name[:100],
+                            "description": svc_str[:500],
+                            "base_price": price,
+                            "variable_pricing": price is None,
+                            "estimated_duration_min": duration,
+                            "is_active": True,
+                        }
+                        
+                        await db.table("tenant_services").insert(svc_row).execute()
+                        services_created += 1
+                        logger.info(
+                            f"✅ [{_where}] Service created: '{name[:40]}' | "
+                            f"price={price} | duration={duration} | {_ctx}"
+                        )
+                        
+                    except Exception as svc_err:
+                        _msg = (
+                            f"[{_where}:create_service] Failed to create service | "
+                            f"svc='{str(svc)[:80]}' | {_ctx} | error={str(svc_err)[:200]}"
+                        )
+                        logger.error(_msg, exc_info=True)
+                        sentry_sdk.capture_exception(svc_err)
+                        await send_discord_alert(
+                            title=f"⚠️ Service Provisioning: Single Service Failed | {tenant_id}",
+                            description=f"**Service:** `{str(svc)[:100]}`\n**Error:** ```{str(svc_err)[:300]}```",
+                            severity="warning", error=svc_err
+                        )
+                        # Continue with other services
+        
+        # ── 3. Create default resource based on business type ──
+        resource_label = "Recurso"
+        resource_type = "otro"
+        
+        for keyword, (label, rtype) in _RESOURCE_LABEL_MAP.items():
+            if keyword in business_type:
+                resource_label = label
+                resource_type = rtype
+                break
+        
+        resource_created = False
+        try:
+            resource_row = {
+                "tenant_id": tenant_id,
+                "name": f"{resource_label.lower()}_1",
+                "label": f"{resource_label} 1",
+                "resource_type": resource_type,
+                "color": "#10B981",  # Emerald green
+                "is_active": True,
+            }
+            await db.table("resources").insert(resource_row).execute()
+            resource_created = True
+            logger.info(f"✅ [{_where}] Resource created: '{resource_label} 1' (type={resource_type}) | {_ctx}")
+        except Exception as res_err:
+            _msg = f"[{_where}:create_resource] Failed to create default resource | {_ctx} | error={str(res_err)[:200]}"
+            logger.error(_msg, exc_info=True)
+            sentry_sdk.capture_exception(res_err)
+            await send_discord_alert(
+                title=f"⚠️ Service Provisioning: Resource Creation Failed | {tenant_id}",
+                description=f"**Resource:** `{resource_label} 1`\n**Type:** `{resource_type}`\n**Error:** ```{str(res_err)[:300]}```",
+                severity="warning", error=res_err
+            )
+        
+        # ── 4. Create default scheduling_config with business hours ──
+        try:
+            # Parse business hours: "Lunes a Sábado 9:00-19:00" or similar
+            open_time = "09:00"
+            close_time = "18:00"
+            working_days = [1, 2, 3, 4, 5]  # Mon-Fri default
+            
+            if business_hours:
+                import re
+                time_match = re.search(r'(\d{1,2}[:.]?\d{0,2})\s*[-a]\s*(\d{1,2}[:.]?\d{0,2})', business_hours)
+                if time_match:
+                    raw_open = time_match.group(1).replace(".", ":")
+                    raw_close = time_match.group(2).replace(".", ":")
+                    if ":" not in raw_open:
+                        raw_open += ":00"
+                    if ":" not in raw_close:
+                        raw_close += ":00"
+                    open_time = raw_open
+                    close_time = raw_close
+                
+                bh_lower = business_hours.lower()
+                if "sábado" in bh_lower or "sabado" in bh_lower:
+                    working_days = [1, 2, 3, 4, 5, 6]  # Mon-Sat
+                if "domingo" in bh_lower:
+                    working_days = [0, 1, 2, 3, 4, 5, 6]  # All week
+            
+            config_row = {
+                "tenant_id": tenant_id,
+                "slot_duration_min": 30,
+                "open_time": open_time,
+                "close_time": close_time,
+                "working_days": working_days,
+                "round_robin_enabled": True,
+                "max_advance_days": 30,
+            }
+            await db.table("scheduling_config").insert(config_row).execute()
+            logger.info(
+                f"✅ [{_where}] Scheduling config created: {open_time}-{close_time} | "
+                f"days={working_days} | {_ctx}"
+            )
+        except Exception as cfg_err:
+            _msg = f"[{_where}:create_config] Failed to create scheduling_config | {_ctx} | error={str(cfg_err)[:200]}"
+            logger.error(_msg, exc_info=True)
+            sentry_sdk.capture_exception(cfg_err)
+            await send_discord_alert(
+                title=f"⚠️ Service Provisioning: Scheduling Config Failed | {tenant_id}",
+                description=f"**Hours:** `{open_time}-{close_time}`\n**Error:** ```{str(cfg_err)[:300]}```",
+                severity="warning", error=cfg_err
+            )
+        
+        # ── Summary ──
+        await send_discord_alert(
+            title=f"🏗️ Service Provisioning Complete | {tenant_id}",
+            description=(
+                f"**Services created:** {services_created}\n"
+                f"**Resource created:** {'✅' if resource_created else '❌'} ({resource_label} 1)\n"
+                f"**Business hours:** {open_time}–{close_time}\n"
+                f"**Working days:** {working_days}\n"
+                f"**Env:** {settings.ENVIRONMENT}"
+            ),
+            severity="info"
+        )
+        
+    except Exception as e:
+        _tb = tb_module.format_exc()
+        _msg = f"[{_where}] UNEXPECTED provisioning crash | {_ctx} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Service Provisioning CRASH | {tenant_id}",
+            description=(
+                f"**Where:** `{_where}`\n"
+                f"**What:** Unexpected error during service/resource provisioning\n"
+                f"**Tenant:** `{tenant_id}`\n"
+                f"**Env:** {settings.ENVIRONMENT}\n"
+                f"**Error:** ```{str(e)[:300]}```\n"
+                f"**Traceback (last 500 chars):** ```{_tb[-500:]}```\n"
+                f"**⚠️ Impact:** Services/resources NOT provisioned. User must add manually."
+            ),
+            severity="error", error=e
+        )
 
 async def _persist_message(
     tenant_id: str,

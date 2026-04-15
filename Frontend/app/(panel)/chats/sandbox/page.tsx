@@ -24,6 +24,7 @@ import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import * as Sentry from '@sentry/nextjs'
+import { formatWhatsAppMessage, messageBubbleStyles } from '@/lib/whatsappFormatter'
 
 // Virtual sandbox phone number — never collides with real contacts
 const SANDBOX_PHONE = 'sandbox-test-000'
@@ -376,7 +377,7 @@ export default function SandboxPage() {
                   : 'bg-white rounded-tl-none'
                 }`}
               >
-                <p className="break-words whitespace-pre-wrap">{msg.content}</p>
+                <p className={messageBubbleStyles}>{formatWhatsAppMessage(msg.content)}</p>
                 <div className="text-[9px] text-slate-500/70 text-right mt-1 font-medium">
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>

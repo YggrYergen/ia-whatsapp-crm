@@ -1,7 +1,19 @@
 'use client'
 
+/**
+ * UIContext — Toasts, notifications, and mobile view state.
+ *
+ * ⚠️ TENANT ISOLATION: Alerts are filtered by currentTenantId to prevent
+ *    cross-tenant data leaks. The Realtime subscription is re-created
+ *    whenever the active tenant changes (superadmin switching).
+ *
+ * ⚠️ OBSERVABILITY: Every failure → console.error + Sentry.
+ */
+
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useTenant } from './TenantContext'
+import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
 
@@ -44,18 +56,50 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
     const [notifications, setNotifications] = useState<NotificationItem[]>([])
     const [isNotificationFeedOpen, setIsNotificationFeedOpen] = useState(false)
 
+    // ⚠️ TENANT ISOLATION: Get the active tenant to filter alerts
+    const { currentTenantId } = useTenant()
+
     const unreadCount = notifications.filter(n => !n.is_read).length
 
     useEffect(() => {
-        // Initial fetch of unread alerts
-        const fetchAlerts = async () => {
-            const { data } = await supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(50);
-            if (data) setNotifications(data as NotificationItem[]);
+        const _where = 'UIContext.alertsEffect'
+
+        // Don't fetch alerts if no tenant selected yet
+        if (!currentTenantId) {
+            setNotifications([])
+            return
         }
-        fetchAlerts();
+
+        // ── Initial fetch of alerts — FILTERED BY TENANT ──
+        const fetchAlerts = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('alerts')
+                    .select('*')
+                    .eq('tenant_id', currentTenantId)
+                    .order('created_at', { ascending: false })
+                    .limit(50)
+
+                if (error) {
+                    const errMsg = `[${_where}] Alerts fetch failed | tenant=${currentTenantId} | error=${error.message}`
+                    console.error(errMsg)
+                    Sentry.captureMessage(errMsg, 'error')
+                    return
+                }
+
+                if (data) setNotifications(data as NotificationItem[])
+            } catch (fetchErr: any) {
+                const errMsg = `[${_where}] Alerts fetch CRASHED | tenant=${currentTenantId} | error=${String(fetchErr).slice(0, 300)}`
+                console.error(errMsg, fetchErr)
+                Sentry.captureException(fetchErr, {
+                    extra: { where: _where, tenant_id: currentTenantId },
+                })
+            }
+        }
+        fetchAlerts()
 
         if (typeof window !== 'undefined' && 'Notification' in window) {
-            Notification.requestPermission();
+            Notification.requestPermission()
         }
 
         const playNotificationSound = () => {
@@ -77,46 +121,73 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
             }
         }
 
-        // Alerts realtime → toasts & Web Notifications
+        // ── Realtime sub — FILTERED BY TENANT ──
+        // Ref: https://supabase.com/docs/guides/realtime/postgres-changes#filter-changes
+        const channelName = `alerts-realtime-${currentTenantId.slice(0, 8)}`
         const alertsSub = supabase
-            .channel('alerts-realtime-ui')
-            .on('postgres_changes' as any, { event: 'INSERT', schema: 'public', table: 'alerts' }, (payload: any) => {
-                const newAlert = payload.new as any
-                
-                // Add to history
-                setNotifications(prev => [newAlert, ...prev]);
+            .channel(channelName)
+            .on(
+                'postgres_changes' as any,
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'alerts',
+                    filter: `tenant_id=eq.${currentTenantId}`,
+                },
+                (payload: any) => {
+                    const newAlert = payload.new as any
 
-                // Toast
-                const toastId = Date.now() + Math.random();
-                setToasts((prev) => [...prev, { id: toastId, payload: { content: newAlert.message, contact_id: newAlert.contact_id, type: newAlert.type, created_at: newAlert.created_at } }]);
-                setTimeout(() => {
-                    setToasts((prev) => prev.filter(t => t.id !== toastId));
-                }, 30000);
+                    // Add to history
+                    setNotifications(prev => [newAlert, ...prev]);
 
-                // Web Notification & Sound
-                playNotificationSound();
-                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                    new Notification('Alerta del Sistema', {
-                        body: newAlert.message,
-                        icon: '/favicon.ico'
-                    });
+                    // Toast
+                    const toastId = Date.now() + Math.random();
+                    setToasts((prev) => [...prev, { id: toastId, payload: { content: newAlert.message, contact_id: newAlert.contact_id, type: newAlert.type, created_at: newAlert.created_at } }]);
+                    setTimeout(() => {
+                        setToasts((prev) => prev.filter(t => t.id !== toastId));
+                    }, 30000);
+
+                    // Web Notification & Sound
+                    playNotificationSound();
+                    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                        new Notification('Alerta del Sistema', {
+                            body: newAlert.message,
+                            icon: '/favicon.ico'
+                        });
+                    }
                 }
-            })
+            )
             .subscribe()
 
+        // ── Cleanup: unsubscribe when tenant changes ──
         return () => {
             supabase.removeChannel(alertsSub)
         }
-    }, [])
+    }, [currentTenantId])  // ← Re-run when tenant switches
 
     const markAsRead = async (id: string) => {
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-        await supabase.from('alerts').update({ is_read: true }).eq('id', id);
+        try {
+            await supabase.from('alerts').update({ is_read: true }).eq('id', id);
+        } catch (err: any) {
+            console.error(`[UIContext.markAsRead] Failed | id=${id} | error=${String(err).slice(0, 200)}`)
+            Sentry.captureException(err, { extra: { alert_id: id } })
+        }
     }
 
     const markAllAsRead = async () => {
+        if (!currentTenantId) return
         setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-        await supabase.from('alerts').update({ is_read: true }).eq('is_read', false); // Assume RLS restricts to current tenant
+        try {
+            await supabase
+                .from('alerts')
+                .update({ is_read: true })
+                .eq('is_read', false)
+                .eq('tenant_id', currentTenantId)
+        } catch (err: any) {
+            console.error(`[UIContext.markAllAsRead] Failed | tenant=${currentTenantId} | error=${String(err).slice(0, 200)}`)
+            Sentry.captureException(err, { extra: { tenant_id: currentTenantId } })
+        }
     }
 
     return (

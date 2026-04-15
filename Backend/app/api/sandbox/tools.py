@@ -8,8 +8,8 @@
 #       - app.infrastructure.calendar (GoogleCalendarClient)
 #       - app.core.models.TenantContext
 #
-#     CALENDAR TOOLS (5): Return realistic simulated responses.
-#       → When the new calendar backend is ready, swap implementations.
+#     CALENDAR TOOLS (5): Execute real DB operations via NativeSchedulingService.
+#       → Appointments show up in the Agenda and can be cancelled/updated.
 #     NON-CALENDAR TOOLS (2): Execute for real (DB + event bus).
 #
 # ⚠️  IMPORT SAFETY: This file has ZERO transitive dependencies on Google libs.
@@ -205,21 +205,21 @@ async def execute_sandbox_tool(
     logger.info(f"🛠️ [{_WHERE}] Executing: {tool_name} | args={json.dumps(arguments)[:200]} | {_ctx}")
     
     try:
-        # ── SIMULATED CALENDAR TOOLS ──────────────────────────
+        # ── REAL CALENDAR TOOLS (NativeSchedulingService) ─────
         if tool_name == "get_merged_availability":
-            return _simulate_availability(arguments)
+            return await _real_availability(arguments, tenant_id)
         
         elif tool_name == "book_round_robin":
-            return _simulate_booking(arguments)
+            return await _real_booking(arguments, tenant_id)
         
         elif tool_name == "update_appointment":
-            return _simulate_update(arguments)
+            return await _real_update(arguments, tenant_id)
         
         elif tool_name == "delete_appointment":
-            return _simulate_delete(arguments)
+            return await _real_delete(arguments, tenant_id)
         
         elif tool_name == "get_my_appointments":
-            return _simulate_list_appointments(arguments)
+            return await _real_list_appointments(arguments, tenant_id)
         
         # ── REAL TOOLS (no Google Calendar dependency) ────────
         elif tool_name == "request_human_escalation":
@@ -257,125 +257,180 @@ async def execute_sandbox_tool(
 
 
 # ─────────────────────────────────────────────────────────────
-# SIMULATED CALENDAR TOOLS
-# These return realistic responses that look exactly like the
-# production GoogleCalendarClient responses, but are generated
-# deterministically (no external API calls).
+# REAL CALENDAR TOOLS — Powered by NativeSchedulingService
 #
-# When the new calendar backend is ready (Sprint 2+), replace
-# these with real implementations.
+# These tools call the real scheduling service, writing/reading
+# actual appointments in the database. This ensures sandbox
+# test chats produce real data visible in the Agenda.
+#
+# Ref: NativeSchedulingService (app.modules.scheduling.native_service)
+# Methods return {status: success|error, message: str, ...}
 # ─────────────────────────────────────────────────────────────
 
-def _simulate_availability(args: Dict[str, Any]) -> str:
-    """Simulates get_merged_availability — returns realistic time slots."""
+from app.modules.scheduling.native_service import NativeSchedulingService
+
+
+async def _real_availability(args: Dict[str, Any], tenant_id: str) -> str:
+    """Real availability check via NativeSchedulingService."""
+    _WHERE = "_real_availability"
     date_str = args.get("date_str", "")
-    duration = args.get("duration_minutes") or 30
+    duration = args.get("duration_minutes")
     
-    # Generate a realistic set of available slots
-    # Vary by date to feel "real" (different days have different availability)
-    all_slots = [
-        "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
-        "12:00", "14:00", "14:30", "15:00", "15:30", "16:00",
-        "16:30", "17:00", "17:30"
-    ]
-    
-    # Use the date string as a seed for deterministic but varied results
-    seed = sum(ord(c) for c in date_str) if date_str else 42
-    rng = random.Random(seed)
-    
-    # Pick 4-8 slots as "available" (realistically, not all slots are free)
-    num_available = rng.randint(4, 8)
-    available = sorted(rng.sample(all_slots, min(num_available, len(all_slots))))
-    
-    return json.dumps({
-        "status": "success",
-        "available_slots": available,
-        "duration": duration,
-        "message": f"Se encontraron {len(available)} horarios disponibles para el {date_str}."
-    })
+    try:
+        ctx = SandboxTenantContext(tenant_id, "sandbox")
+        result = await NativeSchedulingService.check_availability(ctx, date_str, duration)
+        return json.dumps(result)
+    except Exception as e:
+        _msg = f"[{_WHERE}] Failed | tenant={tenant_id} | date={date_str} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Sandbox availability check failed | {tenant_id}",
+            description=f"**Date:** {date_str}\n**Error:** ```{str(e)[:300]}```",
+            severity="error", error=e
+        )
+        return json.dumps({"status": "error", "message": f"Error checking availability: {str(e)[:200]}"})
 
 
-def _simulate_booking(args: Dict[str, Any]) -> str:
-    """Simulates book_round_robin — returns a successful booking confirmation."""
+async def _real_booking(args: Dict[str, Any], tenant_id: str) -> str:
+    """Real booking via NativeSchedulingService."""
+    _WHERE = "_real_booking"
     date_str = args.get("date_str", "")
     time_str = args.get("time_str", "")
-    user_name = args.get("user_name", "Cliente")
-    phone = args.get("phone", "")
     duration = args.get("duration_minutes", 30)
+    user_name = args.get("user_name", "Cliente Sandbox")
+    phone = args.get("phone", "sandbox-test")
     
-    # Simulate which "team/unit" gets assigned (round-robin feel)
-    seed = sum(ord(c) for c in f"{date_str}{time_str}") if date_str else 1
-    unit_num = (seed % 3) + 1
-    unit_label = f"Equipo {unit_num}"
-    
-    return json.dumps({
-        "status": "success",
-        "message": f"Cita agendada con éxito. {user_name} tiene una cita el {date_str} a las {time_str} ({duration} min) asignada a {unit_label}.",
-        "box_label": unit_label,
-        "event_link": None  # Simulated — no real calendar link
-    })
+    try:
+        ctx = SandboxTenantContext(tenant_id, "sandbox")
+        result = await NativeSchedulingService.book_appointment(
+            ctx, date_str, time_str, duration, user_name, phone, booked_by="sandbox_ai"
+        )
+        return json.dumps(result)
+    except Exception as e:
+        _msg = f"[{_WHERE}] Failed | tenant={tenant_id} | {date_str} {time_str} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Sandbox booking failed | {tenant_id}",
+            description=f"**Slot:** {date_str} {time_str}\n**Client:** {user_name}\n**Error:** ```{str(e)[:300]}```",
+            severity="error", error=e
+        )
+        return json.dumps({"status": "error", "message": f"Error booking: {str(e)[:200]}"})
 
 
-def _simulate_update(args: Dict[str, Any]) -> str:
-    """Simulates update_appointment — returns a successful reschedule."""
+async def _real_update(args: Dict[str, Any], tenant_id: str) -> str:
+    """Real appointment reschedule via NativeSchedulingService."""
+    _WHERE = "_real_update"
     date_str = args.get("date_str", "")
     time_str = args.get("time_str", "")
     new_date = args.get("new_date", "")
     new_time = args.get("new_time", "")
-    user_name = args.get("user_name", "Cliente")
+    user_name = args.get("user_name", "Cliente Sandbox")
+    phone = args.get("phone", "sandbox-test")
     
-    return json.dumps({
-        "status": "success",
-        "message": f"Cita re-agendada exitosamente. La cita de {user_name} se movió del {date_str} {time_str} al {new_date} a las {new_time}."
-    })
+    try:
+        ctx = SandboxTenantContext(tenant_id, "sandbox")
+        result = await NativeSchedulingService.update_appointment(
+            ctx, date_str, time_str, new_date, new_time, phone, user_name
+        )
+        return json.dumps(result)
+    except Exception as e:
+        _msg = f"[{_WHERE}] Failed | tenant={tenant_id} | {date_str} {time_str} → {new_date} {new_time} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Sandbox update failed | {tenant_id}",
+            description=f"**Original:** {date_str} {time_str}\n**New:** {new_date} {new_time}\n**Error:** ```{str(e)[:300]}```",
+            severity="error", error=e
+        )
+        return json.dumps({"status": "error", "message": f"Error updating: {str(e)[:200]}"})
 
 
-def _simulate_delete(args: Dict[str, Any]) -> str:
-    """Simulates delete_appointment — returns a successful cancellation."""
+async def _real_delete(args: Dict[str, Any], tenant_id: str) -> str:
+    """Real appointment cancellation via NativeSchedulingService."""
+    _WHERE = "_real_delete"
     date_str = args.get("date_str", "")
     time_str = args.get("time_str", "")
+    phone = args.get("phone", "sandbox-test")
     
-    return json.dumps({
-        "status": "success",
-        "message": f"La cita del {date_str} a las {time_str} ha sido cancelada exitosamente.",
-        "items": [f"Cita cancelada: {date_str} a las {time_str}"]
-    })
+    try:
+        ctx = SandboxTenantContext(tenant_id, "sandbox")
+        result = await NativeSchedulingService.cancel_appointment(ctx, date_str, time_str, phone)
+        return json.dumps(result)
+    except Exception as e:
+        _msg = f"[{_WHERE}] Failed | tenant={tenant_id} | {date_str} {time_str} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Sandbox delete failed | {tenant_id}",
+            description=f"**Slot:** {date_str} {time_str}\n**Error:** ```{str(e)[:300]}```",
+            severity="error", error=e
+        )
+        return json.dumps({"status": "error", "message": f"Error deleting: {str(e)[:200]}"})
 
 
-def _simulate_list_appointments(args: Dict[str, Any]) -> str:
-    """Simulates get_my_appointments — returns a realistic appointment list."""
+async def _real_list_appointments(args: Dict[str, Any], tenant_id: str) -> str:
+    """Real appointment list via DB query."""
+    _WHERE = "_real_list_appointments"
     date_str = args.get("date_str", "")
+    phone = args.get("phone", "")
     
-    # Use date as seed for deterministic results
-    seed = sum(ord(c) for c in date_str) if date_str else 42
-    rng = random.Random(seed)
-    
-    num_appointments = rng.randint(0, 3)
-    
-    if num_appointments == 0:
+    try:
+        from app.infrastructure.database.supabase_client import SupabasePooler
+        import pytz
+        
+        tz = pytz.timezone("America/Santiago")
+        db = await SupabasePooler.get_client()
+        
+        query = db.table("appointments").select(
+            "id, start_time, end_time, client_name, client_phone, status, resource_id"
+        ).eq("tenant_id", tenant_id).neq("status", "cancelled")
+        
+        if date_str:
+            day_start = f"{date_str}T00:00:00"
+            day_end = f"{date_str}T23:59:59"
+            query = query.gte("start_time", day_start).lte("start_time", day_end)
+        
+        if phone:
+            query = query.eq("client_phone", phone)
+        
+        res = await query.order("start_time").limit(20).execute()
+        
+        if not res.data:
+            msg = f"No hay citas agendadas"
+            if date_str:
+                msg += f" para el {date_str}"
+            if phone:
+                msg += f" con el teléfono {phone}"
+            msg += "."
+            return json.dumps({"status": "success", "message": msg})
+        
+        # Format appointments for display
+        lines = []
+        for appt in res.data:
+            start = datetime.datetime.fromisoformat(appt["start_time"]).astimezone(tz)
+            end = datetime.datetime.fromisoformat(appt["end_time"]).astimezone(tz)
+            name = appt.get("client_name", "Sin nombre")
+            lines.append(
+                f"[{start.strftime('%H:%M')} - {end.strftime('%H:%M')}] {name} ({appt.get('status', 'confirmed')})"
+            )
+        
         return json.dumps({
             "status": "success",
-            "message": f"No hay citas agendadas para el {date_str}."
+            "message": f"Citas encontradas ({len(lines)}):\n" + "\n".join(lines)
         })
-    
-    times = sorted(rng.sample(["09:00", "10:30", "11:00", "14:00", "15:30", "16:00"], min(num_appointments, 6)))
-    names = rng.sample(["Juan Pérez", "María González", "Carlos López", "Ana Rodríguez", "Pedro Silva"], min(num_appointments, 5))
-    
-    appointments = []
-    for i, (t, name) in enumerate(zip(times, names)):
-        end_h = int(t.split(":")[0])
-        end_m = int(t.split(":")[1]) + 30
-        if end_m >= 60:
-            end_h += 1
-            end_m -= 60
-        end_time = f"{end_h:02d}:{end_m:02d}"
-        unit = f"Equipo {(i % 3) + 1}"
-        appointments.append(f"[{t} - {end_time}] {unit}: Cita - {name}")
-    
-    return json.dumps({
-        "status": "success",
-        "message": "Citas encontradas:\n" + "\n".join(appointments)
-    })
+        
+    except Exception as e:
+        _msg = f"[{_WHERE}] Failed | tenant={tenant_id} | date={date_str} | error={str(e)[:300]}"
+        logger.error(_msg, exc_info=True)
+        sentry_sdk.capture_exception(e)
+        await send_discord_alert(
+            title=f"❌ Sandbox list appointments failed | {tenant_id}",
+            description=f"**Date:** {date_str}\n**Error:** ```{str(e)[:300]}```",
+            severity="error", error=e
+        )
+        return json.dumps({"status": "error", "message": f"Error listing appointments: {str(e)[:200]}"})
 
 
 # ─────────────────────────────────────────────────────────────
