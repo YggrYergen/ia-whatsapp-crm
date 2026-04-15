@@ -785,12 +785,51 @@ async def get_chat_history(request: Request):
         
         messages = result.data if result.data else []
         
+        # Also load field completion status from tenant_onboarding
+        # so the frontend can restore the progress bar on session resume.
+        fields_status = {}
+        configuration_complete = False
+        try:
+            onboarding_result = await db.table("tenant_onboarding") \
+                .select(", ".join(ONBOARDING_FIELDS) + ", configuration_complete") \
+                .eq("tenant_id", tenant_id) \
+                .maybe_single() \
+                .execute()
+            
+            if onboarding_result.data:
+                row = onboarding_result.data
+                configuration_complete = bool(row.get("configuration_complete", False))
+                for field in ONBOARDING_FIELDS:
+                    value = row.get(field)
+                    # A field is "complete" if it has a non-empty value
+                    fields_status[field] = {
+                        "complete": bool(value and str(value).strip()),
+                        "value": str(value) if value else "",
+                        "confidence": "confirmed",
+                    }
+        except Exception as fields_err:
+            # Non-fatal: progress won't restore but messages will
+            logger.warning(
+                f"[{_where}] Failed to load field status (non-fatal) | "
+                f"tenant={tenant_id} | error={str(fields_err)[:200]}"
+            )
+        
+        fields_complete = sum(1 for f in fields_status.values() if f.get("complete"))
+        
         logger.info(
-            f"📜 [{_where}] Loaded {len(messages)} messages | "
+            f"📜 [{_where}] Loaded {len(messages)} messages + "
+            f"{fields_complete}/{len(ONBOARDING_FIELDS)} fields | "
             f"tenant={tenant_id} | env={settings.ENVIRONMENT}"
         )
         
-        return {"messages": messages, "count": len(messages)}
+        return {
+            "messages": messages,
+            "count": len(messages),
+            "fields_status": fields_status,
+            "fields_complete": fields_complete,
+            "fields_total": len(ONBOARDING_FIELDS),
+            "configuration_complete": configuration_complete,
+        }
         
     except Exception as e:
         _tb = tb_module.format_exc()

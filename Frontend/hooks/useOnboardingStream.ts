@@ -111,6 +111,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
   // ─── Load persisted history on mount ──────────────────────────────
   // Enables: session resumability + superadmin debugging.
   // If the DB has messages, we populate state from them instead of starting fresh.
+  // Also restores field completion status and progress bar.
   useEffect(() => {
     if (!tenantId || historyLoaded) return
 
@@ -149,6 +150,23 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
             .map((m: any) => ({ role: m.role, content: m.content }))
         } else {
           console.debug(`[${_where}] No persisted messages — fresh session | tenant=${tenantId}`)
+        }
+
+        // Restore field completion status if available (enables progress bar survival on refresh)
+        if (data.fields_status && Object.keys(data.fields_status).length > 0) {
+          console.info(`[${_where}] Restoring field status: ${data.fields_complete}/${data.fields_total} complete`)
+          setFields(data.fields_status)
+          setProgress({
+            fields_complete: data.fields_complete ?? 0,
+            fields_total: data.fields_total ?? ONBOARDING_FIELDS.length,
+            percentage: data.fields_total ? Math.round((data.fields_complete / data.fields_total) * 100) : 0,
+          })
+        }
+
+        // Restore configuration_complete flag if the onboarding was already finalized
+        if (data.configuration_complete) {
+          console.info(`[${_where}] Configuration already complete — skipping to completion state`)
+          setIsConfigComplete(true)
         }
       } catch (loadErr: any) {
         console.error(`[${_where}] Failed to load history:`, loadErr)

@@ -34,6 +34,7 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
   const [inputValue, setInputValue] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const greetingSentRef = useRef(false) // Guard against double-send in StrictMode
 
   const {
     messages,
@@ -87,12 +88,16 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
 
   // Auto-send initial greeting — only after persisted history loads.
   // If history has messages (resumed session), skip the greeting.
+  // greetingSentRef prevents double-send from React StrictMode double-invoke.
   useEffect(() => {
     if (!historyLoaded) return // Wait for DB history to load first
     if (messages.length > 0) return // Already have messages (resumed session)
     if (isStreaming) return // Already streaming
+    if (greetingSentRef.current) return // Already sent (StrictMode guard)
 
+    greetingSentRef.current = true
     sendMessage('').catch((err) => {
+      greetingSentRef.current = false // Allow retry on failure
       console.error('[ConfigChat] Initial greeting failed:', err)
       Sentry.captureException(err, {
         extra: { where: 'ConfigChat.initialGreeting', tenant_id: tenantId },
