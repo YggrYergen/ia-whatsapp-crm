@@ -124,8 +124,37 @@ class OpenAIResponsesStrategy(LLMStrategy):
             
             # Tools must be re-supplied every request (not inherited from chain)
             # Ref: OpenAI docs confirmed via web search 2026-04-15
+            #
+            # IMPORTANT: Responses API uses a FLAT format for tools:
+            #   {type: "function", name: "...", description: "...", parameters: {...}, strict: true}
+            # But Chat Completions format nests under "function":
+            #   {type: "function", function: {name: "...", ...}}
+            # We auto-convert so both formats work transparently.
             if tools:
-                api_kwargs["tools"] = tools
+                converted_tools = []
+                for t in tools:
+                    if "function" in t and isinstance(t["function"], dict):
+                        # Chat Completions format → Responses API flat format
+                        func = t["function"]
+                        converted = {
+                            "type": "function",
+                            "name": func.get("name", ""),
+                            "description": func.get("description", ""),
+                            "parameters": func.get("parameters", {}),
+                        }
+                        if func.get("strict") is not None:
+                            converted["strict"] = func["strict"]
+                        converted_tools.append(converted)
+                    elif "name" in t:
+                        # Already in Responses API format
+                        converted_tools.append(t)
+                    else:
+                        # Unknown format — pass through and let OpenAI error clearly
+                        _bad_msg = f"[{_where}] Unknown tool format — no 'function' or 'name' key: {list(t.keys())}"
+                        logger.warning(_bad_msg)
+                        sentry_sdk.capture_message(_bad_msg, level="warning")
+                        converted_tools.append(t)
+                api_kwargs["tools"] = converted_tools
             
             # Chain to a previous response (for tool call follow-ups)
             if previous_response_id:

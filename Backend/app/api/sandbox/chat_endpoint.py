@@ -203,6 +203,7 @@ async def sandbox_chat(payload: dict = Body(...)):
         rounds_executed = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        response_dto = None  # Initialized here to prevent UnboundLocalError if round 0 fails
         
         for round_num in range(MAX_TOOL_ROUNDS + 1):  # +1 allows a final text-only response
             try:
@@ -389,7 +390,7 @@ async def sandbox_chat(payload: dict = Body(...)):
         logger.info(
             f"[{_WHERE}] Agentic loop complete | rounds={rounds_executed} | "
             f"response_len={len(ai_response)} | "
-            f"model={response_dto.model_used or llm_model} | "
+            f"model={(response_dto.model_used or llm_model) if response_dto else llm_model} | "
             f"total_in={total_prompt_tokens} | total_out={total_completion_tokens} | "
             f"{_ctx}"
         )
