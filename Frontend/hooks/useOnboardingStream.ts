@@ -223,13 +223,15 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
     }
     abortRef.current = new AbortController()
 
-    // Add user message
-    const userMsg: OnboardingMessage = {
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
+    // Add user message (skip for greeting — empty messages shouldn't appear in UI)
+    if (message.trim()) {
+      const userMsg: OnboardingMessage = {
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      }
+      setMessages(prev => [...prev, userMsg])
     }
-    setMessages(prev => [...prev, userMsg])
     historyRef.current.push({ role: 'user', content: message })
 
     // Clear state for new response
@@ -444,6 +446,9 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                       setCurrentText('')
                       setIsThinking(false)
                       setThinkingText('')
+                      // Also set isStreaming false here so the streaming bubble
+                      // disappears in the same render as the message appearing
+                      setIsStreaming(false)
                     })
                     if (finalContent.trim()) {
                       historyRef.current.push({ role: 'assistant', content: finalContent })

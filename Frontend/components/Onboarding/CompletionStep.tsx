@@ -6,11 +6,13 @@
  * Features:
  *   - Animated SVG checkmark with stroke drawing animation
  *   - Pulsing glow rings with emerald/cyan gradient
+ *   - Confetti explosion from center outwards
+ *   - Firework bursts at staggered positions
  *   - Floating glitter particles with random trajectories
  *   - Staggered content reveal
  *   - CTA redirects to /chats (sandbox testing)
  *
- * Ref: User requested "big relaxing check animation with extra glitters and glow"
+ * Ref: User requested "confetti and shit exploding from the center outwards with fireworks"
  */
 
 import React, { useEffect, useState } from 'react'
@@ -22,27 +24,59 @@ interface CompletionStepProps {
   onContinue: () => void
 }
 
-// Generate stable particle configs at module level (avoids SSR hydration mismatch)
+// ─── Confetti pieces ───────────────────────────────────────────────────────────
+// Generate stable configs at module level (avoids SSR hydration mismatch)
+const CONFETTI_COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#34d399', '#f472b6', '#fbbf24', '#818cf8', '#2dd4bf']
+
+const CONFETTI = Array.from({ length: 80 }, (_, i) => ({
+  id: i,
+  // Spread from center outward in all directions
+  angle: (i * 4.5) % 360,
+  distance: 30 + (i * 7) % 400,
+  size: 4 + (i % 6) * 2,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  delay: (i * 0.02) % 0.8,
+  duration: 0.8 + (i % 4) * 0.3,
+  rotation: (i * 37) % 360,
+  shape: i % 3, // 0=square, 1=circle, 2=rectangle
+}))
+
+// ─── Firework bursts ──────────────────────────────────────────────────────────
+const FIREWORKS = Array.from({ length: 6 }, (_, i) => ({
+  id: i,
+  x: 15 + (i * 14) % 75,
+  y: 10 + (i * 11) % 60,
+  delay: 0.3 + i * 0.25,
+  color: CONFETTI_COLORS[i * 2 % CONFETTI_COLORS.length],
+  sparks: Array.from({ length: 8 }, (_, j) => ({
+    angle: j * 45,
+    distance: 20 + (j * 5),
+  })),
+}))
+
+// ─── Floating glitter ─────────────────────────────────────────────────────────
 const PARTICLES = Array.from({ length: 40 }, (_, i) => ({
   id: i,
   left: 5 + (i * 2.3) % 90,
   size: 2 + (i % 4),
   delay: (i * 0.15) % 3,
   duration: 2 + (i % 3) * 0.8,
-  color: ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#34d399'][i % 6],
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
   startY: 110 + (i % 5) * 8,
 }))
 
 export default function CompletionStep({ tenantName, onContinue }: CompletionStepProps) {
   const router = useRouter()
-  const [phase, setPhase] = useState(0) // 0=hidden, 1=check, 2=glow, 3=content
+  const [phase, setPhase] = useState(0) // 0=hidden, 1=check, 2=glow+confetti, 3=content
+  const [confettiDone, setConfettiDone] = useState(false)
 
   // Staggered reveal animation
   useEffect(() => {
     const timers = [
       setTimeout(() => setPhase(1), 100),   // Start check animation
-      setTimeout(() => setPhase(2), 900),   // Expand glow
-      setTimeout(() => setPhase(3), 1400),  // Show content
+      setTimeout(() => setPhase(2), 700),   // Confetti explosion + glow
+      setTimeout(() => setPhase(3), 1600),  // Show content
+      setTimeout(() => setConfettiDone(true), 3500), // Clean up confetti DOM
     ]
     return () => timers.forEach(clearTimeout)
   }, [])
@@ -66,7 +100,88 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         ${phase >= 2 ? 'opacity-60' : 'opacity-0'}
         bg-emerald-500/10`} />
 
-      {/* ─── Floating glitter particles ─── */}
+      {/* ─── CONFETTI EXPLOSION ─── */}
+      {phase >= 2 && !confettiDone && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-[20]">
+          {CONFETTI.map((c) => {
+            const rad = (c.angle * Math.PI) / 180
+            const tx = Math.cos(rad) * c.distance
+            const ty = Math.sin(rad) * c.distance
+            return (
+              <div
+                key={`confetti-${c.id}`}
+                className="absolute left-1/2 top-1/2"
+                style={{
+                  animation: `confettiBurst ${c.duration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${c.delay}s forwards`,
+                  '--tx': `${tx}px`,
+                  '--ty': `${ty}px`,
+                  '--rot': `${c.rotation + 720}deg`,
+                } as React.CSSProperties}
+              >
+                <div
+                  style={{
+                    width: c.shape === 2 ? c.size * 2.5 : c.size,
+                    height: c.size,
+                    backgroundColor: c.color,
+                    borderRadius: c.shape === 1 ? '50%' : c.shape === 2 ? '2px' : '1px',
+                    boxShadow: `0 0 ${c.size * 2}px ${c.color}80`,
+                  }}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ─── FIREWORK BURSTS ─── */}
+      {phase >= 2 && !confettiDone && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
+          {FIREWORKS.map((fw) => (
+            <div
+              key={`fw-${fw.id}`}
+              className="absolute"
+              style={{ left: `${fw.x}%`, top: `${fw.y}%` }}
+            >
+              {/* Central flash */}
+              <div
+                className="absolute -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: fw.color,
+                  boxShadow: `0 0 20px ${fw.color}, 0 0 40px ${fw.color}60`,
+                  animation: `fireworkFlash 0.6s ease-out ${fw.delay}s both`,
+                }}
+              />
+              {/* Sparks */}
+              {fw.sparks.map((spark, si) => {
+                const rad = (spark.angle * Math.PI) / 180
+                const sx = Math.cos(rad) * spark.distance
+                const sy = Math.sin(rad) * spark.distance
+                return (
+                  <div
+                    key={si}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{
+                      width: 3,
+                      height: 3,
+                      borderRadius: '50%',
+                      backgroundColor: fw.color,
+                      boxShadow: `0 0 8px ${fw.color}`,
+                      animation: `fireworkSpark 0.8s ease-out ${fw.delay + 0.05}s both`,
+                      '--sx': `${sx}px`,
+                      '--sy': `${sy}px`,
+                    } as React.CSSProperties}
+                  />
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ─── Floating glitter particles (continuous) ─── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {PARTICLES.map((p) => (
           <div
@@ -110,6 +225,16 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
               ${phase >= 2 ? 'opacity-100' : 'opacity-0'}
               bg-emerald-500/20 blur-xl animate-pulse`} />
 
+            {/* Shockwave ring */}
+            {phase >= 2 && (
+              <div 
+                className="absolute -inset-4 rounded-full border-2 border-emerald-400/40"
+                style={{
+                  animation: 'shockwave 1s ease-out forwards',
+                }}
+              />
+            )}
+
             {/* Main circle */}
             <div className={`relative w-28 h-28 rounded-full flex items-center justify-center
               transition-all duration-700 ease-out
@@ -144,6 +269,11 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
             <div className={`absolute -bottom-1 -left-3 transition-all duration-500 delay-900
               ${phase >= 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}>
               <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" style={{ animationDelay: '0.5s' }} />
+            </div>
+            <div className={`absolute top-0 -left-6 transition-all duration-500
+              ${phase >= 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}
+              style={{ animationDelay: '1.2s' }}>
+              <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" style={{ animationDelay: '0.8s' }} />
             </div>
           </div>
         </div>
@@ -203,6 +333,65 @@ export default function CompletionStep({ tenantName, onContinue }: CompletionSte
         </div>
       </div>
 
+      {/* ─── Confetti & Firework animations ─── */}
+      <style jsx>{`
+        @keyframes confettiBurst {
+          0% {
+            transform: translate(-50%, -50%) rotate(0deg) scale(1);
+            opacity: 1;
+          }
+          70% {
+            opacity: 1;
+          }
+          100% {
+            transform: translate(
+              calc(-50% + var(--tx)),
+              calc(-50% + var(--ty))
+            ) rotate(var(--rot)) scale(0.3);
+            opacity: 0;
+          }
+        }
+
+        @keyframes fireworkFlash {
+          0% {
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+          }
+          30% {
+            transform: translate(-50%, -50%) scale(3);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+          }
+        }
+
+        @keyframes fireworkSpark {
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(
+              calc(-50% + var(--sx)),
+              calc(-50% + var(--sy))
+            ) scale(0);
+            opacity: 0;
+          }
+        }
+
+        @keyframes shockwave {
+          0% {
+            transform: scale(1);
+            opacity: 0.6;
+          }
+          100% {
+            transform: scale(4);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </div>
   )
 }
