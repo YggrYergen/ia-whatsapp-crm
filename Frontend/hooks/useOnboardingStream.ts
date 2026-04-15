@@ -446,9 +446,11 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                       setCurrentText('')
                       setIsThinking(false)
                       setThinkingText('')
-                      // Also set isStreaming false here so the streaming bubble
-                      // disappears in the same render as the message appearing
-                      setIsStreaming(false)
+                      // NOTE: Do NOT set isStreaming=false here! In multi-turn flows
+                      // (tool calls → follow-up responses), the first 'done' event fires
+                      // BEFORE the follow-up text arrives. Setting isStreaming=false kills
+                      // the streaming bubble for all subsequent text_delta events.
+                      // isStreaming is only set to false in the outer finally block.
                     })
                     if (finalContent.trim()) {
                       historyRef.current.push({ role: 'assistant', content: finalContent })
