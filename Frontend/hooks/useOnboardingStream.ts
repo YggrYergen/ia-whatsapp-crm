@@ -287,6 +287,8 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
       // stale closure inside this async loop and can't be used for logic.
       // This flag correctly tracks whether we're in the thinking phase.
       let thinkingActive = false
+      let configCompleteReceived = false
+      let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null
 
       // Activity-based timeout: resets every time we receive data.
       // This prevents false timeouts on long sessions (10+ tool calls)
@@ -410,6 +412,11 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                   case 'config_complete': {
                     setIsConfigComplete(true)
                     setGeneratedPrompt(data.system_prompt || '')
+                    configCompleteReceived = true
+                    if (autoCompleteTimer) {
+                      clearTimeout(autoCompleteTimer)
+                      autoCompleteTimer = null
+                    }
                     break
                   }
 
@@ -433,6 +440,27 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                     setIsThinking(false)
                     setThinkingText('')
                     thinkingLines = []
+
+                    // ── Auto-complete fallback ────────────────────────────
+                    // If the backend says all fields are done but config_complete
+                    // hasn't arrived, start a 10s fallback timer. This handles
+                    // edge cases where the model never calls mark_configuration_complete.
+                    // FIX 2026-04-15: added as client-side safety net.
+                    if (data.all_complete && !configCompleteReceived) {
+                      if (autoCompleteTimer) clearTimeout(autoCompleteTimer)
+                      autoCompleteTimer = setTimeout(() => {
+                        if (!configCompleteReceived) {
+                          console.warn(
+                            `[${_where}] Auto-completing: all fields done but config_complete never received | tenant=${tenantId}`
+                          )
+                          Sentry.captureMessage(
+                            'Onboarding auto-complete fallback triggered (frontend)',
+                            'warning'
+                          )
+                          setIsConfigComplete(true)
+                        }
+                      }, 10_000)
+                    }
                     break
                   }
 
@@ -472,6 +500,10 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
         }
       } finally {
         clearTimeout(timeoutId)
+        if (autoCompleteTimer) {
+          clearTimeout(autoCompleteTimer)
+          autoCompleteTimer = null
+        }
       }
     } catch (fetchErr: any) {
       if (fetchErr.name === 'AbortError') {

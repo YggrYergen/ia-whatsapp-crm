@@ -225,6 +225,7 @@ async def onboarding_chat(request: Request):
             tool_calls_buffer = []  # Collect tool calls for post-processing
             gen_step = "stream_main"
             last_response_id = None  # Track response ID for chaining follow-ups
+            config_complete_sent = False  # Track whether config_complete SSE was sent
             
             try:
                 async for event in adapter.generate_response_stream(
@@ -330,6 +331,7 @@ async def onboarding_chat(request: Request):
                                 "summary": summary,
                                 "all_fields": fields_status,
                             })
+                            config_complete_sent = True
                         
                         else:
                             # Unknown tool name — log it
@@ -369,17 +371,29 @@ async def onboarding_chat(request: Request):
                             f"response_id={last_response_id[:16] if last_response_id else 'NONE'}..."
                         )
                 
-                # If there were tool calls, we need to continue the conversation
-                # by feeding tool results back using previous_response_id chaining.
+                # ── Follow-up loop ──────────────────────────────────────
+                # If there were tool calls, continue the conversation by feeding
+                # tool results back using previous_response_id chaining.
+                # This is a LOOP because a follow-up can itself produce more
+                # tool calls (e.g., report last field → mark_configuration_complete
+                # in the same chained response). The old code only handled
+                # thinking/text_delta/done in follow-ups — tool_call events were
+                # SILENTLY DROPPED, causing the post-completion flow to get stuck
+                # (discovered 2026-04-15).
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
-                if tool_calls_buffer:
-                    gen_step = "tool_followup"
+                followup_round = 0
+                MAX_FOLLOWUP_ROUNDS = 5  # Safety limit to prevent infinite loops
+
+                while tool_calls_buffer and followup_round < MAX_FOLLOWUP_ROUNDS:
+                    followup_round += 1
+                    gen_step = f"tool_followup_r{followup_round}"
                     logger.info(
-                        f"🔄 [CONFIG-AGENT] Follow-up call with {len(tool_calls_buffer)} tool results | "
-                        f"tenant={tenant_id} | response_id={last_response_id[:20] if last_response_id else 'NONE'}..."
+                        f"🔄 [CONFIG-AGENT] Follow-up round {followup_round} with "
+                        f"{len(tool_calls_buffer)} tool results | tenant={tenant_id} | "
+                        f"response_id={last_response_id[:20] if last_response_id else 'NONE'}..."
                     )
-                    
-                    # Build ONLY the function_call_output items for the follow-up.
+
+                    # Build function_call_output items for the follow-up.
                     # The Responses API chains via previous_response_id — we don't resend history.
                     followup_input = []
                     for tc in tool_calls_buffer:
@@ -396,29 +410,124 @@ async def onboarding_chat(request: Request):
                             })
                         else:
                             result = json.dumps({"status": "ok"})
-                        
+
                         followup_input.append({
                             "type": "function_call_output",
                             "call_id": tc["call_id"],
                             "output": result,
                         })
-                    
-                    # Follow-up call using previous_response_id chaining
+
+                    # Clear buffer — will be re-populated if follow-up has tool calls
+                    prev_tool_count = len(tool_calls_buffer)
+                    tool_calls_buffer = []
+
                     try:
                         async for follow_event in adapter.generate_response_stream(
                             system_prompt=ONBOARDING_SYSTEM_PROMPT,
-                            message_history=followup_input,  # function_call_output items — passed through by adapter
+                            message_history=followup_input,
                             tools=ONBOARDING_TOOLS,
                             reasoning_effort="medium",
                             previous_response_id=last_response_id,
                         ):
                             follow_type = follow_event.get("type")
-                            
+
                             if follow_type == "thinking":
                                 yield _format_sse("thinking", {"text": follow_event["text"]})
+
                             elif follow_type == "text_delta":
                                 yield _format_sse("text_delta", {"delta": follow_event["delta"]})
+
+                            elif follow_type == "tool_call":
+                                # ── Handle tool calls in follow-up ──────────────
+                                # FIX 2026-04-15: This handler was MISSING. Tool calls
+                                # in follow-up responses (especially mark_configuration_complete)
+                                # were silently dropped, breaking the entire post-completion flow.
+                                fu_tool_name = follow_event.get("name", "")
+                                fu_tool_args_raw = follow_event.get("arguments", "{}")
+                                fu_tool_call_id = follow_event.get("call_id", "")
+
+                                try:
+                                    fu_tool_args = json.loads(fu_tool_args_raw) if isinstance(fu_tool_args_raw, str) else fu_tool_args_raw
+                                except json.JSONDecodeError as fu_json_err:
+                                    _msg = (
+                                        f"[{_WHERE}:{gen_step}] Follow-up tool args JSON parse failed | "
+                                        f"tenant={tenant_id} | tool={fu_tool_name} | "
+                                        f"error={str(fu_json_err)[:200]}"
+                                    )
+                                    logger.error(_msg, exc_info=True)
+                                    sentry_sdk.capture_exception(fu_json_err)
+                                    await send_discord_alert(
+                                        title=f"⚠️ Config Agent: Follow-up Tool Args Invalid (r{followup_round})",
+                                        description=(
+                                            f"**Where:** `{_WHERE}:{gen_step}`\n"
+                                            f"**Tool:** `{fu_tool_name}`\n"
+                                            f"**Tenant:** `{tenant_id}`\n"
+                                            f"**Error:** ```{str(fu_json_err)[:200]}```"
+                                        ),
+                                        severity="warning", error=fu_json_err
+                                    )
+                                    fu_tool_args = {}
+
+                                # Buffer for potential next follow-up round
+                                tool_calls_buffer.append({
+                                    "call_id": fu_tool_call_id,
+                                    "name": fu_tool_name,
+                                    "arguments": fu_tool_args,
+                                })
+
+                                if fu_tool_name == "report_configuration_field":
+                                    fu_field = fu_tool_args.get("field_name", "")
+                                    fu_value = fu_tool_args.get("field_value", "")
+                                    fu_conf = fu_tool_args.get("confidence", "inferred")
+
+                                    fields_status[fu_field] = True
+                                    await _save_field(tenant_id, fu_field, fu_value)
+
+                                    yield _format_sse("field_update", {
+                                        "field": fu_field,
+                                        "value": fu_value,
+                                        "confidence": fu_conf,
+                                        "complete": True,
+                                    })
+
+                                    completed = sum(1 for f in ONBOARDING_FIELDS if fields_status.get(f, False))
+                                    total = len(ONBOARDING_FIELDS)
+                                    yield _format_sse("progress", {
+                                        "fields_complete": completed,
+                                        "fields_total": total,
+                                        "percentage": round((completed / total) * 100),
+                                    })
+                                    logger.info(
+                                        f"📝 [CONFIG-AGENT] Field reported (follow-up r{followup_round}): "
+                                        f"{fu_field}='{fu_value[:40]}' | progress={completed}/{total} | "
+                                        f"tenant={tenant_id}"
+                                    )
+
+                                elif fu_tool_name == "mark_configuration_complete":
+                                    fu_prompt = fu_tool_args.get("generated_prompt", "")
+                                    fu_summary = fu_tool_args.get("summary", "")
+
+                                    await _finalize_onboarding(tenant_id, fu_prompt, fu_summary)
+
+                                    yield _format_sse("config_complete", {
+                                        "system_prompt": fu_prompt,
+                                        "summary": fu_summary,
+                                        "all_fields": fields_status,
+                                    })
+                                    config_complete_sent = True
+                                    logger.info(
+                                        f"🎉 [CONFIG-AGENT] mark_configuration_complete processed in "
+                                        f"follow-up round {followup_round} | tenant={tenant_id}"
+                                    )
+
+                                else:
+                                    logger.warning(
+                                        f"[{_WHERE}:{gen_step}] Unknown tool in follow-up: "
+                                        f"'{fu_tool_name}' | tenant={tenant_id}"
+                                    )
+
                             elif follow_type == "done":
+                                last_response_id = follow_event.get("response_id") or last_response_id
                                 follow_content = follow_event.get("content", "")
                                 yield _format_sse("done", {
                                     "content": follow_content,
@@ -427,27 +536,37 @@ async def onboarding_chat(request: Request):
                                     ),
                                     "usage": follow_event.get("usage"),
                                 })
-                                # Persist follow-up assistant message (non-fatal)
                                 if follow_content.strip():
                                     await _persist_message(
                                         tenant_id, "assistant", follow_content,
-                                        metadata={"is_followup": True, "tool_calls_processed": len(tool_calls_buffer)},
+                                        metadata={
+                                            "is_followup": True,
+                                            "followup_round": followup_round,
+                                            "tool_calls_processed": prev_tool_count,
+                                        },
                                     )
+                                logger.info(
+                                    f"📨 [CONFIG-AGENT] Follow-up r{followup_round} done | "
+                                    f"tenant={tenant_id} | text_len={len(follow_content)} | "
+                                    f"new_tool_calls={len(tool_calls_buffer)}"
+                                )
+
                     except Exception as followup_err:
                         _tb = tb_module.format_exc()
                         _msg = (
                             f"[{_WHERE}:{gen_step}] Follow-up stream FAILED | "
-                            f"tenant={tenant_id} | tool_calls={len(tool_calls_buffer)} | "
+                            f"tenant={tenant_id} | round={followup_round} | "
+                            f"tool_calls={prev_tool_count} | "
                             f"response_id={last_response_id} | "
                             f"env={settings.ENVIRONMENT} | error={str(followup_err)[:200]}"
                         )
                         logger.error(_msg, exc_info=True)
                         sentry_sdk.capture_exception(followup_err)
                         await send_discord_alert(
-                            title="❌ Config Agent: Follow-up Stream Failed",
+                            title=f"❌ Config Agent: Follow-up Round {followup_round} Failed",
                             description=(
                                 f"**Where:** `{_WHERE}:{gen_step}`\n"
-                                f"**What:** Follow-up stream after {len(tool_calls_buffer)} tool calls failed\n"
+                                f"**What:** Follow-up stream failed (round {followup_round})\n"
                                 f"**Tenant:** `{tenant_id}`\n"
                                 f"**Response ID:** `{last_response_id}`\n"
                                 f"**Env:** {settings.ENVIRONMENT}\n"
@@ -457,6 +576,91 @@ async def onboarding_chat(request: Request):
                             severity="error", error=followup_err
                         )
                         yield _format_sse("error", {"message": "Error en respuesta de seguimiento del agente."})
+                        break  # Exit loop on error
+
+                # ── Safety net: auto-completion if all fields done ──────────
+                # If all 10 fields are complete but mark_configuration_complete
+                # was never called by the model, proactively finalize.
+                if not config_complete_sent and all(
+                    fields_status.get(f, False) for f in ONBOARDING_FIELDS
+                ):
+                    _msg = (
+                        f"[{_WHERE}:safety_net] All fields complete but mark_configuration_complete "
+                        f"never called — auto-finalizing | tenant={tenant_id} | "
+                        f"followup_rounds={followup_round} | env={settings.ENVIRONMENT}"
+                    )
+                    logger.warning(_msg)
+                    sentry_sdk.capture_message(_msg, level="warning")
+                    await send_discord_alert(
+                        title="⚠️ Config Agent: Auto-Finalization Triggered",
+                        description=(
+                            f"**Where:** `{_WHERE}:safety_net`\n"
+                            f"**What:** Model never called mark_configuration_complete "
+                            f"despite all fields being done\n"
+                            f"**Tenant:** `{tenant_id}`\n"
+                            f"**Follow-up rounds:** {followup_round}\n"
+                            f"**Env:** {settings.ENVIRONMENT}\n"
+                            f"**Action:** Auto-generating basic prompt and finalizing"
+                        ),
+                        severity="warning",
+                    )
+
+                    try:
+                        from app.infrastructure.database.supabase_client import SupabasePooler
+                        db = await SupabasePooler.get_client()
+                        onb_result = await db.table("tenant_onboarding") \
+                            .select("*") \
+                            .eq("tenant_id", tenant_id) \
+                            .maybe_single() \
+                            .execute()
+
+                        if onb_result.data:
+                            row = onb_result.data
+                            auto_prompt = (
+                                f"Eres el asistente virtual de WhatsApp de {row.get('business_name', 'el negocio')}. "
+                                f"Tipo de negocio: {row.get('business_type', 'no especificado')}. "
+                                f"Descripción: {row.get('business_description', 'no disponible')}. "
+                                f"Público objetivo: {row.get('target_audience', 'general')}. "
+                                f"Horario: {row.get('business_hours', 'no especificado')}. "
+                                f"Tono: {row.get('tone_of_voice', 'profesional')}. "
+                                f"Instrucciones especiales: {row.get('special_instructions', 'ninguna')}. "
+                                f"Saludo inicial: {row.get('greeting_message', 'Hola, ¿en qué puedo ayudarte?')}. "
+                                f"Reglas de escalación: {row.get('escalation_rules', 'derivar a humano cuando sea necesario')}."
+                            )
+                            auto_summary = f"Auto-configuración de {row.get('business_name', 'negocio')} (safety net)."
+
+                            await _finalize_onboarding(tenant_id, auto_prompt, auto_summary)
+
+                            yield _format_sse("config_complete", {
+                                "system_prompt": auto_prompt,
+                                "summary": auto_summary,
+                                "all_fields": fields_status,
+                                "auto_finalized": True,
+                            })
+                            config_complete_sent = True
+                            logger.info(
+                                f"🔧 [CONFIG-AGENT] Auto-finalized onboarding | "
+                                f"tenant={tenant_id} | prompt_len={len(auto_prompt)}"
+                            )
+                    except Exception as safety_err:
+                        _tb = tb_module.format_exc()
+                        logger.error(
+                            f"[{_WHERE}:safety_net] Auto-finalization FAILED | "
+                            f"tenant={tenant_id} | error={str(safety_err)[:200]}",
+                            exc_info=True
+                        )
+                        sentry_sdk.capture_exception(safety_err)
+                        await send_discord_alert(
+                            title="❌ Config Agent: Auto-Finalization FAILED",
+                            description=(
+                                f"**Where:** `{_WHERE}:safety_net`\n"
+                                f"**What:** Safety net tried to auto-finalize but failed\n"
+                                f"**Tenant:** `{tenant_id}`\n"
+                                f"**Env:** {settings.ENVIRONMENT}\n"
+                                f"**Error:** ```{str(safety_err)[:300]}```"
+                            ),
+                            severity="error", error=safety_err
+                        )
                             
             except Exception as stream_err:
                 _tb = tb_module.format_exc()
