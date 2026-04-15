@@ -144,7 +144,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
             }))
 
           setMessages(restoredMessages)
-          historyRef.current = resisted
+          historyRef.current = persisted
             .filter((m: any) => m.role === 'user' || m.role === 'assistant')
             .map((m: any) => ({ role: m.role, content: m.content }))
         } else {
