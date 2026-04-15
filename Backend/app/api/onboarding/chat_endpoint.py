@@ -741,6 +741,7 @@ async def _save_field(tenant_id: str, field_name: str, field_value: str):
             "business_name", "business_type", "business_description",
             "target_audience", "business_hours", "tone_of_voice",
             "special_instructions", "greeting_message", "escalation_rules",
+            "phone_number",
         }
         
         if field_name in valid_columns:

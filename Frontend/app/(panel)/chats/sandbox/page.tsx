@@ -4,15 +4,16 @@
  * /chats/sandbox — Standalone sandbox chat for newcomers to test their AI assistant.
  *
  * Architecture:
- *   - ZERO dependency on `contacts` table — no contact row needed.
- *   - Uses the tenant's `system_prompt` directly from the `tenants` table.
- *   - Sends messages to `/api/simulate` with a virtual phone number.
- *   - Messages are stored in `messages` against a sandbox pseudo-contact
- *     that is auto-created if it doesn't exist.
+ *   - Auto-creates a sandbox pseudo-contact on first visit.
+ *   - Uses POST /api/sandbox/chat — 100% ISOLATED from the WhatsApp webhook pipeline.
+ *   - The backend uses the OpenAI Responses API (NOT Chat Completions).
+ *   - Messages are stored in `messages` table; Supabase Realtime delivers to UI.
  *   - Always accessible at `/chats/sandbox` regardless of onboarding state.
  *
- * This ensures newcomers can test even if the onboarding flow breaks —
- * as long as they have a tenant, they can chat.
+ * ISOLATION:
+ *   - /api/sandbox/chat does NOT import TenantContext, ProcessMessageUseCase,
+ *     MetaGraphAPIClient, LLMFactory, or tool_registry.
+ *   - Zero risk to the production WhatsApp webhook path.
  *
  * Observability: All error paths → console.error + Sentry.
  */
@@ -199,22 +200,23 @@ export default function SandboxPage() {
         return
       }
 
-      // Trigger simulation endpoint
-      const resp = await fetch('/api/simulate', {
+      // Call the new isolated sandbox endpoint (uses Responses API, NOT ProcessMessageUseCase)
+      const resp = await fetch('/api/sandbox/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: SANDBOX_PHONE,
+          tenant_id: currentTenantId,
+          contact_id: sandboxContactId,
           message: trimmed,
-          tenantId: currentTenantId,
         }),
       })
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => 'Unknown')
-        console.error(`[${_where}] Simulate failed: HTTP ${resp.status} — ${errText.slice(0, 200)}`)
-        Sentry.captureMessage(`sandbox simulate HTTP ${resp.status}`, 'error')
-        // Don't set error — the Realtime sub might still deliver the response
+        console.error(`[${_where}] Sandbox API failed: HTTP ${resp.status} — ${errText.slice(0, 200)}`)
+        Sentry.captureMessage(`sandbox chat HTTP ${resp.status}: ${errText.slice(0, 100)}`, 'error')
+        setError(`Error del asistente (HTTP ${resp.status}). Intenta de nuevo.`)
+        setIsProcessing(false)
       }
     } catch (err: any) {
       console.error(`[${_where}] Send crashed:`, err)

@@ -35,6 +35,9 @@ from app.modules.integrations.google_oauth_router import router as google_oauth_
 from app.api.onboarding.provision import router as onboarding_provision_router
 from app.api.onboarding.chat_endpoint import router as onboarding_chat_router
 
+# Block R: Sandbox chat — isolated from webhook pipeline, uses Responses API
+from app.api.sandbox.chat_endpoint import router as sandbox_chat_router
+
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy
 from app.infrastructure.llm_providers.gemini_adapter import GeminiStrategy
@@ -276,6 +279,9 @@ def create_app() -> FastAPI:
     # Block R: Onboarding routes
     app.include_router(onboarding_provision_router)
     app.include_router(onboarding_chat_router)
+    
+    # Block R: Sandbox chat — isolated, uses Responses API
+    app.include_router(sandbox_chat_router)
 
     @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():

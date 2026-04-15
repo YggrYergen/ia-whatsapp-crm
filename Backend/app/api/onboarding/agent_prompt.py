@@ -69,7 +69,7 @@ Estos son los campos que necesitas recopilar (en cualquier orden natural):
 8. **special_instructions** — ¿Alguna regla especial? (ej: "nunca dar precios", "siempre pedir nombre")
 9. **greeting_message** — ¿Cómo quiere que salude el asistente?
 10. **escalation_rules** — ¿Cuándo debe el bot transferir a un humano?
-11. **phone_number** — Número de WhatsApp del usuario/empresa (para configurar la conexión futura)
+11. **phone_number** — Tu número personal de WhatsApp o celular (para que NOSOTROS podamos contactarte a TI — soporte, avisos, facturación). NO es el número del asistente del negocio.
 
 ### PASO 3: GENERAR PROMPT DEL SISTEMA
 Cuando TODOS los campos estén completos, genera un prompt de sistema profesional para el asistente WhatsApp del usuario. El prompt debe seguir la estructura del ejemplo de referencia (abajo).
