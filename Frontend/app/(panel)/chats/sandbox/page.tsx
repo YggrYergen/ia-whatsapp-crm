@@ -15,11 +15,16 @@
  *     MetaGraphAPIClient, LLMFactory, or tool_registry.
  *   - Zero risk to the production WhatsApp webhook path.
  *
+ * Feedback system:
+ *   - Each message bubble has an inline comment input (appears on hover/tap).
+ *   - "Enviar Prueba" saves the annotated chat to `test_feedback` (history + notes).
+ *   - No new DB schema required — uses existing history/notes JSONB columns.
+ *
  * Observability: All error paths → console.error + Sentry.
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Bot, Send, ArrowLeft, Sparkles, RefreshCw, AlertCircle } from 'lucide-react'
+import { Bot, Send, ArrowLeft, Sparkles, RefreshCw, AlertCircle, MessageSquare, CheckCircle2, Loader2 } from 'lucide-react'
 import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -47,6 +52,14 @@ export default function SandboxPage() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const initRef = useRef(false) // Prevent double init in StrictMode
+
+  // ─── Feedback / annotation state ───
+  // comments: { [messageId]: string } — draft comment per bubble
+  // sentFeedback: true when submit succeeded
+  const [comments, setComments] = useState<Record<string, string>>({})
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false)
+  const [feedbackSent, setFeedbackSent] = useState(false)
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -180,6 +193,7 @@ export default function SandboxPage() {
     setInputValue('')
     setError(null)
     setIsProcessing(true)
+    setFeedbackSent(false) // Reset feedback state on new message
 
     const supabase = createClient()
     const _where = 'SandboxPage.handleSend'
@@ -252,12 +266,67 @@ export default function SandboxPage() {
       }
 
       setMessages([])
+      setComments({})
+      setFeedbackSent(false)
       console.info(`[${_where}] Sandbox messages cleared`)
     } catch (err: any) {
       console.error(`[${_where}] Reset crashed:`, err)
       Sentry.captureException(err, { extra: { where: _where } })
     }
   }, [sandboxContactId])
+
+  // ─── Submit annotated test to admin-feedback ───
+  const handleSubmitFeedback = useCallback(async () => {
+    if (messages.length === 0 || isSendingFeedback) return
+
+    setIsSendingFeedback(true)
+    setError(null)
+    const _where = 'SandboxPage.handleSubmitFeedback'
+
+    try {
+      const supabase = createClient()
+
+      // Build history array (matches test_feedback.history schema)
+      const history = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+      }))
+
+      // Build notes array — only messages that have a comment
+      const notes = messages
+        .filter(m => comments[m.id]?.trim())
+        .map(m => ({
+          content: m.content,   // Used by admin-feedback page to match message
+          note: comments[m.id].trim(),
+        }))
+
+      const { error: insertErr } = await supabase
+        .from('test_feedback')
+        .insert({
+          tenant_id: currentTenantId,
+          history,
+          notes,
+        })
+
+      if (insertErr) {
+        console.error(`[${_where}] test_feedback INSERT failed: ${insertErr.message}`)
+        Sentry.captureMessage(`test_feedback insert failed: ${insertErr.message}`, 'error')
+        setError('No se pudo enviar la prueba. Intenta de nuevo.')
+        return
+      }
+
+      setFeedbackSent(true)
+      setActiveCommentId(null)
+      console.info(`[${_where}] Feedback submitted | messages=${messages.length} notes=${notes.length}`)
+    } catch (err: any) {
+      console.error(`[${_where}] Submit feedback crashed:`, err)
+      Sentry.captureException(err, { extra: { where: _where, tenant_id: currentTenantId } })
+      setError('Error enviando feedback.')
+    } finally {
+      setIsSendingFeedback(false)
+    }
+  }, [messages, comments, currentTenantId, isSendingFeedback])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -295,6 +364,8 @@ export default function SandboxPage() {
     )
   }
 
+  const hasAnnotations = Object.values(comments).some(c => c.trim())
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#efeae2] overflow-hidden">
       {/* ─── Header ─── */}
@@ -330,6 +401,32 @@ export default function SandboxPage() {
             <RefreshCw size={14} />
             <span className="hidden sm:inline">Reiniciar</span>
           </button>
+
+          {/* ─── Enviar Prueba ─── */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleSubmitFeedback}
+              disabled={isSendingFeedback || feedbackSent}
+              title={feedbackSent ? 'Prueba enviada' : 'Enviar chat anotado al equipo'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border
+                ${feedbackSent
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 cursor-default'
+                  : isSendingFeedback
+                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait'
+                    : hasAnnotations
+                      ? 'bg-amber-500 text-white border-amber-400 hover:bg-amber-400 shadow-sm shadow-amber-500/20'
+                      : 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700'
+                }`}
+            >
+              {feedbackSent ? (
+                <><CheckCircle2 size={14} /><span className="hidden sm:inline">Enviado</span></>
+              ) : isSendingFeedback ? (
+                <><Loader2 size={14} className="animate-spin" /><span className="hidden sm:inline">Enviando...</span></>
+              ) : (
+                <><MessageSquare size={14} /><span className="hidden sm:inline">Enviar prueba</span></>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -368,22 +465,73 @@ export default function SandboxPage() {
 
       {/* ─── Messages area ─── */}
       {(messages.length > 0 || isProcessing) && (
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`relative max-w-[80%] md:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm text-[14px]
-                ${msg.role === 'user'
-                  ? 'bg-[#d9fdd3] rounded-tr-none'
-                  : 'bg-white rounded-tl-none'
-                }`}
-              >
-                <p className={messageBubbleStyles}>{formatWhatsAppMessage(msg.content)}</p>
-                <div className="text-[9px] text-slate-500/70 text-right mt-1 font-medium">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2">
+          {messages.map((msg) => {
+            const isCommentOpen = activeCommentId === msg.id
+            const commentText = comments[msg.id] || ''
+            const hasComment = commentText.trim().length > 0
+
+            return (
+              <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} gap-0.5`}>
+                {/* Message bubble */}
+                <div
+                  className={`group relative max-w-[80%] md:max-w-[70%] px-4 py-2.5 rounded-2xl shadow-sm text-[14px] cursor-pointer
+                    ${msg.role === 'user' ? 'bg-[#d9fdd3] rounded-tr-none' : 'bg-white rounded-tl-none'}
+                    ${hasComment ? 'ring-2 ring-amber-400/50' : ''}
+                  `}
+                  onClick={() => setActiveCommentId(isCommentOpen ? null : msg.id)}
+                  title="Toca para añadir observación"
+                >
+                  <p className={messageBubbleStyles}>{formatWhatsAppMessage(msg.content)}</p>
+                  <div className="text-[9px] text-slate-500/70 text-right mt-1 font-medium flex items-center justify-end gap-1.5">
+                    {hasComment && <MessageSquare size={9} className="text-amber-500" />}
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+
+                  {/* Hover hint — desktop only */}
+                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 hidden group-hover:flex items-center gap-1 bg-slate-800 text-white text-[9px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap pointer-events-none opacity-80">
+                    <MessageSquare size={8} /> Añadir nota
+                  </div>
                 </div>
+
+                {/* Inline comment input */}
+                {isCommentOpen && (
+                  <div className={`w-full max-w-[80%] md:max-w-[70%] ${msg.role === 'user' ? 'self-end' : 'self-start'}`}>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2 shadow-sm mt-0.5">
+                      <MessageSquare size={13} className="text-amber-500 shrink-0 mt-1.5" />
+                      <textarea
+                        autoFocus
+                        rows={2}
+                        value={commentText}
+                        onChange={(e) => setComments(prev => ({ ...prev, [msg.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setActiveCommentId(null) }}
+                        placeholder="Observación sobre esta respuesta..."
+                        className="flex-1 text-[11px] text-slate-700 bg-transparent resize-none outline-none placeholder-amber-400/70 leading-relaxed"
+                      />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setActiveCommentId(null) }}
+                        className="text-[9px] font-bold text-amber-600 hover:text-amber-700 shrink-0 mt-1 uppercase tracking-wide"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Saved comment preview (collapsed) */}
+                {!isCommentOpen && hasComment && (
+                  <div
+                    className={`text-[10px] text-amber-600 font-medium flex items-center gap-1 cursor-pointer hover:text-amber-700 max-w-[80%] truncate
+                      ${msg.role === 'user' ? 'self-end' : 'self-start'}`}
+                    onClick={() => setActiveCommentId(msg.id)}
+                  >
+                    <MessageSquare size={9} />
+                    {commentText.slice(0, 60)}{commentText.length > 60 ? '…' : ''}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
 
           {/* Processing indicator */}
           {isProcessing && (
