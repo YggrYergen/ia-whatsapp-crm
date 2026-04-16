@@ -367,11 +367,17 @@ export const Vortex = (props: VortexProps) => {
   };
 
   const resize = (canvas: HTMLCanvasElement) => {
-    const { innerWidth, innerHeight } = window;
-    canvas.width = innerWidth;
-    canvas.height = innerHeight;
-    center[0] = 0.5 * canvas.width;
-    center[1] = 0.5 * canvas.height;
+    // Use the container's actual rendered dimensions, NOT window.inner* —
+    // on mobile iOS/Android the window dimensions include the browser chrome
+    // (address bar, nav bar) which causes the canvas to overflow the CSS h-[100dvh]
+    // container, producing black bars at top/bottom.
+    const container = containerRef.current;
+    const w = container ? container.clientWidth : window.innerWidth;
+    const h = container ? container.clientHeight : window.innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+    center[0] = 0.5 * w;
+    center[1] = 0.5 * h;
   };
 
   const renderGlow = (
