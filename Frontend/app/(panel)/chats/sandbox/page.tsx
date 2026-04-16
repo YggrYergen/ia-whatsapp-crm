@@ -51,7 +51,7 @@ export default function SandboxPage() {
   const [sandboxContactId, setSandboxContactId] = useState<string | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const initRef = useRef(false) // Prevent double init in StrictMode
+  const initRef = useRef<string | null>(null) // Track which tenantId was initialized (prevents StrictMode double-init)
 
   // ─── Feedback / annotation state ───
   // comments: { [messageId]: string } — draft comment per bubble
@@ -68,8 +68,15 @@ export default function SandboxPage() {
 
   // ─── Initialize sandbox contact (auto-provisioning) ───
   useEffect(() => {
-    if (!currentTenantId || initRef.current) return
-    initRef.current = true
+    if (!currentTenantId || initRef.current === currentTenantId) return
+    initRef.current = currentTenantId
+
+    // Reset state for new tenant (superadmin tenant switch)
+    setMessages([])
+    setSandboxContactId(null)
+    setComments({})
+    setFeedbackSent(false)
+    setError(null)
 
     const initSandbox = async () => {
       const _where = 'SandboxPage.initSandbox'
@@ -246,34 +253,44 @@ export default function SandboxPage() {
     inputRef.current?.focus()
   }, [inputValue, isProcessing, sandboxContactId, currentTenantId])
 
-  // ─── Reset sandbox ───
   const handleReset = useCallback(async () => {
-    if (!sandboxContactId || !confirm('¿Borrar todos los mensajes de prueba?')) return
+    if (!sandboxContactId || !currentTenantId) {
+      console.warn('[SandboxPage.handleReset] No sandboxContactId or tenantId — aborting')
+      return
+    }
+    if (!confirm('¿Borrar todos los mensajes de prueba?')) return
 
     const supabase = createClient()
     const _where = 'SandboxPage.handleReset'
 
     try {
-      const { error: delErr } = await supabase
+      // Delete messages scoped to this contact AND this tenant (defense in depth)
+      const { error: delErr, count } = await supabase
         .from('messages')
-        .delete()
+        .delete({ count: 'exact' })
         .eq('contact_id', sandboxContactId)
+        .eq('tenant_id', currentTenantId)
 
       if (delErr) {
-        console.error(`[${_where}] Delete failed: ${delErr.message}`)
-        Sentry.captureMessage(`sandbox reset failed: ${delErr.message}`, 'error')
+        const errMsg = `[${_where}] Delete failed | contact=${sandboxContactId} | tenant=${currentTenantId} | error=${delErr.message}`
+        console.error(errMsg)
+        Sentry.captureMessage(errMsg, 'error')
+        setError('Error al reiniciar el chat. Intenta de nuevo.')
         return
       }
 
       setMessages([])
       setComments({})
       setFeedbackSent(false)
-      console.info(`[${_where}] Sandbox messages cleared`)
+      setError(null)
+      console.info(`[${_where}] Sandbox messages cleared | deleted=${count} | contact=${sandboxContactId}`)
     } catch (err: any) {
-      console.error(`[${_where}] Reset crashed:`, err)
-      Sentry.captureException(err, { extra: { where: _where } })
+      const errMsg = `[${_where}] Reset crashed | error=${String(err).slice(0, 300)}`
+      console.error(errMsg, err)
+      Sentry.captureException(err, { extra: { where: _where, contact_id: sandboxContactId, tenant_id: currentTenantId } })
+      setError('Error inesperado al reiniciar.')
     }
-  }, [sandboxContactId])
+  }, [sandboxContactId, currentTenantId])
 
   // ─── Submit annotated test to admin-feedback ───
   const handleSubmitFeedback = useCallback(async () => {
