@@ -745,9 +745,12 @@ async def _save_field(tenant_id: str, field_name: str, field_value: str):
         }
         
         if field_name in valid_columns:
-            await db.table("tenant_onboarding").update({
+            # Use upsert so reset users (whose onboarding row was deleted) get a row
+            # created on the first field write, rather than UPDATE hitting 0 rows silently.
+            await db.table("tenant_onboarding").upsert({
+                "tenant_id": tenant_id,
                 field_name: field_value,
-            }).eq("tenant_id", tenant_id).execute()
+            }, on_conflict="tenant_id").execute()
         elif field_name == "services_offered":
             # Services is JSONB — store as array
             try:
@@ -760,9 +763,10 @@ async def _save_field(tenant_id: str, field_name: str, field_value: str):
                 )
                 sentry_sdk.capture_exception(svc_json_err)
                 services = [field_value]
-            await db.table("tenant_onboarding").update({
+            await db.table("tenant_onboarding").upsert({
+                "tenant_id": tenant_id,
                 "services_offered": services,
-            }).eq("tenant_id", tenant_id).execute()
+            }, on_conflict="tenant_id").execute()
         elif field_name == "resource_count":
             # resource_count is INTEGER in DB — LLM sends it as string
             try:
@@ -772,9 +776,10 @@ async def _save_field(tenant_id: str, field_name: str, field_value: str):
                     f"[{_where}] resource_count not parseable as int: '{field_value}' — defaulting to 1 | {_ctx}"
                 )
                 count_int = 1
-            await db.table("tenant_onboarding").update({
+            await db.table("tenant_onboarding").upsert({
+                "tenant_id": tenant_id,
                 "resource_count": count_int,
-            }).eq("tenant_id", tenant_id).execute()
+            }, on_conflict="tenant_id").execute()
         else:
             # Unknown field name — log it, don't crash
             logger.warning(

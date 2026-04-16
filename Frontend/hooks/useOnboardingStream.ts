@@ -430,6 +430,13 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                   }
 
                   case 'done': {
+                    // Clear the streaming bubble FIRST — before adding to messages array.
+                    // Without this, React may render one frame where both the streaming
+                    // bubble (currentText) and the newly-added message bubble show the same
+                    // text, causing a visible duplicate. By clearing first we guarantee
+                    // the streaming bubble disappears in the same render as the final bubble appears.
+                    setCurrentText('')
+
                     // Finalize the assistant message
                     const finalContent = data.content || accumulatedResponse
                     console.warn(
@@ -437,11 +444,6 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                       `preview="${finalContent.slice(0,80)}…" | all_complete=${data.all_complete}`
                     )
 
-                    // FIX 2026-04-15 v3: DEDUP ARCHITECTURE — never clear currentText here.
-                    // Instead, add the message to the array and let currentText stay.
-                    // ConfigChat's rendering deduplicates: if the last message content
-                    // matches currentText, the streaming bubble is hidden automatically.
-                    // This guarantees zero gap frames — text is ALWAYS visible somewhere.
                     if (finalContent.trim()) {
                       setMessages(prev => {
                         const updated = [
@@ -457,7 +459,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                       })
                       historyRef.current.push({ role: 'assistant', content: finalContent })
                     }
-                    // Clear thinking state (NOT currentText — that stays for dedup)
+                    // Clear thinking state
                     setIsThinking(false)
                     setThinkingText('')
                     // Reset local accumulators for next turn
@@ -465,10 +467,6 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                     thinkingLines = []
 
                     // ── Auto-complete fallback ────────────────────────────
-                    // If the backend says all fields are done but config_complete
-                    // hasn't arrived, start a 10s fallback timer. This handles
-                    // edge cases where the model never calls mark_configuration_complete.
-                    // FIX 2026-04-15: added as client-side safety net.
                     if (data.all_complete && !configCompleteReceived) {
                       if (autoCompleteTimer) clearTimeout(autoCompleteTimer)
                       autoCompleteTimer = setTimeout(() => {
@@ -486,6 +484,7 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                     }
                     break
                   }
+
 
                   case 'error': {
                     const errMsg = data.message || 'Error desconocido del servidor'
