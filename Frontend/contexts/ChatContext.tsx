@@ -154,6 +154,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
     }, [selectedContact?.id])
 
+    // ⚠️ TENANT ISOLATION: When the active tenant changes (superadmin switching),
+    // clear selected contact AND messages immediately — otherwise the previous
+    // tenant's selected contact stays active and its messages remain visible.
+    useEffect(() => {
+        setSelectedContact(null)
+        setMessages([])
+    }, [currentTenantId])
+
     return (
         <ChatContext.Provider value={{
             selectedContact, setSelectedContact,
