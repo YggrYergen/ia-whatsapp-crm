@@ -76,30 +76,30 @@ export default function WelcomeStep({ userId, userEmail, userName, onComplete }:
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center animate-onboarding-in">
+    <div className="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center animate-onboarding-in overflow-y-auto">
       {/* Background subtle grid */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem]" />
 
       {/* Ambient glow */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[100px]" />
 
-      <div className="relative z-10 max-w-lg w-full mx-4 text-center space-y-8">
+      <div className="relative z-10 max-w-lg w-full mx-4 text-center space-y-5 py-8">
         {/* Logo / Icon */}
         <div className="flex justify-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-emerald-500/20 ring-4 ring-emerald-500/10">
-            <Sparkles className="w-10 h-10 text-white" />
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-emerald-500/20 ring-4 ring-emerald-500/10">
+            <Sparkles className="w-8 h-8 md:w-10 md:h-10 text-white" />
           </div>
         </div>
 
         {/* Title */}
-        <div className="space-y-3">
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
+        <div className="space-y-2">
+          <h1 className="text-2xl md:text-4xl font-bold text-white tracking-tight">
             Bienvenido a{' '}
             <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
               tuAsistenteVirtual
             </span>
           </h1>
-          <p className="text-lg text-slate-400 max-w-md mx-auto leading-relaxed">
+          <p className="text-base text-slate-400 max-w-md mx-auto leading-relaxed">
             Vamos a configurar tu asistente de WhatsApp con inteligencia artificial en pocos minutos.
           </p>
         </div>

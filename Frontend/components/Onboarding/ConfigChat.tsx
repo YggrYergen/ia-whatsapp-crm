@@ -140,8 +140,17 @@ export default function ConfigChat({ tenantId, onConfigComplete }: ConfigChatPro
           <div className="flex flex-col items-center gap-8 p-8">
             {/* Spinning ring */}
             <div className="relative w-24 h-24">
-              <div className={`absolute inset-0 rounded-full border-4 border-slate-800 ${provisionStep < PROVISION_STEPS.length - 1 ? 'animate-spin' : ''}`}
-                style={{ borderTopColor: provisionStep < PROVISION_STEPS.length - 1 ? '#10b981' : '#10b981', animationDuration: '1.5s' }} />
+              <div
+                className={`absolute inset-0 rounded-full border-4 transition-all duration-700 ease-out ${
+                  provisionStep < PROVISION_STEPS.length - 1
+                    ? 'border-slate-800 animate-spin'
+                    : 'border-emerald-500'
+                }`}
+                style={{
+                  borderTopColor: provisionStep < PROVISION_STEPS.length - 1 ? '#10b981' : undefined,
+                  animationDuration: '1.5s',
+                }}
+              />
               <div className={`absolute inset-2 rounded-full bg-slate-900/80 flex items-center justify-center transition-all duration-700
                 ${provisionStep === PROVISION_STEPS.length - 1 ? 'scale-110 shadow-[0_0_40px_rgba(16,185,129,0.4)]' : ''}`}>
                 <span className="text-3xl transition-all duration-500">{PROVISION_STEPS[provisionStep]?.icon}</span>

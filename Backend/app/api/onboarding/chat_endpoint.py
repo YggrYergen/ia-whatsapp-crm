@@ -947,6 +947,78 @@ _RESOURCE_LABEL_MAP = {
 }
 
 
+async def _provision_generic_fallback(db, tenant_id: str):
+    """Provision a minimal generic set when no onboarding data exists.
+
+    Creates:
+      - 1 generic tenant_service: 'Servicio General'
+      - 1 generic resource: 'Recurso 1'
+      - 1 standard scheduling_config: Mon-Sat 09:00-19:00
+
+    Non-fatal at each step. Works for ANY business type.
+    """
+    _where = f"{_WHERE}._provision_generic_fallback"
+    _ctx = f"tenant={tenant_id} | env={settings.ENVIRONMENT}"
+
+    logger.info(f"🛡️ [{_where}] Applying generic fallback provisioning | {_ctx}")
+
+    # 1. Generic service
+    try:
+        await db.table("tenant_services").insert({
+            "tenant_id": tenant_id,
+            "name": "Servicio General",
+            "description": "Servicio predeterminado. Personaliza desde el panel de configuración.",
+            "price": 0,
+            "duration_minutes": 60,
+            "is_active": True,
+        }).execute()
+        logger.info(f"✅ [{_where}] Generic service created | {_ctx}")
+    except Exception as svc_err:
+        logger.error(f"[{_where}] Generic service INSERT failed (non-fatal) | {_ctx} | error={str(svc_err)[:200]}", exc_info=True)
+        sentry_sdk.capture_exception(svc_err)
+
+    # 2. Generic resource
+    try:
+        await db.table("resources").insert({
+            "tenant_id": tenant_id,
+            "name": "Recurso 1",
+            "resource_type": "general",
+            "is_active": True,
+        }).execute()
+        logger.info(f"✅ [{_where}] Generic resource created | {_ctx}")
+    except Exception as res_err:
+        logger.error(f"[{_where}] Generic resource INSERT failed (non-fatal) | {_ctx} | error={str(res_err)[:200]}", exc_info=True)
+        sentry_sdk.capture_exception(res_err)
+
+    # 3. Scheduling config (standard Mon-Sat 09-19)
+    try:
+        await db.table("scheduling_config").insert({
+            "tenant_id": tenant_id,
+            "business_hours": "Lunes a Sábado de 09:00 a 19:00",
+            "slot_duration_minutes": 60,
+            "advance_booking_days": 30,
+            "business_days": [1, 2, 3, 4, 5, 6],
+            "open_time": "09:00",
+            "close_time": "19:00",
+        }).execute()
+        logger.info(f"✅ [{_where}] Generic scheduling_config created | {_ctx}")
+    except Exception as cfg_err:
+        logger.error(f"[{_where}] Generic scheduling_config INSERT failed (non-fatal) | {_ctx} | error={str(cfg_err)[:200]}", exc_info=True)
+        sentry_sdk.capture_exception(cfg_err)
+
+    await send_discord_alert(
+        title=f"🛡️ Fallback Provisioning Applied | {tenant_id}",
+        description=(
+            f"**Where:** `{_where}`\n"
+            f"**What:** No onboarding row found — generic service/resource/config created\n"
+            f"**Tenant:** `{tenant_id}`\n"
+            f"**Env:** {settings.ENVIRONMENT}\n"
+            f"**Action:** User can customize from dashboard."
+        ),
+        severity="info",
+    )
+
+
 async def _provision_services_and_resources(db, tenant_id: str, fields_status=None):
     """Provision tenant_services, resources, and scheduling_config from onboarding data.
     
@@ -984,15 +1056,18 @@ async def _provision_services_and_resources(db, tenant_id: str, fields_status=No
             )
             return  # Non-fatal
         
-        if not onb_res.data:
+        if onb_res is None or not onb_res.data:
             logger.warning(
-                f"[{_where}] No onboarding data found for tenant={tenant_id} — "
-                f"provisioning skipped (tenant may be legacy or data was deleted)"
+                f"[{_where}] No tenant_onboarding row for tenant={tenant_id} — "
+                f"applying generic fallback provisioning"
             )
             sentry_sdk.capture_message(
-                f"Provisioning skipped: no tenant_onboarding row for tenant {tenant_id}",
+                f"Provisioning fallback: no tenant_onboarding row for tenant {tenant_id}",
                 level="warning",
             )
+            # Robust fallback — provision 1 generic service + 1 resource + scheduling_config
+            # Works for ANY business type. User can customize from the dashboard later.
+            await _provision_generic_fallback(db, tenant_id)
             return
         
         onb_data = onb_res.data
