@@ -466,24 +466,41 @@ export function useOnboardingStream(tenantId: string | null): UseOnboardingStrea
                     accumulatedResponse = ''
                     thinkingLines = []
 
-                    // ── Auto-complete fallback ────────────────────────────
+
+                    // ── Auto-complete fallback ────────────────────────────────────────
+                    // Safety net ONLY — config_complete should arrive within 1-2s now
+                    // (emitted before _finalize_onboarding runs). Timer extended to 120s
+                    // to survive any edge-case server hiccup.
+                    // ⚠️ If this fires, it means config_complete was NEVER received —
+                    // indicating a streaming bug. Sentry + Discord alert for visibility.
                     if (data.all_complete && !configCompleteReceived) {
                       if (autoCompleteTimer) clearTimeout(autoCompleteTimer)
                       autoCompleteTimer = setTimeout(() => {
                         if (!configCompleteReceived) {
-                          console.warn(
-                            `[${_where}] Auto-completing: all fields done but config_complete never received | tenant=${tenantId}`
-                          )
+                          const warnMsg = `[${_where}] Auto-completing: all fields done but config_complete never received after 120s | tenant=${tenantId}`
+                          console.warn(warnMsg)
                           Sentry.captureMessage(
-                            'Onboarding auto-complete fallback triggered (frontend)',
-                            'warning'
+                            'Onboarding auto-complete fallback triggered (frontend) — config_complete not received in 120s',
+                            'error'  // Elevated to error — this should never happen
                           )
+                          // Fire-and-forget Discord alert via backend proxy
+                          fetch('/api/onboarding/alert', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              title: '🚨 Onboarding Auto-Complete Fallback Fired',
+                              description: `config_complete never received after 120s.\n**Tenant:** \`${tenantId}\`\n**Action:** User saw completion but backend may not have finalized.`,
+                              severity: 'error',
+                              tenant_id: tenantId,
+                            }),
+                          }).catch(() => {/* non-fatal */})
                           setIsConfigComplete(true)
                         }
-                      }, 10_000)
+                      }, 120_000) // 120s — generous buffer for any backend delay
                     }
                     break
                   }
+
 
 
                   case 'error': {

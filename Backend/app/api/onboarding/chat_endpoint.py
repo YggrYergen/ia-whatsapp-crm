@@ -322,16 +322,34 @@ async def onboarding_chat(request: Request):
                             generated_prompt = tool_args.get("generated_prompt", "")
                             summary = tool_args.get("summary", "")
                             
-                            # Save to database
-                            await _finalize_onboarding(tenant_id, generated_prompt, summary)
+                            # ╔══════════════════════════════════════════════╗
+                            # ║  CRITICAL ORDER: emit config_complete FIRST  ║
+                            # ║  then run finalization in background.        ║
+                            # ║                                              ║
+                            # ║  _finalize_onboarding does: Discord alert +  ║
+                            # ║  DB upsert + _provision_services (~40s+).    ║
+                            # ║  If we await it before yielding, the frontend║
+                            # ║  10s auto-complete timer fires and config     ║
+                            # ║  is incorrectly marked done without prompt.  ║
+                            # ╚══════════════════════════════════════════════╝
                             
-                            # Send config_complete event
+                            # 1. Immediately signal the frontend
+                            logger.info(
+                                f"🎉 [{_WHERE}] Emitting config_complete SSE | tenant={tenant_id} | "
+                                f"prompt_len={len(generated_prompt)} | env={settings.ENVIRONMENT}"
+                            )
                             yield _format_sse("config_complete", {
                                 "system_prompt": generated_prompt,
                                 "summary": summary,
                                 "all_fields": fields_status,
                             })
                             config_complete_sent = True
+                            
+                            # 2. Run heavy finalization in background (non-blocking)
+                            import asyncio
+                            asyncio.create_task(
+                                _finalize_onboarding(tenant_id, generated_prompt, summary)
+                            )
                         
                         else:
                             # Unknown tool name — log it
@@ -507,16 +525,25 @@ async def onboarding_chat(request: Request):
                                     fu_prompt = fu_tool_args.get("generated_prompt", "")
                                     fu_summary = fu_tool_args.get("summary", "")
 
-                                    await _finalize_onboarding(tenant_id, fu_prompt, fu_summary)
-
+                                    # Emit config_complete FIRST (same rationale as primary path)
+                                    logger.info(
+                                        f"🎉 [{_WHERE}] Emitting config_complete SSE (follow-up r{followup_round}) | "
+                                        f"tenant={tenant_id} | prompt_len={len(fu_prompt)} | env={settings.ENVIRONMENT}"
+                                    )
                                     yield _format_sse("config_complete", {
                                         "system_prompt": fu_prompt,
                                         "summary": fu_summary,
                                         "all_fields": fields_status,
                                     })
                                     config_complete_sent = True
+
+                                    # Run finalization in background
+                                    import asyncio
+                                    asyncio.create_task(
+                                        _finalize_onboarding(tenant_id, fu_prompt, fu_summary)
+                                    )
                                     logger.info(
-                                        f"🎉 [CONFIG-AGENT] mark_configuration_complete processed in "
+                                        f"🎉 [CONFIG-AGENT] mark_configuration_complete fired in "
                                         f"follow-up round {followup_round} | tenant={tenant_id}"
                                     )
 
