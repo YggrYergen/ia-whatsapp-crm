@@ -850,13 +850,15 @@ async def _finalize_onboarding(tenant_id: str, generated_prompt: str, summary: s
             )
             raise  # This IS fatal — re-raise
         
-        # Step 2: Update onboarding record
+        # Use upsert instead of UPDATE so reset users (who have tenant_users but
+        # no onboarding row) get a fresh row created rather than a silent no-op.
         try:
-            await db.table("tenant_onboarding").update({
+            await db.table("tenant_onboarding").upsert({
+                "tenant_id": tenant_id,
                 "configuration_complete": True,
                 "generated_system_prompt": generated_prompt,
-            }).eq("tenant_id", tenant_id).execute()
-            logger.info(f"✅ [{_where}] Onboarding record finalized | {_ctx}")
+            }, on_conflict="tenant_id").execute()
+            logger.info(f"✅ [{_where}] Onboarding record upserted | {_ctx}")
         except Exception as onb_err:
             # Non-fatal: tenant was already updated, onboarding record is secondary
             _msg = f"[{_where}:update_onboarding] tenant_onboarding UPDATE failed (non-fatal) | {_ctx} | error={str(onb_err)[:200]}"
@@ -962,48 +964,59 @@ async def _provision_generic_fallback(db, tenant_id: str):
 
     logger.info(f"🛡️ [{_where}] Applying generic fallback provisioning | {_ctx}")
 
-    # 1. Generic service
+    # 1. Generic service — upsert on (tenant_id, name) to survive double-submit
     try:
-        await db.table("tenant_services").insert({
+        await db.table("tenant_services").upsert({
             "tenant_id": tenant_id,
             "name": "Servicio General",
             "description": "Servicio predeterminado. Personaliza desde el panel de configuración.",
             "price": 0,
             "duration_minutes": 60,
             "is_active": True,
-        }).execute()
-        logger.info(f"✅ [{_where}] Generic service created | {_ctx}")
+        }, on_conflict="tenant_id,name").execute()
+        logger.info(f"✅ [{_where}] Generic service upserted | {_ctx}")
     except Exception as svc_err:
-        logger.error(f"[{_where}] Generic service INSERT failed (non-fatal) | {_ctx} | error={str(svc_err)[:200]}", exc_info=True)
+        logger.error(f"[{_where}] Generic service upsert failed (non-fatal) | {_ctx} | error={str(svc_err)[:200]}", exc_info=True)
         sentry_sdk.capture_exception(svc_err)
 
-    # 2. Generic resource
+    # 2. Generic resource — actual columns: id, tenant_id, name, label, color, is_active
+    # (resource_type does NOT exist in this schema)
     try:
         await db.table("resources").insert({
             "tenant_id": tenant_id,
             "name": "Recurso 1",
-            "resource_type": "general",
+            "label": "Recurso 1",
             "is_active": True,
         }).execute()
         logger.info(f"✅ [{_where}] Generic resource created | {_ctx}")
     except Exception as res_err:
-        logger.error(f"[{_where}] Generic resource INSERT failed (non-fatal) | {_ctx} | error={str(res_err)[:200]}", exc_info=True)
-        sentry_sdk.capture_exception(res_err)
+        # Non-fatal — may already exist
+        logger.warning(f"[{_where}] Generic resource insert skipped (may already exist) | {_ctx} | error={str(res_err)[:150]}")
 
-    # 3. Scheduling config (standard Mon-Sat 09-19)
+    # 3. Scheduling config — actual columns: business_hours (jsonb), default_duration_minutes,
+    # slot_interval_minutes, buffer_between_minutes, round_robin_enabled, timezone
+    # (advance_booking_days, open_time, close_time, business_days do NOT exist)
     try:
-        await db.table("scheduling_config").insert({
+        await db.table("scheduling_config").upsert({
             "tenant_id": tenant_id,
-            "business_hours": "Lunes a Sábado de 09:00 a 19:00",
-            "slot_duration_minutes": 60,
-            "advance_booking_days": 30,
-            "business_days": [1, 2, 3, 4, 5, 6],
-            "open_time": "09:00",
-            "close_time": "19:00",
-        }).execute()
-        logger.info(f"✅ [{_where}] Generic scheduling_config created | {_ctx}")
+            "business_hours": {
+                "monday":    {"open": "09:00", "close": "19:00", "enabled": True},
+                "tuesday":   {"open": "09:00", "close": "19:00", "enabled": True},
+                "wednesday": {"open": "09:00", "close": "19:00", "enabled": True},
+                "thursday":  {"open": "09:00", "close": "19:00", "enabled": True},
+                "friday":    {"open": "09:00", "close": "19:00", "enabled": True},
+                "saturday":  {"open": "09:00", "close": "16:00", "enabled": True},
+                "sunday":    {"open": "09:00", "close": "13:00", "enabled": False},
+            },
+            "default_duration_minutes": 60,
+            "slot_interval_minutes": 60,
+            "buffer_between_minutes": 0,
+            "round_robin_enabled": False,
+            "timezone": "America/Santiago",
+        }, on_conflict="tenant_id").execute()
+        logger.info(f"✅ [{_where}] Generic scheduling_config upserted | {_ctx}")
     except Exception as cfg_err:
-        logger.error(f"[{_where}] Generic scheduling_config INSERT failed (non-fatal) | {_ctx} | error={str(cfg_err)[:200]}", exc_info=True)
+        logger.error(f"[{_where}] Generic scheduling_config upsert failed (non-fatal) | {_ctx} | error={str(cfg_err)[:200]}", exc_info=True)
         sentry_sdk.capture_exception(cfg_err)
 
     await send_discord_alert(
