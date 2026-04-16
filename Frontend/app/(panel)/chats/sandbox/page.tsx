@@ -49,6 +49,7 @@ export default function SandboxPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sandboxContactId, setSandboxContactId] = useState<string | null>(null)
+  const [confirmReset, setConfirmReset] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const initRef = useRef<string | null>(null) // Track which tenantId was initialized (prevents StrictMode double-init)
@@ -254,12 +255,10 @@ export default function SandboxPage() {
   }, [inputValue, isProcessing, sandboxContactId, currentTenantId])
 
   const handleReset = useCallback(async () => {
-    console.log('[SandboxPage.handleReset] CLICKED | sandboxContactId=', sandboxContactId, '| currentTenantId=', currentTenantId)
     if (!sandboxContactId || !currentTenantId) {
       console.warn('[SandboxPage.handleReset] No sandboxContactId or tenantId — aborting')
       return
     }
-    if (!confirm('¿Borrar todos los mensajes de prueba?')) return
 
     const supabase = createClient()
     const _where = 'SandboxPage.handleReset'
@@ -412,12 +411,25 @@ export default function SandboxPage() {
 
         <div className="flex items-center gap-1.5">
           <button
-            onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
+            onClick={() => {
+              if (confirmReset) {
+                handleReset()
+                setConfirmReset(false)
+              } else {
+                setConfirmReset(true)
+                // Auto-cancel after 3 seconds
+                setTimeout(() => setConfirmReset(false), 3000)
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+              confirmReset
+                ? 'bg-red-500 text-white border-red-400 animate-pulse'
+                : 'text-slate-600 hover:bg-slate-100 border-slate-200'
+            }`}
             title="Limpiar conversación"
           >
-            <RefreshCw size={14} />
-            <span className="hidden sm:inline">Reiniciar</span>
+            <RefreshCw size={14} className={confirmReset ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{confirmReset ? '¿Seguro?' : 'Reiniciar'}</span>
           </button>
 
           {/* ─── Enviar Prueba ─── */}
