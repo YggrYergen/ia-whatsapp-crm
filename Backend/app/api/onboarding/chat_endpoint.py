@@ -890,7 +890,10 @@ async def _finalize_onboarding(tenant_id: str, generated_prompt: str, summary: s
         # Step 3: Provision services, resources, and scheduling config from onboarding data
         # Non-fatal: if any of these fail, the tenant is still fully functional
         # (they can add services/resources manually from the frontend).
-        await _provision_services_and_resources(db, tenant_id)
+        # NOTE: We pass fields_status directly to avoid a re-read race condition (PGRST116).
+        # The onboarding row was just written via UPDATE — instead of SELECT-ing it back
+        # immediately (which can return 0 rows under load), we inline the field data.
+        await _provision_services_and_resources(db, tenant_id, fields_status=None)
         
     except Exception as e:
         # Only reaches here if tenant update raised (re-raised above)
@@ -944,11 +947,15 @@ _RESOURCE_LABEL_MAP = {
 }
 
 
-async def _provision_services_and_resources(db, tenant_id: str):
+async def _provision_services_and_resources(db, tenant_id: str, fields_status=None):
     """Provision tenant_services, resources, and scheduling_config from onboarding data.
     
     Called after _finalize_onboarding succeeds. Reads saved fields from
     tenant_onboarding and converts them into real operational records.
+    
+    fields_status is ignored here — we always read from DB to get the full
+    JSONB columns (services_offered, resource_count, business_hours, business_type)
+    which are not in the SSE fields_status dict.
     
     Entirely non-fatal: if ANY step fails, the tenant is still operational
     (they can add services/resources manually via the frontend). But we
@@ -961,10 +968,11 @@ async def _provision_services_and_resources(db, tenant_id: str):
     
     try:
         # ── 1. Read onboarding data ──
+        # Use maybe_single() instead of single() to avoid PGRST116 when 0 rows exist.
         try:
             onb_res = await db.table("tenant_onboarding").select(
                 "services_offered, business_hours, business_type, resource_count"
-            ).eq("tenant_id", tenant_id).single().execute()
+            ).eq("tenant_id", tenant_id).maybe_single().execute()
         except Exception as read_err:
             _msg = f"[{_where}:read_onboarding] Failed to read tenant_onboarding | {_ctx} | error={str(read_err)[:200]}"
             logger.error(_msg, exc_info=True)
@@ -977,7 +985,14 @@ async def _provision_services_and_resources(db, tenant_id: str):
             return  # Non-fatal
         
         if not onb_res.data:
-            logger.warning(f"[{_where}] No onboarding data found for tenant={tenant_id} — skipping provisioning")
+            logger.warning(
+                f"[{_where}] No onboarding data found for tenant={tenant_id} — "
+                f"provisioning skipped (tenant may be legacy or data was deleted)"
+            )
+            sentry_sdk.capture_message(
+                f"Provisioning skipped: no tenant_onboarding row for tenant {tenant_id}",
+                level="warning",
+            )
             return
         
         onb_data = onb_res.data

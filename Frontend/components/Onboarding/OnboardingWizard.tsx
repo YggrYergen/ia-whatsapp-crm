@@ -40,9 +40,13 @@ export default function OnboardingWizard({ onDismiss }: OnboardingWizardProps) {
   const { currentTenantId, currentTenant, isNewcomer, isSetupComplete, setProvisionedTenant, markSetupComplete } = useTenant()
 
   // Determine initial step based on state
+  // IMPORTANT: Always start at 'welcome' when setup is not complete OR user is a newcomer.
+  // This ensures /api/onboarding/provision is called, which creates the tenant_onboarding
+  // row that the ConfigChat (Step 2) needs to persist field data via UPDATE.
+  // Skipping welcome → missing tenant_onboarding row → PGRST116 on every _save_field.
   const getInitialStep = (): WizardStep => {
-    if (isNewcomer || !currentTenantId) return 'welcome'
-    if (!isSetupComplete) return 'config'
+    if (!currentTenantId || isNewcomer) return 'welcome'   // No tenant yet
+    if (!isSetupComplete) return 'welcome'                  // Has tenant but not configured — must re-provision row
     return 'complete'
   }
 

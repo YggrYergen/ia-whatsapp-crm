@@ -22,6 +22,7 @@ const FIELD_LABELS: Record<string, string> = {
   special_instructions: 'Reglas',
   greeting_message: 'Saludo',
   escalation_rules: 'Escalamiento',
+  phone_number: 'Contacto',
 }
 
 const FIELD_ORDER = Object.keys(FIELD_LABELS)

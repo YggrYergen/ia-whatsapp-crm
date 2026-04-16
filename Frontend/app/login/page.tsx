@@ -30,7 +30,7 @@ function LoginForm() {
     }
 
     return (
-        <div className="min-h-screen w-full overflow-hidden relative">
+        <div className="h-[100dvh] min-h-screen w-full overflow-hidden relative bg-[#06060e]">
             {/* Vortex Background — full viewport magnetic field simulation */}
             <div className="absolute inset-0 z-0">
                 <Vortex
@@ -126,7 +126,7 @@ function LoginForm() {
 export default function LoginPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-screen bg-[#06060e] flex items-center justify-center">
+            <div className="h-[100dvh] min-h-screen bg-[#06060e] flex items-center justify-center">
                 <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             </div>
         }>
