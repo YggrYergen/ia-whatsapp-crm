@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Filter, Plus, Search, Sparkles, Pause, ChevronLeft, ChevronRight, User, Phone, Calendar, MessageCircle, AlertTriangle, Star, Clock, ArrowLeft, Edit3, Save, X, Activity, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
+import { useTenant } from '@/contexts/TenantContext'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -23,6 +24,7 @@ interface Contact {
 const PAGE_SIZE = 20
 
 export default function PacientesView() {
+    const { currentTenantId } = useTenant()
     const [contacts, setContacts] = useState<Contact[]>([])
     const [totalCount, setTotalCount] = useState(0)
     const [page, setPage] = useState(0)
@@ -34,8 +36,9 @@ export default function PacientesView() {
     const [notesValue, setNotesValue] = useState('')
 
     const fetchContacts = async () => {
+        if (!currentTenantId) return
         setLoading(true)
-        let query = supabase.from('contacts').select('*', { count: 'exact' })
+        let query = supabase.from('contacts').select('*', { count: 'exact' }).eq('tenant_id', currentTenantId)
 
         if (searchQuery) {
             query = query.or(`name.ilike.%${searchQuery}%,phone_number.ilike.%${searchQuery}%`)
@@ -57,17 +60,21 @@ export default function PacientesView() {
         setLoading(false)
     }
 
-    useEffect(() => { fetchContacts() }, [page, searchQuery, filterStatus])
+    useEffect(() => { fetchContacts() }, [page, searchQuery, filterStatus, currentTenantId])
 
     useEffect(() => {
+        if (!currentTenantId) return
         const sub = supabase
-            .channel('pacientes_view_changes')
-            .on('postgres_changes' as any, { event: '*', table: 'contacts' }, () => {
+            .channel(`clientes_view_${currentTenantId.slice(0, 8)}`)
+            .on('postgres_changes' as any, {
+                event: '*', schema: 'public', table: 'contacts',
+                filter: `tenant_id=eq.${currentTenantId}`
+            }, () => {
                 fetchContacts()
             })
             .subscribe()
         return () => { supabase.removeChannel(sub) }
-    }, [page, searchQuery, filterStatus])
+    }, [page, searchQuery, filterStatus, currentTenantId])
 
     const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
@@ -232,7 +239,7 @@ export default function PacientesView() {
                                 value={notesValue}
                                 onChange={(e) => setNotesValue(e.target.value)}
                                 className="w-full bg-white/5 border border-white/[0.08] rounded-xl p-3 text-sm text-white outline-none focus:ring-2 focus:ring-emerald-500/50 min-h-[100px] resize-none placeholder:text-slate-600"
-                                placeholder="Agregar notas sobre este paciente..."
+                                placeholder="Agregar notas sobre este cliente..."
                                 autoFocus
                             />
                         ) : (
@@ -300,7 +307,7 @@ export default function PacientesView() {
             <div className="max-w-6xl mx-auto p-4 md:p-10 space-y-5">
                 <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3">
                     <div>
-                        <h2 className="text-lg md:text-2xl font-black text-white tracking-tight">Base de Pacientes</h2>
+                        <h2 className="text-lg md:text-2xl font-black text-white tracking-tight">Base de Clientes</h2>
                         <p className="text-xs md:text-sm text-slate-500 mt-0.5 font-medium">
                             {loading ? 'Cargando...' : `${totalCount} contacto${totalCount !== 1 ? 's' : ''}`}
                         </p>
@@ -335,7 +342,7 @@ export default function PacientesView() {
                     <table className="w-full text-left border-collapse min-w-[580px]">
                         <thead>
                             <tr className="bg-white/[0.03] text-slate-500 text-[10px] uppercase font-bold tracking-wider border-b border-white/[0.06]">
-                                <th className="p-4 pl-6">Paciente / Lead</th>
+                                <th className="p-4 pl-6">Cliente / Lead</th>
                                 <th className="p-4">Contacto</th>
                                 <th className="p-4">Estado</th>
                                 <th className="p-4">Último msg</th>

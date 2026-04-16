@@ -66,7 +66,7 @@ export default function Sidebar() {
         { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', escalationBadge: true },
         { href: '/chats/sandbox', icon: Sparkles, title: 'Chat de Pruebas', label: 'Pruebas' },
         { href: '/agenda', icon: CalendarIcon, title: 'Agenda', label: 'Agenda' },
-        { href: '/pacientes', icon: Users, title: 'Pacientes', label: 'CRM' },
+        { href: '/pacientes', icon: Users, title: 'Clientes', label: 'CRM' },
         { href: '/servicios', icon: Package, title: 'Servicios', label: 'Servicios' },
         { href: '/recursos', icon: Layers, title: 'Recursos', label: 'Recursos' },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
