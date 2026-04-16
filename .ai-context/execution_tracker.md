@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-15 18:13 CLT (Session cb937bcc — P0+P1 Stabilization Sprint)
+> **Last Updated:** 2026-04-16 06:50 CLT (Session cb937bcc — Multi-Tenancy Audit + Schema Fix + Resource Count)
 
 ---
 
@@ -590,18 +590,106 @@ All backend, DB, and frontend components built:
 | `scheduling_config` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
 | `tenant_services` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
 
+#### E2E Testing Results (Apr 15-16)
+
+- [x] E2E test: full self-onboarding flow → provisioning creates services/resources/config ✅ (Apr 15 ~19:41)
+- [x] E2E test: sandbox chat → real tool calls → AI responses received ✅ (Apr 15 ~19:45)
+- [ ] E2E test: tenant switching → verify zero cross-tenant data leaks (needs frontend deploy)
+- [ ] E2E test: message send → verify exactly 1 bubble (no duplicates) (needs frontend deploy)
+- [x] E2E test: re-test onboarding after schema fix → all provisioning rows created ✅ (Apr 16 ~02:48 UTC)
+
 #### Remaining Items (Pending — P1 and beyond)
 
 - [ ] P1-3: Agenda real business hours from `scheduling_config`
 - [ ] P1-4: Agenda real appointment progress bars
 - [ ] P1-5: Permanent sandbox link in contacts sidebar
 - [ ] P2: Services/Products CRUD frontend page (designed, architecture ready)
-- [ ] E2E test: full self-onboarding flow → verify provisioning creates services/resources/config
-- [ ] E2E test: sandbox chat → verify real tool calls → verify appointments in agenda
-- [ ] E2E test: tenant switching → verify zero cross-tenant data leaks
-- [ ] E2E test: message send → verify exactly 1 bubble (no duplicates)
-- [ ] Frontend manual deploy to Cloudflare Workers DEV (`npm run deploy`)
-- [ ] PROD migration sync (after full E2E pass on DEV)
+- [ ] Frontend deploy to check tenant isolation + dedup in live UI
+- [ ] PROD migration sync — 10 migrations pending approval
+
+#### Block V: Multi-Tenancy Forensic Audit ✅ COMPLETE (2026-04-15 ~21:00-22:30 CLT)
+
+> **Session:** cb937bcc (2026-04-15 evening)
+> **No code commit** — database operations only (Supabase MCP)
+
+**V1: Full RLS Policy Audit** ✅
+- Audited all 13 DEV tables' RLS policies via `pg_policies` view
+- Verified `get_user_tenant_ids()` helper function grants correct access
+- Verified `is_superadmin()` helper function checks `is_superadmin` column on `profiles`
+- Confirmed all 8 original tables have correct tenant + superadmin RLS
+- Found 5 new tables (appointments, resources, scheduling_config, tenant_services, onboarding_messages) had tenant RLS but **missing** `superadmin_select` policy
+
+**V2: Superadmin RLS Migration** ✅ — `add_superadmin_rls_to_new_tables`
+- Applied `superadmin_select` policies to all 5 tables
+- Enables superadmin cross-tenant visibility for support/debugging
+- DEV ✅ | PROD ⏳ PENDING APPROVAL
+
+**V3: Orphan Tenant Cleanup** ✅
+- Found 3 "Jose Mancilla" tenants from failed provisioning attempts
+- 2 orphans (no `tenant_users` rows): `4bda477d`, `af818a7c` → **DELETED**
+- Root cause: provisioning creates tenant before linking user — if linkage fails, orphan remains
+- Navbar tenant switcher now shows only valid tenants (1 CasaVitaCure + current test tenant)
+
+**V4: Test User Full Reset** ✅
+- Purged all data for `instagramelectrimax@gmail.com` test user
+- Deleted: tenant `e24bd648`, messages, contacts, alerts, onboarding data, tenant_users linkage
+- User returned to "newcomer" state for clean re-test
+- CasaVitaCure data verified untouched: 18 contacts, 27 msgs, 16 alerts
+
+#### Block W: Schema Mismatch Fix + Calendar Isolation + Resource Count ✅ COMPLETE (2026-04-15 22:30 → 2026-04-16 06:37 CLT)
+
+> **Session:** cb937bcc (2026-04-15 night → 2026-04-16 morning)
+> **Commits:** `3aba37e`, `25f929e`
+
+**W1: PGRST204 Provisioning Schema Fix** ✅ (commit `3aba37e`)
+- Root cause: provisioning code referenced 6 non-existent columns → Supabase returned PGRST204 (no rows)
+- `tenant_services`: `base_price` → `price`, `variable_pricing` → `price_is_variable`, `estimated_duration_min` → `duration_minutes`
+- `resources`: `resource_type` column doesn't exist → moved to `metadata` jsonb as `{"resource_type": "equipo"}`
+- `scheduling_config`: flat `open_time`/`close_time`/`working_days` → structured `business_hours` jsonb + added `default_duration_minutes`, `slot_interval_minutes`, `buffer_between_minutes`, `timezone`
+
+**W2: Hardcoded CasaVitaCure Tenant ID Removal** ✅ (commit `3aba37e`)
+- **CRITICAL SECURITY FIX:** Both calendar endpoints had CasaVitaCure's `tenant_id` (`d8376510-...`) as default
+- `GET /api/calendar/events` → tenant_id now required, returns 400 if missing
+- `POST /api/calendar/book` → tenant_id now required, returns 400 if missing
+- Without this fix, ANY tenant's calendar view showed CasaVitaCure's appointments
+
+**W3: Frontend Calendar + Resources Tenant Isolation** ✅ (commit `3aba37e`)
+- `AgendaView.tsx`: added `useTenant()`, passes `currentTenantId` to both fetch and booking calls
+- `calendar/events/route.ts`: proxy now forwards `tenant_id` to backend
+- `RecursosView.tsx`: interface updated — `resource_type` read from `metadata.resource_type` via helper
+
+**W4: Resource Count Feature** ✅ (commit `25f929e`)
+- Added `resource_count` as 12th onboarding field in `ONBOARDING_FIELDS`
+- Agent prompt: field #12 asks "¿Cuántos equipos/boxes/salas/mesas?" with examples
+- DB migration: `ALTER TABLE tenant_onboarding ADD COLUMN resource_count integer DEFAULT 1`
+- `_save_field()`: converts LLM string to clamped integer (1-20)
+- `_provision_services_and_resources()`: creates N resources with sequential names and rotating 10-color palette
+- Discord summary alert: shows `resources_created/resource_count`
+- DEV migration ✅ | PROD ⏳ PENDING APPROVAL
+
+**W5: E2E Verification** ✅
+- User completed full onboarding flow after W1 fix
+- Provisioning successfully created: 1 tenant_service, 1 resource (auto), 1 scheduling_config
+- User manually added 2nd resource via RecursosView UI
+- Sandbox chat received AI responses
+- Frontend rated "almost seamless" by user
+
+#### Migration Parity Status (April 16 06:45 CLT)
+
+> ⚠️ **Schema gap:** DEV has 13 tables + extended columns. PROD has 6 tables. 10 migrations pending.
+
+| Migration | DEV | PROD |
+|:---|:---|:---|
+| `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
+| `phone_number` column on `tenant_onboarding` | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| Superadmin RLS on 5 new tables | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `resource_count` column on `tenant_onboarding` | ✅ (2026-04-16) | ⏳ PENDING APPROVAL |
 
 
 ---

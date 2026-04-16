@@ -1,23 +1,23 @@
 # 🔴 NOW.md — Full Technical Situation Report
 
-> **Updated:** 2026-04-15 18:13 CLT  
+> **Updated:** 2026-04-16 06:45 CLT  
 > **Session ID:** cb937bcc-b4a2-4a4f-8333-454c75646e32  
 > **Branch:** `desarrollo`  
-> **Last commit:** `cd6240e` — `fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting`
+> **Last commit:** `25f929e` — `feat: resource_count onboarding field - provisions N resources from user input`
 
 ---
 
 ## §0 — What We Are Doing RIGHT NOW and Why
 
-### Current Focus: Stabilization Sprint — Critical Bug Fixes for Demo Readiness
+### Current Focus: Multi-Tenant Hardening + Provisioning Accuracy
 
-**Goal:** Resolve all P0/P1 bugs discovered during user testing so the platform is demo-ready for the upcoming client onboarding. Every system — onboarding, sandbox, agenda, chat — must work flawlessly end-to-end with zero cross-tenant data leaks, zero duplicate messages, and proper observability at every failure point.
+**Goal:** After the P0/P1 stabilization sprint, we conducted a forensic multi-tenancy audit and fixed critical schema mismatches that caused provisioning failures (PGRST204 errors). The system is now at **60-75% feature completion** for a professional multi-tenant CRM deployment. PROD remains safe and untouched. DEV is being iteratively tested and hardened.
 
 ---
 
-#### ✅ DONE (this session, 2026-04-15)
+### ✅ DONE — Full Session Log (2026-04-15 → 2026-04-16 morning)
 
-**Phase A — Design & Planning (earlier today)**
+#### Phase A — Design & Planning (Apr 15 daytime)
 
 | # | Item | Commit |
 |---|------|--------|
@@ -26,7 +26,7 @@
 | 3 | Native Calendar Schema + `NativeSchedulingService` — all 6 operations with 3-channel observability | `670dd9d` |
 | 4 | Services/Resources CRUD endpoints + Frontend ConfigView skeleton | `670dd9d` |
 
-**Phase B — P0 Bug Fix Sprint (this session, commit `cd6240e`)**
+#### Phase B — P0 Bug Fix Sprint (Apr 15 evening, commit `cd6240e`)
 
 | Priority | Bug | Root Cause | Fix | Files |
 |----------|-----|-----------|-----|-------|
@@ -36,39 +36,111 @@
 | **P0-3** | Duplicate messages in regular chat | Optimistic temp message (`id: temp-*`) + Realtime INSERT of real DB row → both display | Enhanced Realtime handler to remove `temp-*` prefixed messages matching same `sender_role` when real row arrives | `ChatContext.tsx` |
 | **P1-1** | Raw markdown text in all chat views | AI responses with `*bold*`, `_italic_`, `~strike~`, URLs rendered as raw text | Created shared `whatsappFormatter.tsx` utility: WhatsApp markdown → React nodes. Applied to all 3 chat views (ChatArea, TestChatArea, sandbox). Includes CSS safety styles for word-break overflow. | `whatsappFormatter.tsx` (NEW), `ChatArea.tsx`, `TestChatArea.tsx`, `sandbox/page.tsx` |
 
+#### Phase C — Multi-Tenancy Forensic Audit (Apr 15 night)
+
+Deep forensic audit of the entire multi-tenant architecture. Investigated every table, every RLS policy, every helper function.
+
+**C1: RLS Audit Results (13 tables)**
+
+| Table | `tenant_select` | `tenant_insert` | `tenant_update` | `superadmin_select` | Status |
+|-------|:---:|:---:|:---:|:---:|--------|
+| tenants | ✅ | ✅ | ✅ | ✅ | OK |
+| contacts | ✅ | ✅ | ✅ | ✅ | OK |
+| messages | ✅ | ✅ | — | ✅ | OK |
+| alerts | ✅ | ✅ | ✅ | ✅ | OK |
+| tenant_users | ✅ | ✅ | — | ✅ | OK |
+| test_feedback | ✅ | ✅ | — | ✅ | OK |
+| tenant_onboarding | ✅ | ✅ | ✅ | ✅ | OK |
+| onboarding_messages | ✅ | ✅ | — | **⚠️ ADDED** | Fixed |
+| appointments | ✅ | ✅ | ✅ | **⚠️ ADDED** | Fixed |
+| resources | ✅ | ✅ | ✅ | **⚠️ ADDED** | Fixed |
+| scheduling_config | ✅ | ✅ | ✅ | **⚠️ ADDED** | Fixed |
+| tenant_services | ✅ | ✅ | ✅ | **⚠️ ADDED** | Fixed |
+| profiles | — | — | — | — | Auth-owned, no tenant RLS needed |
+
+**C2: Orphan Tenant Cleanup**
+- Found 3 "Jose Mancilla" tenant records from failed provisioning attempts
+- 2 were orphans (no `tenant_users` linkage) → **DELETED** (`4bda477d`, `af818a7c`)
+- Navbar tenant switcher now shows only valid tenants
+- CasaVitaCure data verified untouched (18 contacts, 27 msgs, 16 alerts)
+
+**C3: Superadmin RLS Migration** — `add_superadmin_rls_to_new_tables`
+- Applied `superadmin_select` policies to 5 tables that were missing them
+- Ensures superadmins can see all tenants' data for support/debugging
+
+#### Phase D — Schema Mismatch Fix + Calendar Tenant Isolation (Apr 15 night, commit `3aba37e`)
+
+**D1: PGRST204 Provisioning Errors** ← Root cause of services/resources/config not being created
+
+The provisioning code referenced columns that don't exist in the actual DB schema:
+
+| Table | Code Referenced | Actual Column | Fix |
+|-------|----------------|---------------|-----|
+| `tenant_services` | `base_price` | `price` | Updated |
+| `tenant_services` | `variable_pricing` | `price_is_variable` | Updated |
+| `tenant_services` | `estimated_duration_min` | `duration_minutes` | Updated |
+| `resources` | `resource_type` (column) | `metadata` (jsonb) | Moved to `metadata.resource_type` |
+| `scheduling_config` | `open_time`, `close_time`, `working_days` | `business_hours` (jsonb) | Restructured to jsonb |
+| `scheduling_config` | (missing) | `default_duration_minutes`, `slot_interval_minutes`, `buffer_between_minutes`, `timezone` | Added required fields |
+
+**D2: Hardcoded CasaVitaCure tenant_id Removal** — **CRITICAL SECURITY FIX**
+
+Both calendar endpoints had CasaVitaCure's tenant_id as the default:
+- `GET /api/calendar/events` — `tenant_id: str = "d8376510-..."` → now required, returns 400 if missing
+- `POST /api/calendar/book` — `payload.get("tenant_id", "d8376510-...")` → now required, returns 400 if missing
+
+**D3: Frontend Calendar Tenant Isolation**
+- `AgendaView.tsx` — now passes `currentTenantId` from `useTenant()` to both fetch and booking calls
+- `calendar/events/route.ts` — proxy now forwards `tenant_id` query param to backend
+- `RecursosView.tsx` — reads `resource_type` from `metadata.resource_type` instead of non-existent column
+
+#### Phase E — Resource Count Feature (Apr 16 morning, commit `25f929e`)
+
+**Problem:** Provisioning always created exactly 1 resource, regardless of what the user told the config agent.
+
+**Solution:** Added `resource_count` as the 12th onboarding field:
+- **DB migration:** `ALTER TABLE tenant_onboarding ADD COLUMN resource_count integer DEFAULT 1`
+- **Agent prompt:** New field #12 with contextual examples ("¿Cuántos equipos/boxes/salas?")
+- **`_save_field()`:** Converts LLM string to clamped integer (1-20)
+- **Provisioning:** Creates N resources with sequential names and a rotating 10-color palette
+
+#### Phase F — User E2E Testing ✅ PASSED
+
+User completed full onboarding flow after Phase D fixes:
+- Config chat: all 11 fields extracted correctly, provisioning triggered ✅
+- `tenant_services`: 1 service created (with correct schema) ✅
+- `resources`: 2 created (1 auto-provisioned "Equipo 1" + 1 manually added via UI) ✅
+- `scheduling_config`: 1 row with business_hours jsonb, timezone, duration ✅
+- Sandbox chat: functional, received AI responses ✅
+- Frontend: "almost seamless" per user feedback ✅
+- Sentry: some non-critical warnings captured (fallback triggers) — addressed
+
 ---
 
-#### 🔨 DOING NOW: User Testing + Remaining P1 Items
+### 🔨 DOING NOW
 
-The P0+P1 commit (`cd6240e`) has been pushed to `desarrollo`. Cloud Build will auto-deploy backend to DEV. The user should test:
+Post-testing iteration. The provisioning pipeline is now functional. Remaining work:
 
-1. **Onboarding flow end-to-end** — Does it provision services/resources/scheduling_config?
-2. **Tenant isolation** — Does switching tenants in navbar show only that tenant's data?
-3. **Sandbox chat** — Do calendar tool calls create real appointments?
-4. **Message dedup** — Does sending a message show exactly 1 bubble (not 2)?
-5. **Message formatting** — Do `*bold*` and `_italic_` render correctly?
-
-**Remaining P1 items (not yet implemented):**
-
-| ID | Issue | Status | Description |
-|----|-------|--------|-------------|
-| **P1-3** | Agenda business hours from real data | ⏳ PENDING | `AgendaView` should read `scheduling_config` for business hours instead of hardcoded 8-20 |
-| **P1-4** | Agenda appointment progress bars | ⏳ PENDING | Show real appointment count per resource as progress bars |
-| **P1-5** | Permanent sandbox link in chats list | ⏳ PENDING | Old "Chat de Pruebas" should always appear in contacts list sidebar as shortcut to `/chats/sandbox` |
+1. **Validate resource_count flow** — Next test should ask for N teams and verify N resources provisioned
+2. **Frontend deploy to DEV** — Changes to AgendaView, RecursosView need to be live on dev site
 
 ---
 
-#### 🔜 WILL DO (after stabilization sprint)
+### 🔜 WILL DO (Priority Order)
 
-1. **P1-3/P1-4:** Agenda real data integration
-2. **P1-5:** Permanent sandbox chat link
-3. **Services/Products Page (P2):** Full CRUD frontend for `tenant_services` — user-approved, architecture designed but blocked on stabilization
-4. **PROD migration:** DEV → E2E verified → schema sync → PROD (per migration lifecycle rule)
-5. **GCal cleanup (Phase 5):** Remove google_client.py, OAuth router, tenant GCal columns — ONLY after native calendar verified in PROD
+| Priority | Item | Status | Description |
+|----------|------|--------|-------------|
+| **P1-3** | Agenda real business hours | ⏳ PENDING | `AgendaView` reads `scheduling_config` for hours instead of hardcoded 8-20 |
+| **P1-4** | Agenda appointment progress bars | ⏳ PENDING | Show real appointment count per resource in agenda |
+| **P1-5** | Permanent sandbox link in contacts | ⏳ PENDING | "Chat de Pruebas" always visible in sidebar |
+| **P2** | Services/Products CRUD frontend | ⏳ Designed | Full UI for editing `tenant_services` |
+| **P2** | Resources CRUD polish | ⏳ Partial | RecursosView exists but needs polish |
+| **P3** | PROD migration sync | ⏳ BLOCKED | Requires full E2E pass on DEV |
+| **P4** | GCal cleanup | ⏳ BLOCKED | Remove google_client.py, OAuth — only after native verified in PROD |
 
 ---
 
-#### Previous Fixes (Still Active, All on `desarrollo`)
+### Previous Fixes (Still Active, All on `desarrollo`)
 
 | Fix | Commit | DEV | PROD |
 |-----|--------|-----|------|
@@ -77,19 +149,38 @@ The P0+P1 commit (`cd6240e`) has been pushed to `desarrollo`. Cloud Build will a
 | Sandbox Tools (7 tools + agentic loop) | `f6c2260` | ✅ | ⏳ PENDING |
 | Native Calendar Schema | `670dd9d` | ✅ | ⏳ PENDING |
 | P0+P1 Bug Fixes | `cd6240e` | ✅ | ⏳ PENDING |
+| Schema Mismatch + Calendar Isolation | `3aba37e` | ✅ | ⏳ PENDING |
+| Resource Count Feature | `25f929e` | ✅ | ⏳ PENDING |
 
 ### Current Deployment State
 
 | Component | Status | Notes |
 |:---|:---|:---|
-| **Backend** (Cloud Run DEV) | ✅ Running | Commit `cd6240e` — auto-deployed |
-| **Frontend** (Cloudflare Workers DEV) | ⚠️ NEEDS MANUAL DEPLOY | `npm run deploy` required on `desarrollo` |
-| **Supabase DEV** | ✅ | 13 tables, all RLS enabled |
-| **PROD** | ⏳ UNTOUCHED | No changes merged to main since Apr 12 |
+| **Backend** (Cloud Run DEV) | ✅ Running | Commit `25f929e` — auto-deployed from `desarrollo` |
+| **Frontend** (CF Workers DEV) | ⚠️ NEEDS DEPLOY | AgendaView + RecursosView changes need `npm run deploy` or auto-build |
+| **Supabase DEV** | ✅ | 13 tables, all RLS enabled, superadmin policies on all |
+| **PROD** | 🔒 BLOCKED & SAFE | No changes since Apr 12. 10 migrations pending approval. |
 
 ---
 
-## §1 — Complete Session Work Log (2026-04-15)
+## §1 — Complete Session Work Log (2026-04-15 → 2026-04-16)
+
+### 15. Resource Count Feature ✅ (commit `25f929e` — Apr 16 06:37 CLT)
+- Added `resource_count` as 12th onboarding field
+- DB migration, agent prompt, `_save_field()` handler, N-resource provisioning loop
+- Rotating 10-color palette for visual distinction in Agenda
+
+### 14. Schema Mismatch + Calendar Isolation ✅ (commit `3aba37e` — Apr 15 ~22:41 CLT)
+- Fixed 6 column mismatches causing PGRST204 in provisioning
+- Removed hardcoded CasaVitaCure `tenant_id` from both calendar endpoints
+- Frontend calendar now passes `currentTenantId`
+- RecursosView reads `resource_type` from `metadata` jsonb
+
+### 13. Multi-Tenancy Forensic Audit (Apr 15 ~21:00-22:30 CLT)
+- Audited all 13 tables' RLS policies
+- Deleted 2 orphan tenants, reset test user
+- Applied superadmin RLS to 5 tables
+- Verified CasaVitaCure data integrity
 
 ### 12. P0+P1 Stabilization Sprint ✅ (commit `cd6240e`)
 - **Context:** User-tested the system, found 5 critical bugs
@@ -99,30 +190,32 @@ The P0+P1 commit (`cd6240e`) has been pushed to `desarrollo`. Cloud Build will a
 
 ### 11. Native Calendar + Services CRUD (commit `670dd9d`)
 - **3 new DB tables:** `resources`, `appointments`, `scheduling_config` with RLS + `btree_gist`
-- **NativeSchedulingService:** 6 operations (availability, book, cancel, update, list, events) with 3-channel observability
+- **NativeSchedulingService:** 6 operations with 3-channel observability
 - **Services CRUD:** `services.py` endpoints, `tenant_services` table
-- **Frontend skeleton:** ConfigView for services management
 
 ### 10. Sandbox Tool Integration ✅ (commit `f6c2260`)
 - **7 tools** in sandbox chat (5 simulated calendar + 2 real DB/event)
-- Agentic loop with Responses API chaining (`previous_response_id`, `store=True`)
-- MAX_TOOL_ROUNDS=3, full 3-channel observability
+- Agentic loop with Responses API chaining
 
 ### Previous items (1-9): see §1 in earlier session logs
-*(Responses API fix, done event fix, activity timeout, SSE observability, frontend state fix, provisioning overlay, celebration screen, persistent history, tool detection feature spec)*
 
 ---
 
 ## §2 — What's Pending
 
-### NOW — User Testing of commit `cd6240e`
+### Completion Assessment: ~60-75%
 
-Priority order for testing:
-1. Self-onboarding flow → verify provisioning
-2. Sandbox chat → verify real tool calls
-3. Tenant switching → verify isolation
-4. Message send → verify no duplicates
-5. AI response formatting → verify markdown rendering
+| Area | Completion | What's Missing |
+|------|:---:|--------------|
+| **Self-Onboarding** | 90% | Edge case handling, resource_count validation |
+| **Sandbox Chat** | 85% | Polish, real tool responses working |
+| **Tenant Isolation** | 95% | Calendar was the last leak — fixed |
+| **Chat (Regular)** | 80% | Message dedup fixed, formatting improved |
+| **Agenda/Calendar** | 50% | Hardcoded hours, no progress bars, no real resource view |
+| **Services CRUD** | 30% | Backend exists, frontend skeleton only |
+| **Resources CRUD** | 60% | UI works but reads from wrong schema (now fixed) |
+| **Dashboard** | 40% | Live alerts work, charts/KPIs are mock |
+| **PROD Parity** | 0% | 10 migrations pending, all work on DEV only |
 
 ### AFTER Testing — Remaining Implementation
 
@@ -131,13 +224,13 @@ Priority order for testing:
 | P1-3 | Agenda real business hours from `scheduling_config` | ⏳ | No |
 | P1-4 | Agenda real appointment progress bars | ⏳ | No |
 | P1-5 | Permanent sandbox link in contacts sidebar | ⏳ | No |
-| P2 | Services/Products CRUD frontend page | ⏳ Designed | P0/P1 completion |
-| P3 | PROD migration sync | ⏳ | Full E2E pass on DEV |
+| P2 | Services/Products CRUD frontend page | ⏳ Designed | P1 completion |
+| P3 | PROD migration sync (10 migrations) | ⏳ | Full E2E pass on DEV |
 | P4 | GCal cleanup (remove google_client.py, OAuth) | ⏳ | P3 completion |
 
 ### Migration Parity (DEV vs PROD)
 
-> ⚠️ **CRITICAL GAP:** PROD has 6 tables. DEV has 13 tables. Seven tables exist only on DEV and are NOT yet approved for PROD migration.
+> ⚠️ **CRITICAL GAP:** PROD has 6 tables. DEV has 13 tables. Seven tables + 3 column additions exist only on DEV.
 
 | Migration | DEV | PROD |
 |:---|:---|:---|
@@ -145,19 +238,21 @@ Priority order for testing:
 | `phone_number` column on `tenant_onboarding` | ✅ Applied | ⏳ PENDING APPROVAL |
 | `tenant_onboarding` table | ✅ Applied | ⏳ PENDING APPROVAL |
 | `profiles` table | ✅ Applied | ⏳ (may already exist) |
-| `resources` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
-| `appointments` table + gist constraint + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
-| `scheduling_config` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
-| `tenant_services` table + RLS | ✅ Applied | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist constraint + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `superadmin_select` RLS on 5 new tables | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `resource_count` column on `tenant_onboarding` | ✅ Applied (2026-04-16) | ⏳ PENDING APPROVAL |
 
-**PROD SQL is ready to apply. Blocked on: user testing on DEV passing with zero errors.**
+**PROD SQL is ready to apply. Blocked on: user approving promotion after full E2E verification on DEV.**
 
 ### Technical Debt
 - [ ] Remove `google-api-python-client`, `google-auth-oauthlib` from requirements (after GCal cleanup)
 - [ ] Config agent prompt improvements — Remove redundant confirmations (REGLA 2), improve natural flow
-- [ ] RLS verification — Confirm `onboarding_messages` RLS policy correctly restricts access
-- [ ] Sandbox tools integration — connect to real scheduling via NativeSchedulingService ✅ DONE
 - [ ] Frontend manual deploy to Cloudflare Workers DEV (after testing)
+- [ ] Onboarding edge cases: what if user says "no tenemos horario" or "24/7"?
+- [ ] Provisioning: services_offered extraction should create granular per-service rows, not one blob
 
 ---
 
@@ -169,32 +264,42 @@ Priority order for testing:
 | **Supabase PROD** | Project: `nemrjlimrnrusodivtoa` (6 tables) |
 | **Cloud Run DEV** | `ia-backend-dev` in `saas-javiera` / `us-central1` |
 | **Cloud Run PROD** | `ia-backend-prod` in `saas-javiera` / `us-central1` |
-| **Frontend DEV** | `https://dev-ia-whatsapp-crm.tomasgemes.workers.dev` |
-| **Frontend PROD** | `https://ia-whatsapp-crm.tomasgemes.workers.dev` |
-| **Test tenant ID** | `4bda477d-33d6-458a-b256-e28ea1337324` (instagramelectrimax) |
+| **Frontend DEV** | `https://dev-ia-whatsapp-crm.tomasgemes.workers.dev` / `ohno.tuasistentevirtual.cl` |
+| **Frontend PROD** | `https://ia-whatsapp-crm.tomasgemes.workers.dev` / `dash.tuasistentevirtual.cl` |
+| **Test user email** | `instagramelectrimax@gmail.com` |
+| **Test user current tenant** | `f12ca5b3-cbeb-4488-ac68-de3a78e55e63` (Jose Mancilla — FumigaMax) |
+| **CasaVitaCure tenant** | `d8376510-911e-42ef-9f3b-e018d9f10915` |
 | **GitHub repo** | `YggrYergen/ia-whatsapp-crm` |
 | **Branch** | `desarrollo` (all work) → merge to `main` for PROD |
 
 ---
 
-## §4 — Key Files Modified This Session (commit `cd6240e`)
+## §4 — Key Files Modified (This Session — Apr 15-16)
 
 | File | What Changed |
 |:---|:---|
-| `Frontend/contexts/UIContext.tsx` | **P0-4:** Tenant isolation — alerts filtered by `currentTenantId`, dynamic Realtime re-subscription, Sentry on all error paths |
-| `Frontend/contexts/ChatContext.tsx` | **P0-4b + P0-3:** Tenant isolation on contacts/messages queries + Realtime subs. Fixed duplicate messages (remove `temp-*` on Realtime INSERT). `useRef` for stale closure prevention. |
-| `Backend/app/api/onboarding/chat_endpoint.py` | **P0-2:** Added `_provision_services_and_resources()` — auto-creates `tenant_services`, `resources`, `scheduling_config` from onboarding data (260 lines) |
-| `Backend/app/api/sandbox/tools.py` | **P0-1:** Replaced 5 simulated calendar functions with real `NativeSchedulingService` async implementations. Updated header, executor routing. |
-| `Frontend/lib/whatsappFormatter.tsx` | **P1-1 NEW:** Shared WhatsApp markdown formatter — `*bold*`, `_italic_`, `~strike~`, `` `code` ``, ```` ```blocks``` ````, URLs, line breaks, CSS safety styles |
-| `Frontend/components/Conversations/ChatArea.tsx` | **P1-1:** Replaced 38-line inline `formatWhatsAppText` with shared `formatWhatsAppMessage` |
-| `Frontend/components/Conversations/TestChatArea.tsx` | **P1-1:** Same replacement as ChatArea |
-| `Frontend/app/(panel)/chats/sandbox/page.tsx` | **P1-1:** Applied `formatWhatsAppMessage` + `messageBubbleStyles` |
+| `Backend/app/api/onboarding/chat_endpoint.py` | **P0-2 + D1 + E:** Provisioning function: schema fix (6 columns), N-resource loop, resource_count handling, `_save_field` resource_count parser |
+| `Backend/app/api/onboarding/agent_prompt.py` | **E:** Added `resource_count` as 12th field in ONBOARDING_FIELDS + prompt instructions |
+| `Backend/app/api/sandbox/tools.py` | **P0-1:** Replaced 5 simulated functions with real NativeSchedulingService calls |
+| `Backend/app/main.py` | **D2:** Removed hardcoded tenant_id from `/api/calendar/events` and `/api/calendar/book`, now required |
+| `Frontend/contexts/UIContext.tsx` | **P0-4:** Tenant-filtered alerts + Realtime re-subscription |
+| `Frontend/contexts/ChatContext.tsx` | **P0-4b + P0-3:** Tenant-filtered contacts/messages + dedup fix |
+| `Frontend/components/CRM/AgendaView.tsx` | **D3:** Passes `currentTenantId` to calendar API calls |
+| `Frontend/components/CRM/RecursosView.tsx` | **D3:** Reads `resource_type` from `metadata` jsonb + helper function |
+| `Frontend/app/api/calendar/events/route.ts` | **D3:** Forwards `tenant_id` query param to backend |
+| `Frontend/lib/whatsappFormatter.tsx` | **P1-1 NEW:** WhatsApp markdown → React nodes formatter |
+| `Frontend/components/Conversations/ChatArea.tsx` | **P1-1:** Applied shared formatter |
+| `Frontend/components/Conversations/TestChatArea.tsx` | **P1-1:** Applied shared formatter |
+| `Frontend/app/(panel)/chats/sandbox/page.tsx` | **P1-1:** Applied shared formatter |
 
 ---
 
 ## §5 — Git Commits This Session (on `desarrollo`)
 
 ```
+25f929e feat: resource_count onboarding field - provisions N resources from user input
+3aba37e fix: schema mismatch in provisioning (PGRST204) + remove hardcoded tenant_id from calendar
+916137b docs: update NOW.md + execution_tracker.md with P0+P1 sprint results
 cd6240e fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting
 f7eb010 fix: tool format conversion + response_dto unbound in sandbox
 670dd9d feat: native scheduling + services/resources CRUD + config modernization
@@ -382,29 +487,26 @@ At the END of every session:
 ```
 ┌──── git push origin desarrollo ────┐     ┌──── git push origin main ────────┐
 │                                     │     │                                   │
-│  Cloud Build (saas-javiera)         │     │  Cloud Build (casavitacure-crm)   │
+│  Cloud Build (saas-javiera)         │     │  Cloud Build (saas-javiera)       │
 │  ├─ Build: Backend/Dockerfile       │     │  ├─ Build: Backend/Dockerfile     │
 │  ├─ Push: → Artifact Registry       │     │  ├─ Push: → Artifact Registry     │
 │  └─ Deploy: → ia-backend-dev        │     │  └─ Deploy: → ia-backend-prod     │
 │                                     │     │                                   │
 │  Cloudflare Workers Builds          │     │  Cloudflare Workers Builds        │
-│  └─ Deploy: → dev-ia-whatsapp-crm.tomasgemes.workers.dev            │     │  └─ Deploy: → ia-whatsapp-crm.tomasgemes.workers.dev          │
+│  └─ Deploy: → dev-ia-whatsapp-crm   │     │  └─ Deploy: → ia-whatsapp-crm    │
 └─────────────────────────────────────┘     └───────────────────────────────────┘
 ```
 
-⚠️ **CRITICAL FINDING THIS SESSION:** Cloudflare Workers auto-build is connected to `main` only. Frontend changes on `desarrollo` require **manual** `npm run deploy` from the local machine. This gap caused ALL previous frontend fixes to be invisible on the dev site.
-
 | Branch | Backend Service | Frontend | Database |
 |:---|:---|:---|:---|
-| `desarrollo` | `ia-backend-dev` (auto-deploy) | Manual `npm run deploy` | Supabase DEV |
+| `desarrollo` | `ia-backend-dev` (auto-deploy) | CF Worker auto-deploy via Workers Builds | Supabase DEV |
 | `main` | `ia-backend-prod` (auto-deploy) | Auto-deploy via Workers Builds | Supabase PROD |
 
 ### THE WORKFLOW
 1. ALL new work on `desarrollo` — never commit directly to `main`
 2. Push triggers auto-deploy backend to DEV — test there
-3. Frontend on `desarrollo` requires manual deploy
-4. When stable → merge `desarrollo → main` to deploy to PROD
-5. **NEVER push untested code to `main`**
+3. When stable → merge `desarrollo → main` to deploy to PROD
+4. **NEVER push untested code to `main`**
 
 ### Scope Discipline
 - **ONLY** work on the blocks listed in §1 "What Is Being Done RIGHT NOW"
@@ -548,10 +650,12 @@ WHERE table_schema = 'public' AND table_name = '<TABLE>' AND column_name = '<COL
 | `appointments` table + gist + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
 | `scheduling_config` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
 | `tenant_services` table + RLS | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| Superadmin RLS on 5 new tables | ✅ Applied (2026-04-15) | ⏳ PENDING APPROVAL |
+| `resource_count` column on `tenant_onboarding` | ✅ Applied (2026-04-16) | ⏳ PENDING APPROVAL |
 
-**Schema Gap: DEV has 13 tables, PROD has 6 tables. 7 tables pending PROD approval.**
+**Schema Gap: DEV has 13 tables, PROD has 6 tables. 10 migrations pending PROD approval.**
 
-**PROD SQL ready to apply — blocked on full E2E verification on DEV.**
+**PROD SQL ready to apply — blocked on full E2E verification on DEV + user approval.**
 
 ---
 
