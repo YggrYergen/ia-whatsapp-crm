@@ -254,6 +254,7 @@ export default function SandboxPage() {
   }, [inputValue, isProcessing, sandboxContactId, currentTenantId])
 
   const handleReset = useCallback(async () => {
+    console.log('[SandboxPage.handleReset] CLICKED | sandboxContactId=', sandboxContactId, '| currentTenantId=', currentTenantId)
     if (!sandboxContactId || !currentTenantId) {
       console.warn('[SandboxPage.handleReset] No sandboxContactId or tenantId — aborting')
       return

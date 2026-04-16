@@ -38,15 +38,18 @@ const nextConfig = {
 }
 
 module.exports = withSentryConfig(nextConfig, {
-  // Sentry build options
-  org: process.env.SENTRY_ORG || "",
-  project: process.env.SENTRY_PROJECT || "",
+  // Sentry build-time options
+  // Org and project are safe to hardcode — they're not secrets
+  org: "tuasistentevirtual",
+  project: "python",
+
+  // Auth token from Cloudflare build secret (set in Workers dashboard)
+  authToken: process.env.SENTRY_AUTH_TOKEN,
 
   // Suppress Sentry debug output in production builds
-  // Note: disableLogger is deprecated, using silent instead
   silent: !process.env.CI,
 
-  // Hide source maps from the client bundle
+  // Hide source maps from the client bundle (Sentry still reads them)
   hideSourceMaps: true,
 });
 
