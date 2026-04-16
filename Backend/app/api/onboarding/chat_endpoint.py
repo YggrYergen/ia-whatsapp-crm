@@ -1032,13 +1032,13 @@ async def _provision_generic_fallback(db, tenant_id: str):
         await db.table("scheduling_config").upsert({
             "tenant_id": tenant_id,
             "business_hours": {
-                "monday":    {"open": "09:00", "close": "19:00", "enabled": True},
-                "tuesday":   {"open": "09:00", "close": "19:00", "enabled": True},
-                "wednesday": {"open": "09:00", "close": "19:00", "enabled": True},
-                "thursday":  {"open": "09:00", "close": "19:00", "enabled": True},
-                "friday":    {"open": "09:00", "close": "19:00", "enabled": True},
-                "saturday":  {"open": "09:00", "close": "16:00", "enabled": True},
-                "sunday":    {"open": "09:00", "close": "13:00", "enabled": False},
+                # Keys MUST match what AgendaView expects: {start, end}
+                "monday":    {"start": "09:00", "end": "19:00"},
+                "tuesday":   {"start": "09:00", "end": "19:00"},
+                "wednesday": {"start": "09:00", "end": "19:00"},
+                "thursday":  {"start": "09:00", "end": "19:00"},
+                "friday":    {"start": "09:00", "end": "19:00"},
+                "saturday":  {"start": "09:00", "end": "16:00"},
             },
             "default_duration_minutes": 60,
             "slot_interval_minutes": 60,
@@ -1302,9 +1302,10 @@ async def _provision_services_and_resources(db, tenant_id: str, fields_status=No
             business_hours_jsonb = {}
             for day_num in working_days:
                 if 0 <= day_num < 7:
+                    # Keys MUST match what AgendaView expects: {start, end}
                     business_hours_jsonb[_day_names[day_num]] = {
-                        "open": open_time,
-                        "close": close_time,
+                        "start": open_time,
+                        "end": close_time,
                     }
             
             config_row = {

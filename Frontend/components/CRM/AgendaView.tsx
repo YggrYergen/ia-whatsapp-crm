@@ -64,10 +64,22 @@ function getHoursForDate(date: Date, config: SchedulingConfig | null): { start: 
     const dayName = DAY_NAMES[date.getDay()]
     const hours = config?.business_hours?.[dayName] ?? DEFAULT_BUSINESS_HOURS[dayName]
     if (!hours) return null // Closed day
-    const startH = parseInt(hours.start.split(':')[0])
-    const endH = parseInt(hours.end.split(':')[0])
+
+    // Normalize: backend canonical format is {start, end}
+    // but older records may use {open, close}. Never crash on either.
+    const startStr: string | undefined = (hours as any).start ?? (hours as any).open
+    const endStr: string | undefined = (hours as any).end ?? (hours as any).close
+
+    if (!startStr || !endStr) {
+        console.warn('[AgendaView] Unexpected business_hours format for', dayName, hours)
+        return { start: 9, end: 19 } // safe fallback
+    }
+
+    const startH = parseInt(startStr.split(':')[0])
+    const endH = parseInt(endStr.split(':')[0])
     return { start: startH, end: endH }
 }
+
 
 /** Generate hour slots array for a given start/end */
 function generateHourSlots(startH: number, endH: number): string[] {
