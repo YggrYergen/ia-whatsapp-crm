@@ -191,7 +191,7 @@ export default function ConfigPanel() {
                             </Button>
                         </Link>
                         <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-4 py-1 font-black uppercase tracking-widest text-[10px]">
-                            {currentTenant?.business_name || 'Configuración'}
+                            {currentTenant?.name || 'Configuración'}
                         </Badge>
                     </div>
 
