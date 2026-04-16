@@ -763,6 +763,18 @@ async def _save_field(tenant_id: str, field_name: str, field_value: str):
             await db.table("tenant_onboarding").update({
                 "services_offered": services,
             }).eq("tenant_id", tenant_id).execute()
+        elif field_name == "resource_count":
+            # resource_count is INTEGER in DB — LLM sends it as string
+            try:
+                count_int = max(1, min(int(field_value), 20))  # Clamp 1-20
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"[{_where}] resource_count not parseable as int: '{field_value}' — defaulting to 1 | {_ctx}"
+                )
+                count_int = 1
+            await db.table("tenant_onboarding").update({
+                "resource_count": count_int,
+            }).eq("tenant_id", tenant_id).execute()
         else:
             # Unknown field name — log it, don't crash
             logger.warning(
@@ -951,7 +963,7 @@ async def _provision_services_and_resources(db, tenant_id: str):
         # ── 1. Read onboarding data ──
         try:
             onb_res = await db.table("tenant_onboarding").select(
-                "services_offered, business_hours, business_type"
+                "services_offered, business_hours, business_type, resource_count"
             ).eq("tenant_id", tenant_id).single().execute()
         except Exception as read_err:
             _msg = f"[{_where}:read_onboarding] Failed to read tenant_onboarding | {_ctx} | error={str(read_err)[:200]}"
@@ -1058,7 +1070,7 @@ async def _provision_services_and_resources(db, tenant_id: str):
                         )
                         # Continue with other services
         
-        # ── 3. Create default resource based on business type ──
+        # ── 3. Create resources based on business type and resource_count ──
         # Schema: id, tenant_id, name (text NOT NULL), label (text), color (text),
         #         is_active (bool), sort_order (int), metadata (jsonb), created_at, updated_at
         # NOTE: No 'resource_type' column — stored inside 'metadata' jsonb.
@@ -1071,29 +1083,52 @@ async def _provision_services_and_resources(db, tenant_id: str):
                 resource_type = rtype
                 break
         
-        resource_created = False
+        # How many resources to create (from onboarding, default 1)
+        raw_count = onb_data.get("resource_count")
         try:
-            resource_row = {
-                "tenant_id": tenant_id,
-                "name": f"{resource_label.lower()}_1",
-                "label": f"{resource_label} 1",
-                "color": "#10B981",  # Emerald green
-                "is_active": True,
-                "sort_order": 0,
-                "metadata": {"resource_type": resource_type},  # type in jsonb, not column
-            }
-            await db.table("resources").insert(resource_row).execute()
-            resource_created = True
-            logger.info(f"✅ [{_where}] Resource created: '{resource_label} 1' (type={resource_type}) | {_ctx}")
-        except Exception as res_err:
-            _msg = f"[{_where}:create_resource] Failed to create default resource | {_ctx} | error={str(res_err)[:200]}"
-            logger.error(_msg, exc_info=True)
-            sentry_sdk.capture_exception(res_err)
-            await send_discord_alert(
-                title=f"⚠️ Service Provisioning: Resource Creation Failed | {tenant_id}",
-                description=f"**Resource:** `{resource_label} 1`\n**Type:** `{resource_type}`\n**Error:** ```{str(res_err)[:300]}```",
-                severity="warning", error=res_err
-            )
+            resource_count = max(1, min(int(raw_count), 20)) if raw_count else 1  # Clamp 1-20
+        except (ValueError, TypeError):
+            resource_count = 1
+        
+        # Rotating color palette for visual distinction in agenda
+        _RESOURCE_COLORS = [
+            "#10B981",  # Emerald
+            "#8B5CF6",  # Violet
+            "#3B82F6",  # Blue
+            "#F59E0B",  # Amber
+            "#EF4444",  # Red
+            "#EC4899",  # Pink
+            "#06B6D4",  # Cyan
+            "#84CC16",  # Lime
+            "#F97316",  # Orange
+            "#6366F1",  # Indigo
+        ]
+        
+        resources_created = 0
+        for i in range(resource_count):
+            try:
+                resource_row = {
+                    "tenant_id": tenant_id,
+                    "name": f"{resource_label.lower()}_{i + 1}",
+                    "label": f"{resource_label} {i + 1}",
+                    "color": _RESOURCE_COLORS[i % len(_RESOURCE_COLORS)],
+                    "is_active": True,
+                    "sort_order": i,
+                    "metadata": {"resource_type": resource_type},
+                }
+                await db.table("resources").insert(resource_row).execute()
+                resources_created += 1
+                logger.info(f"✅ [{_where}] Resource created: '{resource_label} {i + 1}' (type={resource_type}) | {_ctx}")
+            except Exception as res_err:
+                _msg = f"[{_where}:create_resource] Failed to create resource {i + 1} | {_ctx} | error={str(res_err)[:200]}"
+                logger.error(_msg, exc_info=True)
+                sentry_sdk.capture_exception(res_err)
+                await send_discord_alert(
+                    title=f"⚠️ Service Provisioning: Resource {i + 1} Creation Failed | {tenant_id}",
+                    description=f"**Resource:** `{resource_label} {i + 1}`\n**Type:** `{resource_type}`\n**Error:** ```{str(res_err)[:300]}```",
+                    severity="warning", error=res_err
+                )
+                # Continue creating remaining resources
         
         # ── 4. Create default scheduling_config with business hours ──
         # Schema: id, tenant_id, business_hours (jsonb NOT NULL),
@@ -1166,7 +1201,7 @@ async def _provision_services_and_resources(db, tenant_id: str):
             title=f"🏗️ Service Provisioning Complete | {tenant_id}",
             description=(
                 f"**Services created:** {services_created}\n"
-                f"**Resource created:** {'✅' if resource_created else '❌'} ({resource_label} 1)\n"
+                f"**Resources created:** {resources_created}/{resource_count} ({resource_label})\n"
                 f"**Business hours:** {open_time}–{close_time}\n"
                 f"**Working days:** {working_days}\n"
                 f"**Env:** {settings.ENVIRONMENT}"
