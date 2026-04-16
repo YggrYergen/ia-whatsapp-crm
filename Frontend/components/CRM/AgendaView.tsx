@@ -103,8 +103,10 @@ export default function AgendaView() {
 
     // Booking Modal State
     const [isBookingOpen, setIsBookingOpen] = useState(false)
-    const [bookingTime, setBookingTime] = useState("")
     const [bookingDate, setBookingDate] = useState("")
+    const [bookingTime, setBookingTime] = useState("")
+    const [bookingEndTime, setBookingEndTime] = useState("")
+    const [bookingResourceId, setBookingResourceId] = useState("")
     const [patientName, setPatientName] = useState("")
     const [patientPhone, setPatientPhone] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -279,24 +281,47 @@ export default function AgendaView() {
     // ─── Booking ─────────────────────────────────────────────────
 
     const handleSlotClick = (dateStr: string, timeStr: string) => {
+        // Pre-fill start time; auto-set end time = start + default duration
         setBookingDate(dateStr)
         setBookingTime(timeStr)
+        const defaultDur = schedulingConfig?.default_duration_minutes || 60
+        const [h, m] = timeStr.split(':').map(Number)
+        const endMin = h * 60 + (m || 0) + defaultDur
+        setBookingEndTime(`${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`)
+        setBookingResourceId(resources[0]?.id || '')
         setIsBookingOpen(true)
     }
 
+    // Compute duration in minutes from bookingTime → bookingEndTime
+    const bookingDurationMin = useMemo(() => {
+        if (!bookingTime || !bookingEndTime) return 0
+        const [sh, sm] = bookingTime.split(':').map(Number)
+        const [eh, em] = bookingEndTime.split(':').map(Number)
+        return (eh * 60 + em) - (sh * 60 + sm)
+    }, [bookingTime, bookingEndTime])
+
     const handleBook = async () => {
         if (!patientName.trim() || !patientPhone.trim()) return
-        if (!currentTenantId) return
+        if (!currentTenantId || bookingDurationMin <= 0) return
         const _where = `${_WHERE}.handleBook`
         setIsSubmitting(true)
         try {
+            // Build ISO timestamps from date + time strings
+            const startISO = new Date(`${bookingDate}T${bookingTime}:00`).toISOString()
+            const endISO   = new Date(`${bookingDate}T${bookingEndTime}:00`).toISOString()
+
             const payload = {
                 tenant_id: currentTenantId,
+                resource_id: bookingResourceId || undefined,
+                start_time: startISO,
+                end_time: endISO,
+                duration_minutes: bookingDurationMin,
+                patient_name: patientName,
+                phone: patientPhone,
+                // Legacy fields kept for backward-compat with backend
                 date_str: bookingDate,
                 time_str: bookingTime,
-                duration: schedulingConfig?.default_duration_minutes || 30,
-                patient_name: patientName,
-                phone: patientPhone
+                duration: bookingDurationMin,
             }
             const res = await fetch(`/api/calendar/book`, {
                 method: 'POST',
@@ -305,8 +330,8 @@ export default function AgendaView() {
             })
             const data = await res.json()
             if (data.status === 'success') {
-                setPatientName("")
-                setPatientPhone("")
+                setPatientName('')
+                setPatientPhone('')
                 setIsBookingOpen(false)
                 fetchAppointments()
             } else {
@@ -315,7 +340,7 @@ export default function AgendaView() {
         } catch (err: any) {
             console.error(`[${_where}]`, err)
             Sentry.captureException(err, { tags: { where: _where, tenant_id: currentTenantId } })
-            setError(err.message || "Error al agendar")
+            setError(err.message || 'Error al agendar')
         } finally {
             setIsSubmitting(false)
         }
@@ -660,33 +685,156 @@ export default function AgendaView() {
 
                 {/* ── Booking Modal ── */}
                 <Dialog open={isBookingOpen} onOpenChange={setIsBookingOpen}>
-                    <DialogContent className="bg-[#141825] border-white/10 text-white">
-                        <DialogHeader>
-                            <DialogTitle className="text-white">Agendar Nueva Cita</DialogTitle>
-                            <DialogDescription className="text-slate-400">
-                                Para el {bookingDate} a las {bookingTime}. El sistema asignará el recurso disponible automáticamente.
+                    <DialogContent className="bg-[#141825] border-white/10 text-white max-w-md w-full p-0 overflow-hidden">
+
+                        {/* Header */}
+                        <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+                            <DialogTitle className="text-white font-black text-lg flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                                    <CalendarCheck size={15} className="text-indigo-400" />
+                                </div>
+                                Nueva Cita
+                            </DialogTitle>
+                            <DialogDescription className="text-slate-500 text-xs mt-1">
+                                Completa los datos — el horario es libre, sin restricciones de slots.
                             </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div className="grid gap-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Nombre</label>
-                                <Input placeholder="Ej. Ana Soto" value={patientName} onChange={e => setPatientName(e.target.value)}
-                                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600" />
+                        </div>
+
+                        <div className="px-6 py-5 space-y-4">
+
+                            {/* Date + Times row */}
+                            <div className="grid grid-cols-3 gap-3">
+                                {/* Date */}
+                                <div className="col-span-3 grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Fecha</label>
+                                    <input
+                                        type="date"
+                                        value={bookingDate}
+                                        onChange={e => setBookingDate(e.target.value)}
+                                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all [color-scheme:dark]"
+                                    />
+                                </div>
+
+                                {/* Start time */}
+                                <div className="grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inicio</label>
+                                    <input
+                                        type="time"
+                                        value={bookingTime}
+                                        onChange={e => {
+                                            setBookingTime(e.target.value)
+                                            // Auto-adjust end time if it's <= start
+                                            if (bookingEndTime && e.target.value >= bookingEndTime) {
+                                                const [h, m] = e.target.value.split(':').map(Number)
+                                                const endMin = h * 60 + m + (schedulingConfig?.default_duration_minutes || 60)
+                                                setBookingEndTime(`${String(Math.floor(endMin / 60) % 24).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`)
+                                            }
+                                        }}
+                                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all [color-scheme:dark]"
+                                    />
+                                </div>
+
+                                {/* End time */}
+                                <div className="grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Término</label>
+                                    <input
+                                        type="time"
+                                        value={bookingEndTime}
+                                        onChange={e => setBookingEndTime(e.target.value)}
+                                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all [color-scheme:dark]"
+                                    />
+                                </div>
+
+                                {/* Duration pill — computed, read-only */}
+                                <div className="grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Duración</label>
+                                    <div className={`flex items-center justify-center rounded-lg px-3 py-2 text-sm font-black transition-all ${
+                                        bookingDurationMin > 0
+                                            ? 'bg-indigo-500/15 border border-indigo-500/30 text-indigo-300'
+                                            : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {bookingDurationMin > 0
+                                            ? bookingDurationMin >= 60
+                                                ? `${Math.floor(bookingDurationMin / 60)}h${bookingDurationMin % 60 ? ` ${bookingDurationMin % 60}m` : ''}`
+                                                : `${bookingDurationMin}m`
+                                            : '—'
+                                        }
+                                    </div>
+                                </div>
                             </div>
-                            <div className="grid gap-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Teléfono / WhatsApp</label>
-                                <Input placeholder="+569..." value={patientPhone} onChange={e => setPatientPhone(e.target.value)}
-                                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600" />
+
+                            {/* Resource selector — only if more than 1 */}
+                            {resources.length > 1 && (
+                                <div className="grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recurso</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {resources.map(r => (
+                                            <button
+                                                key={r.id}
+                                                onClick={() => setBookingResourceId(r.id)}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                                    bookingResourceId === r.id
+                                                        ? 'text-white border-transparent'
+                                                        : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:bg-white/[0.08]'
+                                                }`}
+                                                style={bookingResourceId === r.id ? { backgroundColor: r.color, borderColor: r.color } : {}}
+                                            >
+                                                {r.label || r.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Divider */}
+                            <div className="border-t border-white/[0.06]" />
+
+                            {/* Name */}
+                            <div className="grid gap-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre del cliente</label>
+                                <Input
+                                    placeholder="Ej. Ana Soto"
+                                    value={patientName}
+                                    onChange={e => setPatientName(e.target.value)}
+                                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 focus-visible:ring-indigo-500/30 focus-visible:border-indigo-500/50"
+                                />
+                            </div>
+
+                            {/* Phone */}
+                            <div className="grid gap-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Teléfono / WhatsApp</label>
+                                <Input
+                                    placeholder="+569 XXXX XXXX"
+                                    value={patientPhone}
+                                    onChange={e => setPatientPhone(e.target.value)}
+                                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 focus-visible:ring-indigo-500/30 focus-visible:border-indigo-500/50"
+                                />
                             </div>
                         </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsBookingOpen(false)} className="border-white/10 text-slate-300 hover:bg-white/10">Cancelar</Button>
-                            <Button onClick={handleBook} disabled={isSubmitting} className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold">
-                                {isSubmitting ? <Loader2 className="animate-spin" /> : "Confirmar Reserva"}
+
+                        {/* Footer */}
+                        <div className="px-6 pb-6 flex items-center justify-between gap-3">
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsBookingOpen(false)}
+                                className="border-white/10 text-slate-400 hover:bg-white/[0.06] hover:text-white"
+                            >
+                                Cancelar
                             </Button>
-                        </DialogFooter>
+                            <Button
+                                onClick={handleBook}
+                                disabled={isSubmitting || !patientName.trim() || !patientPhone.trim() || bookingDurationMin <= 0}
+                                className="bg-indigo-500 hover:bg-indigo-600 text-white font-black gap-2 flex-1 max-w-[200px] shadow-lg shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                            >
+                                {isSubmitting
+                                    ? <><Loader2 size={14} className="animate-spin" /> Agendando...</>
+                                    : <><CalendarCheck size={14} /> Confirmar Reserva</>
+                                }
+                            </Button>
+                        </div>
                     </DialogContent>
                 </Dialog>
+
             </div>
         </div>
     )
