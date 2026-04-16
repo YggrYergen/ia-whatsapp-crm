@@ -70,8 +70,8 @@ WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)
                         │ 4. Fetch history (20 msgs)│
                         │ 5. Inject patient context │
                         │ 6. LLM inference          │
-                        │ 7. Multi-round tool loop  │──► GCal API
-                        │ 8. Synthesis pass         │
+                        │ 7. Multi-round tool loop  │──► Native Calendar (Supabase)
+                        │ 8. Synthesis pass         │      or GCal API (legacy)
                         │ 9. Persist + Send         │──► Meta Graph API v25.0
                         └──────────────────────────┘
                                        │
@@ -80,6 +80,8 @@ WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)
                          Frontend (CF Workers / OpenNext)
                          Dashboard / Chats / Agenda / CRM
 ```
+
+> **Calendar architecture:** New tenants use the **native calendar** (Supabase tables: `resources`, `appointments`, `scheduling_config`). Legacy tenant CasaVitaCure retains Google Calendar integration. Both systems share the same AI tool interface.
 
 ### External APIs
 
@@ -128,7 +130,7 @@ Backend/app/
 │       └── discord_notifier.py            # Embeds with severity + traceback
 └── modules/
     ├── communication/
-    │   ├── routers.py                     # GET/POST /webhook
+    │   ├── routers.py                     # GET/POST /webhook + /api/sandbox/chat
     │   └── use_cases.py                   # ProcessMessageUseCase: orchestrator, multi-round
     │                                      #   tool loop, dedup, atomic lock, rapid-fire batching
     ├── intelligence/
@@ -136,6 +138,7 @@ Backend/app/
     │   ├── tool_registry.py               # ToolRegistry singleton: register, get_schemas, execute
     │   └── tools/base.py                  # AITool ABC: get_schema(provider) + execute(**kwargs)
     └── scheduling/
+        ├── native_service.py              # NativeCalendarService: Supabase-backed scheduling engine
         ├── services.py                    # SchedulingService → GoogleCalendarClient + EventBus
         └── tools.py                       # 7 AITools: Check/Book/Update/Delete Appointment,
                                            #   CheckMyAppointments, EscalateHuman, UpdatePatientScoring
@@ -149,19 +152,23 @@ Next.js 15 App Router, deployed as **Cloudflare Worker via OpenNext** (see §5):
 Frontend/
 ├── app/
 │   ├── layout.tsx, global-error.tsx       # Root layout + Sentry render error capture
-│   ├── login/page.tsx                     # Google SSO via Supabase Auth
+│   ├── login/page.tsx                     # Cinematic login: Vortex bg + CLI text + glassmorphic card
 │   ├── auth/callback/, auth/confirm/      # OAuth PKCE flow (see deep_dives_&_misc/)
 │   ├── config/page.tsx                    # LLM provider/model, system prompt, GCal OAuth
 │   ├── api/                               # Proxy routes → Cloud Run backend
+│   │   └── sandbox/chat/                  # Dedicated sandbox chat endpoint (OpenAI Responses API)
 │   └── (panel)/                           # Auth-guarded route group (Sidebar + CrmProvider)
 │       ├── dashboard/                     # Live alerts, INTERVENCIÓN MANUAL, glassmorphic stats
 │       ├── chats/                         # Dual-mode: Regular (ChatArea) vs Sandbox (TestChatArea)
-│       ├── agenda/                        # Google Calendar read/write
+│       ├── agenda/                        # Native calendar (resources + appointments + scheduling_config)
 │       ├── pacientes/                     # CRM: patient profiles, lead scoring, notes
 │       ├── reportes/, finops/             # ⚠️ MOCK: placeholder data
 │       └── admin-feedback/               # QA table (admin-only)
 ├── contexts/                              # AuthContext, ChatContext, UIContext, CrmContext
-├── components/                            # Sidebar, ContactList, ChatArea, TestChatArea, etc.
+├── components/
+│   ├── CRM/, Conversations/, Dashboard/   # Feature modules
+│   ├── Layout/, Onboarding/               # Layout shell + 3-step onboarding flow
+│   └── ui/                                # Primitives: Vortex, CliText, shadcn, etc.
 ├── instrumentation-client.ts              # ⚠️ DO NOT DELETE — Sentry client init
 ├── wrangler.toml                          # CF Worker config (see §5)
 ├── open-next.config.ts                    # OpenNext minimal config
@@ -175,19 +182,24 @@ Frontend/
 > **Canonical source:** The live database schema. Verify with `information_schema.columns` when in doubt.
 
 ```sql
+-- ═══════════════════════════════════════════════════════════════
+-- CORE TABLES (Sprint 1)
+-- ═══════════════════════════════════════════════════════════════
+
 tenants (
     id UUID PK,
     name TEXT NOT NULL,
-    ws_phone_id TEXT UNIQUE NOT NULL,         -- Meta Phone Number ID (webhook routing)
-    ws_token TEXT NOT NULL,                   -- WhatsApp permanent access token
+    ws_phone_id TEXT UNIQUE,                  -- Meta Phone Number ID (webhook routing)
+    ws_token TEXT,                            -- WhatsApp permanent access token
     llm_provider TEXT CHECK IN ('openai','gemini'),
-    llm_model TEXT,                           -- 'gpt-5.4-mini' (default), 'gpt-5.4-nano'
+    llm_model TEXT,                           -- 'gpt-5.4-mini' (default)
     system_prompt TEXT,
     is_active BOOLEAN DEFAULT TRUE,           -- Global kill-switch
-    calendar_ids JSONB,                       -- GCal calendar IDs per tenant
+    is_setup_complete BOOLEAN DEFAULT FALSE,  -- Onboarding gate
+    calendar_ids JSONB DEFAULT '[]',          -- GCal calendar IDs (legacy)
     google_refresh_token_encrypted TEXT,       -- Fernet-encrypted OAuth refresh token
     google_calendar_email TEXT,
-    google_calendar_status TEXT,              -- 'connected' | 'disconnected'
+    google_calendar_status TEXT,              -- 'connected' | 'disconnected' | 'error'
     google_calendar_connected_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ
 )
@@ -201,8 +213,8 @@ contacts (
     role TEXT CHECK IN ('cliente','staff','admin'),
     status TEXT DEFAULT 'lead',
     is_processing_llm BOOLEAN DEFAULT FALSE,  -- Atomic processing lock
-    metadata JSONB,                           -- Scoring, clinical notes
-    notes TEXT,                               -- Staff editable notes (PacientesView)
+    metadata JSONB DEFAULT '{}',              -- Scoring, clinical notes
+    notes TEXT DEFAULT '',                    -- Staff editable notes (PacientesView)
     bsuid TEXT,                               -- Meta Business-Scoped User ID (Phase 1 capture)
     last_message_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,                   -- Auto via trigger trg_contacts_updated_at
@@ -232,8 +244,121 @@ alerts (
     created_at TIMESTAMPTZ
 )
 
-tenant_users ( id UUID PK, tenant_id UUID FK, user_id UUID FK → auth.users, UNIQUE(tenant_id, user_id) )
-test_feedback ( id UUID PK, tenant_id UUID, patient_phone TEXT, history JSONB, notes JSONB, tester_email TEXT, created_at TIMESTAMPTZ )
+profiles (
+    id UUID PK FK → auth.users,
+    email TEXT,
+    full_name TEXT,
+    avatar_url TEXT,
+    is_superadmin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+
+tenant_users ( id UUID PK, tenant_id UUID FK, user_id UUID FK → auth.users, role TEXT CHECK IN ('admin','staff','viewer') DEFAULT 'staff', UNIQUE(tenant_id, user_id) )
+test_feedback ( id UUID PK, tenant_id UUID FK, patient_phone TEXT, history JSONB, notes JSONB, tester_email TEXT, created_at TIMESTAMPTZ )
+
+-- ═══════════════════════════════════════════════════════════════
+-- ONBOARDING TABLES (Block R)
+-- ═══════════════════════════════════════════════════════════════
+
+tenant_onboarding (
+    id UUID PK,
+    tenant_id UUID FK → tenants UNIQUE,
+    step_current INT DEFAULT 1,               -- Onboarding wizard step (1-3)
+    business_name TEXT,
+    business_type TEXT,
+    business_description TEXT,
+    target_audience TEXT,
+    services_offered JSONB DEFAULT '[]',
+    business_hours TEXT,
+    tone_of_voice TEXT,
+    special_instructions TEXT,
+    greeting_message TEXT,
+    escalation_rules TEXT,
+    faq_items JSONB DEFAULT '[]',
+    raw_conversation JSONB DEFAULT '[]',
+    configuration_complete BOOLEAN DEFAULT FALSE,
+    generated_system_prompt TEXT,
+    phone_number TEXT,                        -- Owner's personal phone (billing, support)
+    resource_count INT DEFAULT 1,             -- Number of team members/resources
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+
+onboarding_messages (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    role TEXT CHECK IN ('user','assistant','system','event'),
+    content TEXT DEFAULT '',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ
+)
+
+-- ═══════════════════════════════════════════════════════════════
+-- NATIVE CALENDAR TABLES (Block S-T)
+-- ═══════════════════════════════════════════════════════════════
+
+resources (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    name TEXT NOT NULL,                       -- e.g., "Equipo 1", "Dr. López"
+    label TEXT,
+    color TEXT DEFAULT '#6366f1',
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INT DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+
+appointments (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    resource_id UUID FK → resources,
+    contact_id UUID FK → contacts (NULLABLE),
+    service_id UUID FK → tenant_services (NULLABLE),
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
+    duration_minutes INT DEFAULT 30,
+    client_name TEXT,
+    client_phone TEXT,
+    service_name TEXT,                        -- Denormalized for display
+    status TEXT CHECK IN ('confirmed','cancelled','completed','no_show') DEFAULT 'confirmed',
+    booked_by TEXT CHECK IN ('ai_assistant','manual_ui','api') DEFAULT 'ai_assistant',
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    cancelled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+
+scheduling_config (
+    id UUID PK,
+    tenant_id UUID FK → tenants UNIQUE,
+    business_hours JSONB,                     -- {monday: {start: "09:00", end: "19:00"}, ...}
+    default_duration_minutes INT DEFAULT 30,
+    slot_interval_minutes INT DEFAULT 30,
+    buffer_between_minutes INT DEFAULT 0,
+    round_robin_enabled BOOLEAN DEFAULT TRUE,
+    timezone TEXT DEFAULT 'America/Santiago',
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
+
+tenant_services (
+    id UUID PK,
+    tenant_id UUID FK → tenants,
+    name TEXT NOT NULL,                       -- e.g., "Fumigación General"
+    description TEXT,
+    price INT CHECK (price >= 0),             -- CLP, nullable = "consultar"
+    price_is_variable BOOLEAN DEFAULT FALSE,
+    duration_minutes INT,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INT DEFAULT 0,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+)
 ```
 
 ### Row Level Security (RLS)
@@ -450,18 +575,27 @@ Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0, eslint-config-next@1
 > **Detailed execution plan:** [task_v2.md](file:///d:/WebDev/IA/.ai-context/task_v2.md)
 > **Full implementation history:** [implementation_plan.md](file:///d:/WebDev/IA/.ai-context/implementation_plan.md)
 
-### Sprint 1: Emergency Stabilization (Apr 11-15) — IN PROGRESS
+### Sprint 1: Emergency Stabilization (Apr 11-15) — ✅ COMPLETE
 
 | Block | Status | Summary |
 |:---|:---|:---|
 | A-H | ✅ Complete | Quick wins, strict tools, agentic loop, resilience, observability, BSUID, deploy |
 | I | ✅ Complete | Response quality fix (5 steps: adapter, prompt v2, dedup, batching, rapid-fire) |
 | J | ✅ Complete | Escalation UX (badge, resolve, filter, pulse, NotificationFeed) |
+| K | ✅ Complete | Tenant provisioning (automated via onboarding flow) |
 | L | ✅ Complete | Dashboard + mobile frontend overhaul (glassmorphic, live alerts, patient profiles) |
-| K | ⏳ Pending | Tenant provisioning script |
-| M | ⏳ Mon | Fumigation tenant setup (SIM, WABA, provisioning) |
-| N-O | ⏳ Mon | Full E2E testing + Meta audit |
-| P-Q | ⏳ Tue | Go-live + post-onboarding |
+| M-Q | ✅ Complete | CasaVitaCure live, fumigation tenant provisioned |
+
+### Sprint 1.5: Onboarding + Native Calendar (Apr 13-16) — IN PROGRESS
+
+| Block | Status | Summary |
+|:---|:---|:---|
+| R | ✅ Complete | Self-service onboarding: 3-step wizard (Welcome → ConfigChat → Completion) with AI config agent |
+| S | ✅ Complete | Native calendar engine: resources, appointments, scheduling_config, round-robin booking |
+| T | ✅ Complete | Agenda UI: real business hours, progress bars per resource, native calendar read/write |
+| U | ✅ Complete | Sandbox chat: dedicated `/api/sandbox/chat` endpoint, OpenAI Responses API, session persistence |
+| V | ✅ Complete | Login overhaul: Vortex particle simulation, dark matter dust, CLI pre-suasion text, glassmorphic card |
+| W | ⏳ In Progress | README update, observability audit, mobile polish, E2E testing, PROD migration gate |
 
 ### Sprint 2: Product Expansion (Apr 16-25)
 

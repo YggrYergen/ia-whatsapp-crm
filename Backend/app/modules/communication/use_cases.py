@@ -59,8 +59,8 @@ class ProcessMessageUseCase:
             if _cid:
                 sentry_sdk.set_tag("correlation_id", _cid)
                 logger.info(f"🔗 [ORCH] correlation_id={_cid}")
-        except Exception:
-            pass  # Not critical — middleware may not be active in tests
+        except Exception as cid_err:
+            logger.debug(f"[ORCH] correlation_id not available (non-critical): {cid_err}")
         is_simulation = payload.get("is_simulation", False)
         contact_id = None
         
@@ -410,8 +410,9 @@ class ProcessMessageUseCase:
                     # Fallback: set lock non-atomically (better than no lock)
                     try:
                         await db.table("contacts").update({"is_processing_llm": True}).eq("id", contact_id).execute()
-                    except Exception:
-                        pass
+                    except Exception as fallback_lock_err:
+                        logger.error(f"❌ [ORCH] Fallback non-atomic lock ALSO failed: {fallback_lock_err}")
+                        sentry_sdk.capture_exception(fallback_lock_err)
                     return True  # Proceed with processing (risk of double, but better than dropping)
 
             async def _fetch_history():

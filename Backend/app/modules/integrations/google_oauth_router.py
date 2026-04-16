@@ -124,6 +124,11 @@ async def google_callback(code: str, state: str):
         except Exception as e:
             logger.warning(f"[OAUTH] Failed to parse ID token for tenant {tenant_id}: {e}")
             sentry_sdk.capture_exception(e)
+            await send_discord_alert(
+                title=f"⚠️ OAuth ID Token Parse Failed | Tenant {tenant_id}",
+                description=f"ID token verification failed (non-fatal, email='unknown'):\n{str(e)[:300]}",
+                severity="warning", error=e
+            )
             email = "unknown"
 
         # Encrypt and store
