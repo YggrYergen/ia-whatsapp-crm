@@ -342,6 +342,7 @@ class NativeSchedulingService:
         user_name: str,
         patient_phone: str,
         booked_by: str = "ai_assistant",
+        resource_id: str | None = None,
     ) -> dict:
         """
         Book an appointment using round-robin resource selection.
@@ -403,7 +404,7 @@ class NativeSchedulingService:
                     ),
                 }
 
-            # Get resources for round-robin
+            # Get resources + DB client for availability checks
             resources = await _get_active_resources(tenant_id)
             if not resources:
                 return {
@@ -413,23 +414,50 @@ class NativeSchedulingService:
 
             db = await SupabasePooler.get_client()
 
-            # Try each resource in sort_order until one accepts the booking
+            # Resource selection: explicit resource_id from UI, or round-robin
             selected_resource = None
-            for resource in resources:
-                # Check if there's already a confirmed appointment overlapping this slot
-                conflict = (
-                    await db.table("appointments")
-                    .select("id")
-                    .eq("resource_id", resource["id"])
-                    .neq("status", "cancelled")
-                    .lt("start_time", end_dt.isoformat())
-                    .gt("end_time", start_dt.isoformat())
-                    .limit(1)
-                    .execute()
-                )
-                if not conflict.data:
-                    selected_resource = resource
-                    break
+            if resource_id:
+                # User explicitly chose a resource from the booking modal
+                explicit = next((r for r in resources if r['id'] == resource_id), None)
+                if explicit:
+                    conflict = (
+                        await db.table("appointments")
+                        .select("id")
+                        .eq("resource_id", resource_id)
+                        .neq("status", "cancelled")
+                        .lt("start_time", end_dt.isoformat())
+                        .gt("end_time", start_dt.isoformat())
+                        .limit(1)
+                        .execute()
+                    )
+                    if not conflict.data:
+                        selected_resource = explicit
+                    else:
+                        return {
+                            "status": "error",
+                            "message": f"{explicit.get('label', explicit['name'])} ya está ocupado en ese horario.",
+                        }
+                else:
+                    logger.warning(
+                        f"[{_WHERE}] resource_id={resource_id} not found in active resources | tenant={tenant_id}"
+                    )
+
+            # Fallback: round-robin across all resources by sort_order
+            if not selected_resource:
+                for resource in resources:
+                    conflict = (
+                        await db.table("appointments")
+                        .select("id")
+                        .eq("resource_id", resource["id"])
+                        .neq("status", "cancelled")
+                        .lt("start_time", end_dt.isoformat())
+                        .gt("end_time", start_dt.isoformat())
+                        .limit(1)
+                        .execute()
+                    )
+                    if not conflict.data:
+                        selected_resource = resource
+                        break
 
             if not selected_resource:
                 return {
