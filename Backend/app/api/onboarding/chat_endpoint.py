@@ -1022,14 +1022,19 @@ async def _provision_services_and_resources(db, tenant_id: str):
                         if not name or len(name) < 2:
                             name = svc_str[:50]  # fallback to original
                         
+                        # ── INSERT payload matches REAL schema (verified via information_schema.columns) ──
+                        # Columns: id, tenant_id, name, description, price (int), price_is_variable (bool),
+                        #          duration_minutes (int), is_active (bool), sort_order (int), metadata (jsonb),
+                        #          created_at, updated_at
                         svc_row = {
                             "tenant_id": tenant_id,
                             "name": name[:100],
                             "description": svc_str[:500],
-                            "base_price": price,
-                            "variable_pricing": price is None,
-                            "estimated_duration_min": duration,
+                            "price": price,                      # int | null — was 'base_price' ❌
+                            "price_is_variable": price is None,  # bool — was 'variable_pricing' ❌
+                            "duration_minutes": duration,         # int | null — was 'estimated_duration_min' ❌
                             "is_active": True,
+                            "sort_order": services_created,
                         }
                         
                         await db.table("tenant_services").insert(svc_row).execute()
@@ -1054,6 +1059,9 @@ async def _provision_services_and_resources(db, tenant_id: str):
                         # Continue with other services
         
         # ── 3. Create default resource based on business type ──
+        # Schema: id, tenant_id, name (text NOT NULL), label (text), color (text),
+        #         is_active (bool), sort_order (int), metadata (jsonb), created_at, updated_at
+        # NOTE: No 'resource_type' column — stored inside 'metadata' jsonb.
         resource_label = "Recurso"
         resource_type = "otro"
         
@@ -1069,9 +1077,10 @@ async def _provision_services_and_resources(db, tenant_id: str):
                 "tenant_id": tenant_id,
                 "name": f"{resource_label.lower()}_1",
                 "label": f"{resource_label} 1",
-                "resource_type": resource_type,
                 "color": "#10B981",  # Emerald green
                 "is_active": True,
+                "sort_order": 0,
+                "metadata": {"resource_type": resource_type},  # type in jsonb, not column
             }
             await db.table("resources").insert(resource_row).execute()
             resource_created = True
@@ -1087,6 +1096,11 @@ async def _provision_services_and_resources(db, tenant_id: str):
             )
         
         # ── 4. Create default scheduling_config with business hours ──
+        # Schema: id, tenant_id, business_hours (jsonb NOT NULL),
+        #         default_duration_minutes (int NOT NULL), slot_interval_minutes (int NOT NULL),
+        #         buffer_between_minutes (int NOT NULL), round_robin_enabled (bool),
+        #         timezone (text NOT NULL), created_at, updated_at
+        # NOTE: No 'open_time', 'close_time', 'working_days' — all inside 'business_hours' jsonb.
         try:
             # Parse business hours: "Lunes a Sábado 9:00-19:00" or similar
             open_time = "09:00"
@@ -1112,14 +1126,25 @@ async def _provision_services_and_resources(db, tenant_id: str):
                 if "domingo" in bh_lower:
                     working_days = [0, 1, 2, 3, 4, 5, 6]  # All week
             
+            # Build the business_hours JSONB in the format NativeSchedulingService expects:
+            # { "monday": {"open": "09:00", "close": "18:00"}, ... }
+            _day_names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            business_hours_jsonb = {}
+            for day_num in working_days:
+                if 0 <= day_num < 7:
+                    business_hours_jsonb[_day_names[day_num]] = {
+                        "open": open_time,
+                        "close": close_time,
+                    }
+            
             config_row = {
                 "tenant_id": tenant_id,
-                "slot_duration_min": 30,
-                "open_time": open_time,
-                "close_time": close_time,
-                "working_days": working_days,
+                "business_hours": business_hours_jsonb,      # jsonb NOT NULL
+                "default_duration_minutes": 30,               # int NOT NULL
+                "slot_interval_minutes": 30,                  # int NOT NULL
+                "buffer_between_minutes": 0,                  # int NOT NULL
                 "round_robin_enabled": True,
-                "max_advance_days": 30,
+                "timezone": "America/Santiago",               # text NOT NULL
             }
             await db.table("scheduling_config").insert(config_row).execute()
             logger.info(

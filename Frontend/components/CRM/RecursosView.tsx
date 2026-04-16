@@ -14,10 +14,15 @@ interface Resource {
     name: string
     label: string
     color: string
-    resource_type: string
     is_active: boolean
     sort_order: number
+    metadata: { resource_type?: string } | null
     created_at: string
+}
+
+/** Safely extract resource_type from metadata jsonb */
+function getResourceType(r: Resource): string {
+    return r.metadata?.resource_type || 'other'
 }
 
 interface EditingState {
@@ -103,7 +108,7 @@ export default function RecursosView() {
                 name: editingState.name.trim(),
                 label: editingState.label.trim() || editingState.name.trim(),
                 color: editingState.color,
-                resource_type: editingState.resource_type,
+                metadata: { resource_type: editingState.resource_type },
                 is_active: true,
                 sort_order: resources.length,
             }).select().single()
@@ -139,7 +144,7 @@ export default function RecursosView() {
                 name: editingState.name.trim(),
                 label: editingState.label.trim() || editingState.name.trim(),
                 color: editingState.color,
-                resource_type: editingState.resource_type,
+                metadata: { resource_type: editingState.resource_type },
                 updated_at: new Date().toISOString(),
             }).eq('id', editingId)
             if (updateErr) {
@@ -199,7 +204,7 @@ export default function RecursosView() {
             name: resource.name,
             label: resource.label || resource.name,
             color: resource.color || '#10b981',
-            resource_type: resource.resource_type || 'room',
+            resource_type: getResourceType(resource),
         })
     }
 
@@ -372,7 +377,7 @@ export default function RecursosView() {
                                                     )}
                                                 </div>
                                                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-                                                    {TYPE_LABELS[resource.resource_type] || resource.resource_type} · {resource.name}
+                                                    {TYPE_LABELS[getResourceType(resource)] || getResourceType(resource)} · {resource.name}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

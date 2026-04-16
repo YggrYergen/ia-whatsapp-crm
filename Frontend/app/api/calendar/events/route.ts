@@ -7,9 +7,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const start_iso = searchParams.get('start_iso')
     const end_iso = searchParams.get('end_iso')
+    const tenant_id = searchParams.get('tenant_id') || ''
     const baseUrl = process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'
     
-    const response = await fetch(`${baseUrl}/api/calendar/events?start_iso=${start_iso}&end_iso=${end_iso}`)
+    const response = await fetch(`${baseUrl}/api/calendar/events?start_iso=${start_iso}&end_iso=${end_iso}&tenant_id=${tenant_id}`)
     
     if (!response.ok) {
         const text = await response.text();

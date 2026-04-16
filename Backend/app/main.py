@@ -389,12 +389,17 @@ def create_app() -> FastAPI:
             return ORJSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
     @app.get("/api/calendar/events")
-    async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = "d8376510-911e-42ef-9f3b-e018d9f10915"):
+    async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = ""):
         """Fetch structured calendar events for the frontend AgendaView.
         
         Now uses NativeSchedulingService (Supabase) instead of GoogleCalendarClient.
         Ref: native_calendar_plan.md §5 — Frontend proxy routes: keep API shape, swap backend.
+        
+        IMPORTANT: tenant_id is REQUIRED. Was previously hardcoded to CasaVitaCure — fixed 2026-04-15.
         """
+        if not tenant_id:
+            logger.warning("[api_get_calendar_events] Missing tenant_id")
+            return ORJSONResponse(status_code=400, content={"status": "error", "message": "tenant_id is required"})
         try:
             from app.modules.scheduling.native_service import NativeSchedulingService
             return await NativeSchedulingService.get_structured_events(tenant_id, start_iso, end_iso)
@@ -417,7 +422,10 @@ def create_app() -> FastAPI:
         Now uses NativeSchedulingService (Supabase) instead of GoogleCalendarClient.
         EXCLUDE USING gist constraint prevents double-booking at DB level.
         """
-        tenant_id = payload.get("tenant_id", "d8376510-911e-42ef-9f3b-e018d9f10915")
+        tenant_id = payload.get("tenant_id", "")
+        if not tenant_id:
+            logger.warning("[api_book_calendar_event] Missing tenant_id in payload")
+            return ORJSONResponse(status_code=400, content={"status": "error", "message": "tenant_id is required in payload"})
         try:
             from app.infrastructure.database.supabase_client import SupabasePooler
             db = await SupabasePooler.get_client()

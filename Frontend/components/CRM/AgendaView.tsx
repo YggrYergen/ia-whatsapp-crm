@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useCrm } from '@/contexts/CrmContext'
+import { useTenant } from '@/contexts/TenantContext'
 import * as Sentry from '@sentry/nextjs'
 
 type ViewMode = 'day' | 'week' | 'month'
@@ -24,6 +25,7 @@ interface CalendarEvent {
 
 export default function AgendaView() {
     const { setToasts } = useCrm()
+    const { currentTenantId } = useTenant()
     const [currentDate, setCurrentDate] = useState(new Date())
     const [viewMode, setViewMode] = useState<ViewMode>('day')
     const [events, setEvents] = useState<CalendarEvent[]>([])
@@ -46,7 +48,7 @@ export default function AgendaView() {
             const startIso = new Date(yr, mo, 1).toISOString()
             const endIso = new Date(yr, mo + 1, 0, 23, 59, 59).toISOString()
             
-            const res = await fetch(`/api/calendar/events?start_iso=${startIso}&end_iso=${endIso}`)
+            const res = await fetch(`/api/calendar/events?start_iso=${startIso}&end_iso=${endIso}&tenant_id=${currentTenantId || ''}`)
             const data = await res.json()
             if (data.status === 'success') {
                 setEvents(data.events)
@@ -111,6 +113,7 @@ export default function AgendaView() {
         setIsSubmitting(true)
         try {
             const payload = {
+                tenant_id: currentTenantId,
                 date_str: bookingDate,
                 time_str: bookingTime,
                 duration: 30,
