@@ -3,9 +3,8 @@
 /**
  * ConfigPanel — Global tenant config page (LLM provider, model, system prompt).
  *
- * ⚠️ TENANT ISOLATION: Uses currentTenantId from TenantContext to scope ALL
- *    queries. Previously used `.limit(1).single()` which returned an arbitrary
- *    tenant for superadmins — a P0 data-integrity bug.
+ * ⚠️ TENANT ISOLATION: Resolves the user's tenant via auth.getUser() → tenant_users.
+ *    Does NOT use TenantContext (this page is outside the (panel) layout group).
  *
  * ⚠️ OBSERVABILITY: Every failure → console.error + Sentry + Discord.
  *    (Rule 5: three-channel error reporting)
@@ -14,7 +13,6 @@
 import React, { useState, useEffect } from 'react'
 import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase'
-import { useTenant } from '@/contexts/TenantContext'
 import { notifyDiscord } from '@/lib/notifyDiscord'
 import { Save, Bot, Info, Sparkles, Zap, ChevronLeft, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -27,63 +25,76 @@ import Link from 'next/link'
 export default function ConfigPanel() {
     const _where = 'ConfigPanel'
     const supabase = createClient()
-    const { currentTenantId, currentTenant } = useTenant()
+    const [tenantId, setTenantId] = useState<string | null>(null)
     const [tenant, setTenant] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [saveSuccess, setSaveSuccess] = useState(false)
 
+    // Resolve the user's tenant via auth → tenant_users (no TenantContext needed)
     useEffect(() => {
-        if (currentTenantId) {
-            fetchTenant()
-        } else {
-            setTenant(null)
-            setLoading(false)
-        }
-    }, [currentTenantId])
+        const resolveTenant = async () => {
+            const fn = `${_where}.resolveTenant`
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) {
+                    setLoading(false)
+                    return
+                }
 
-    const fetchTenant = async () => {
-        const fn = `${_where}.fetchTenant`
-        setLoading(true)
-        try {
-            const { data, error } = await supabase
-                .from('tenants')
-                .select('*')
-                .eq('id', currentTenantId)
-                .single()
+                // Get user's first tenant
+                const { data: tuData, error: tuError } = await supabase
+                    .from('tenant_users')
+                    .select('tenant_id')
+                    .eq('user_id', user.id)
+                    .limit(1)
+                    .single()
 
-            if (error) {
-                const errMsg = `[${fn}] Failed to fetch tenant config | tenant=${currentTenantId} | error=${error.message}`
-                console.error(errMsg)
-                Sentry.captureMessage(errMsg, 'error')
-                notifyDiscord(
-                    '🔴 Config Fetch Failed',
-                    `**Tenant:** \`${currentTenantId}\`\n**Error:** ${error.message}\n**Where:** ${fn}`,
-                    'error'
-                )
-                return
+                if (tuError || !tuData) {
+                    const errMsg = `[${fn}] No tenant found for user ${user.id} | error=${tuError?.message}`
+                    console.error(errMsg)
+                    Sentry.captureMessage(errMsg, 'error')
+                    notifyDiscord('🔴 Config: No tenant for user', `**User:** \`${user.id}\`\n**Error:** ${tuError?.message}`, 'error')
+                    setLoading(false)
+                    return
+                }
+
+                setTenantId(tuData.tenant_id)
+
+                // Fetch the tenant config
+                const { data, error } = await supabase
+                    .from('tenants')
+                    .select('*')
+                    .eq('id', tuData.tenant_id)
+                    .single()
+
+                if (error) {
+                    const errMsg = `[${fn}] Tenant fetch failed | tenant=${tuData.tenant_id} | error=${error.message}`
+                    console.error(errMsg)
+                    Sentry.captureMessage(errMsg, 'error')
+                    notifyDiscord('🔴 Config Fetch Failed', `**Tenant:** \`${tuData.tenant_id}\`\n**Error:** ${error.message}`, 'error')
+                } else if (data) {
+                    setTenant(data)
+                }
+            } catch (err: any) {
+                const errMsg = `[${fn}] CRASH resolving tenant | error=${String(err).slice(0, 300)}`
+                console.error(errMsg, err)
+                Sentry.captureException(err, { extra: { where: fn } })
+                notifyDiscord('🔴 Config Resolve CRASH', `**Error:** ${String(err).slice(0, 500)}`, 'error')
+            } finally {
+                setLoading(false)
             }
-
-            if (data) setTenant(data)
-        } catch (err: any) {
-            const errMsg = `[${fn}] CRASH fetching tenant config | tenant=${currentTenantId} | error=${String(err).slice(0, 300)}`
-            console.error(errMsg, err)
-            Sentry.captureException(err, { extra: { where: fn, tenant_id: currentTenantId } })
-            notifyDiscord(
-                '🔴 Config Fetch CRASH',
-                `**Tenant:** \`${currentTenantId}\`\n**Error:** ${String(err).slice(0, 500)}\n**Where:** ${fn}`,
-                'error'
-            )
-        } finally {
-            setLoading(false)
         }
-    }
+        resolveTenant()
+    }, [])
+
+
 
     const handleSave = async () => {
         const fn = `${_where}.handleSave`
 
-        if (!tenant || !currentTenantId) {
-            const errMsg = `[${fn}] Save blocked — tenant=${!!tenant}, currentTenantId=${currentTenantId}`
+        if (!tenant || !tenantId) {
+            const errMsg = `[${fn}] Save blocked — tenant=${!!tenant}, tenantId=${tenantId}`
             console.error(errMsg)
             Sentry.captureMessage(errMsg, 'warning')
             return
@@ -91,24 +102,24 @@ export default function ConfigPanel() {
 
         // BUG-2 fix: Warn via Sentry if system prompt exceeds 4000 characters
         if (tenant.system_prompt && tenant.system_prompt.length > 4000) {
-            const warnMsg = `[${fn}] System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars | tenant=${currentTenantId}`
+            const warnMsg = `[${fn}] System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars | tenant=${tenantId}`
             console.warn(warnMsg)
             Sentry.captureMessage(warnMsg, 'warning')
             notifyDiscord(
                 '⚠️ Oversized System Prompt',
-                `**Tenant:** \`${currentTenantId}\`\n**Length:** ${tenant.system_prompt.length} chars\n**Limit:** 4000`,
+                `**Tenant:** \`${tenantId}\`\n**Length:** ${tenant.system_prompt.length} chars\n**Limit:** 4000`,
                 'warning'
             )
         }
 
         // SAFETY: Verify we're updating the correct tenant
-        if (tenant.id !== currentTenantId) {
-            const errMsg = `[${fn}] CRITICAL: tenant.id (${tenant.id}) !== currentTenantId (${currentTenantId}) — aborting save to prevent cross-tenant overwrite`
+        if (tenant.id !== tenantId) {
+            const errMsg = `[${fn}] CRITICAL: tenant.id (${tenant.id}) !== tenantId (${tenantId}) — aborting save to prevent cross-tenant overwrite`
             console.error(errMsg)
             Sentry.captureMessage(errMsg, 'error')
             notifyDiscord(
                 '🚨 CROSS-TENANT SAVE BLOCKED',
-                `**tenant.id:** \`${tenant.id}\`\n**currentTenantId:** \`${currentTenantId}\`\n**Action:** Save aborted to prevent data corruption`,
+                `**tenant.id:** \`${tenant.id}\`\n**tenantId:** \`${tenantId}\`\n**Action:** Save aborted to prevent data corruption`,
                 'error'
             )
             alert('Error de seguridad: el tenant activo no coincide con los datos cargados. Recarga la página.')
@@ -125,32 +136,32 @@ export default function ConfigPanel() {
                     llm_model: tenant.llm_model,
                     system_prompt: tenant.system_prompt
                 })
-                .eq('id', currentTenantId) // CRITICAL: always scope by current tenant
+                .eq('id', tenantId) // CRITICAL: always scope by current tenant
 
             if (error) {
-                const errMsg = `[${fn}] Save failed | tenant=${currentTenantId} | error=${error.message}`
+                const errMsg = `[${fn}] Save failed | tenant=${tenantId} | error=${error.message}`
                 console.error(errMsg)
                 Sentry.captureMessage(errMsg, 'error')
                 notifyDiscord(
                     '🔴 Config Save Failed',
-                    `**Tenant:** \`${currentTenantId}\`\n**Error:** ${error.message}\n**Provider:** ${tenant.llm_provider}\n**Model:** ${tenant.llm_model}`,
+                    `**Tenant:** \`${tenantId}\`\n**Error:** ${error.message}\n**Provider:** ${tenant.llm_provider}\n**Model:** ${tenant.llm_model}`,
                     'error'
                 )
                 alert(`Error al guardar: ${error.message}`)
                 return
             }
 
-            console.info(`[${fn}] Config saved successfully | tenant=${currentTenantId} | provider=${tenant.llm_provider} | model=${tenant.llm_model}`)
-            Sentry.addBreadcrumb({ category: 'config', message: `Config saved for tenant ${currentTenantId}`, level: 'info' })
+            console.info(`[${fn}] Config saved successfully | tenant=${tenantId} | provider=${tenant.llm_provider} | model=${tenant.llm_model}`)
+            Sentry.addBreadcrumb({ category: 'config', message: `Config saved for tenant ${tenantId}`, level: 'info' })
             setSaveSuccess(true)
             setTimeout(() => setSaveSuccess(false), 3000)
         } catch (err: any) {
-            const errMsg = `[${fn}] CRASH saving config | tenant=${currentTenantId} | error=${String(err).slice(0, 300)}`
+            const errMsg = `[${fn}] CRASH saving config | tenant=${tenantId} | error=${String(err).slice(0, 300)}`
             console.error(errMsg, err)
-            Sentry.captureException(err, { extra: { where: fn, tenant_id: currentTenantId } })
+            Sentry.captureException(err, { extra: { where: fn, tenant_id: tenantId } })
             notifyDiscord(
                 '🔴 Config Save CRASH',
-                `**Tenant:** \`${currentTenantId}\`\n**Error:** ${String(err).slice(0, 500)}\n**Where:** ${fn}`,
+                `**Tenant:** \`${tenantId}\`\n**Error:** ${String(err).slice(0, 500)}\n**Where:** ${fn}`,
                 'error'
             )
             alert('Error inesperado al guardar. Revisa tu conexión e intenta de nuevo.')
@@ -168,7 +179,7 @@ export default function ConfigPanel() {
         </div>
     )
 
-    if (!currentTenantId || !tenant) return (
+    if (!tenantId || !tenant) return (
         <div className="flex items-center justify-center h-screen bg-slate-50">
             <div className="text-center space-y-3">
                 <p className="text-slate-500 font-bold">No hay tenant seleccionado</p>
@@ -191,7 +202,7 @@ export default function ConfigPanel() {
                             </Button>
                         </Link>
                         <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-4 py-1 font-black uppercase tracking-widest text-[10px]">
-                            {currentTenant?.name || 'Configuración'}
+                            {tenant?.business_name || 'Configuración'}
                         </Badge>
                     </div>
 
