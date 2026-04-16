@@ -54,8 +54,11 @@ export default function Sidebar() {
         })
         switchTenant(tenantId)
         setIsTenantDropdownOpen(false)
-        // Reload the page to refresh all data for the new tenant
-        window.location.reload()
+        // FIX 2026-04-16: Removed window.location.reload() — it destroyed the
+        // switchTenant() state update by re-running resolveTenant() from scratch,
+        // which always returned the first tenant_users row (CasaVitaCure).
+        // React's useEffect hooks on currentTenantId already handle data re-fetching
+        // in ChatContext, AgendaView, RecursosView, ServiciosView, etc.
     }
 
     const navItems = [

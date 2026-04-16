@@ -5,6 +5,7 @@ import { TrendingUp, Calendar as CalendarIcon, User, Activity, Bot, Check, Heart
 import { Badge } from "@/components/ui/badge"
 import { useCrm } from '@/contexts/CrmContext'
 import { useUI } from '@/contexts/UIContext'
+import { useTenant } from '@/contexts/TenantContext'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -28,6 +29,7 @@ interface AlertItem {
 
 export default function DashboardView() {
     const { setMobileView, contacts, setSelectedContact, setMessages } = useCrm()
+    const { currentTenantId } = useTenant()
     const router = useRouter()
     
     const [alerts, setAlerts] = useState<AlertItem[]>([])
@@ -58,10 +60,12 @@ export default function DashboardView() {
     }
 
     const fetchAlerts = async () => {
+        if (!currentTenantId) return
         setIsLoading(true)
         const { data: alertsData } = await supabase
             .from('alerts')
             .select('*')
+            .eq('tenant_id', currentTenantId)
             .order('created_at', { ascending: false })
             .limit(200)
 
@@ -76,13 +80,21 @@ export default function DashboardView() {
     }
 
     useEffect(() => {
+        if (!currentTenantId) {
+            setAlerts([])
+            setIsLoading(false)
+            return
+        }
         fetchAlerts()
         const sub = supabase
-            .channel('dashboard-alerts-live')
-            .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'alerts' }, () => fetchAlerts())
+            .channel(`dashboard-alerts-${currentTenantId.slice(0, 8)}`)
+            .on('postgres_changes' as any, {
+                event: '*', schema: 'public', table: 'alerts',
+                filter: `tenant_id=eq.${currentTenantId}`
+            }, () => fetchAlerts())
             .subscribe()
         return () => { supabase.removeChannel(sub) }
-    }, [contacts])
+    }, [contacts, currentTenantId])
 
     // Time-filtered alerts
     const timeFilteredAlerts = useMemo(() => {
