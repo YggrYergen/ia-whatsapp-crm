@@ -1,8 +1,21 @@
 'use client'
 
+/**
+ * ConfigPanel — Global tenant config page (LLM provider, model, system prompt).
+ *
+ * ⚠️ TENANT ISOLATION: Uses currentTenantId from TenantContext to scope ALL
+ *    queries. Previously used `.limit(1).single()` which returned an arbitrary
+ *    tenant for superadmins — a P0 data-integrity bug.
+ *
+ * ⚠️ OBSERVABILITY: Every failure → console.error + Sentry + Discord.
+ *    (Rule 5: three-channel error reporting)
+ */
+
 import React, { useState, useEffect } from 'react'
 import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase'
+import { useTenant } from '@/contexts/TenantContext'
+import { notifyDiscord } from '@/lib/notifyDiscord'
 import { Save, Bot, Info, Sparkles, Zap, ChevronLeft, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,39 +25,137 @@ import { Badge } from "@/components/ui/badge"
 import Link from 'next/link'
 
 export default function ConfigPanel() {
+    const _where = 'ConfigPanel'
     const supabase = createClient()
+    const { currentTenantId, currentTenant } = useTenant()
     const [tenant, setTenant] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [saveSuccess, setSaveSuccess] = useState(false)
 
     useEffect(() => {
-        fetchTenant()
-    }, [])
+        if (currentTenantId) {
+            fetchTenant()
+        } else {
+            setTenant(null)
+            setLoading(false)
+        }
+    }, [currentTenantId])
 
     const fetchTenant = async () => {
-        const { data } = await supabase.from('tenants').select('*').limit(1).single()
-        if (data) setTenant(data)
-        setLoading(false)
+        const fn = `${_where}.fetchTenant`
+        setLoading(true)
+        try {
+            const { data, error } = await supabase
+                .from('tenants')
+                .select('*')
+                .eq('id', currentTenantId)
+                .single()
+
+            if (error) {
+                const errMsg = `[${fn}] Failed to fetch tenant config | tenant=${currentTenantId} | error=${error.message}`
+                console.error(errMsg)
+                Sentry.captureMessage(errMsg, 'error')
+                notifyDiscord(
+                    '🔴 Config Fetch Failed',
+                    `**Tenant:** \`${currentTenantId}\`\n**Error:** ${error.message}\n**Where:** ${fn}`,
+                    'error'
+                )
+                return
+            }
+
+            if (data) setTenant(data)
+        } catch (err: any) {
+            const errMsg = `[${fn}] CRASH fetching tenant config | tenant=${currentTenantId} | error=${String(err).slice(0, 300)}`
+            console.error(errMsg, err)
+            Sentry.captureException(err, { extra: { where: fn, tenant_id: currentTenantId } })
+            notifyDiscord(
+                '🔴 Config Fetch CRASH',
+                `**Tenant:** \`${currentTenantId}\`\n**Error:** ${String(err).slice(0, 500)}\n**Where:** ${fn}`,
+                'error'
+            )
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleSave = async () => {
-        if (!tenant) return
-        // BUG-2 fix: Warn via Sentry if system prompt exceeds 4000 characters
-        // Soft warning only — save is NOT blocked (user may have valid reasons for long prompts)
-        if (tenant.system_prompt && tenant.system_prompt.length > 4000) {
-            Sentry.captureMessage(`System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars`, 'warning')
-        }
-        setSaving(true)
-        const { error } = await supabase.from('tenants').update({
-            llm_provider: tenant.llm_provider,
-            llm_model: tenant.llm_model,
-            system_prompt: tenant.system_prompt
-        }).eq('id', tenant.id)
+        const fn = `${_where}.handleSave`
 
-        setSaving(false)
-        if (!error) {
-             // We could use shadcn toast here if we had it working, but for now simple feedback
-             alert('Configuración guardada exitosamente')
+        if (!tenant || !currentTenantId) {
+            const errMsg = `[${fn}] Save blocked — tenant=${!!tenant}, currentTenantId=${currentTenantId}`
+            console.error(errMsg)
+            Sentry.captureMessage(errMsg, 'warning')
+            return
+        }
+
+        // BUG-2 fix: Warn via Sentry if system prompt exceeds 4000 characters
+        if (tenant.system_prompt && tenant.system_prompt.length > 4000) {
+            const warnMsg = `[${fn}] System prompt exceeds 4000 char limit: ${tenant.system_prompt.length} chars | tenant=${currentTenantId}`
+            console.warn(warnMsg)
+            Sentry.captureMessage(warnMsg, 'warning')
+            notifyDiscord(
+                '⚠️ Oversized System Prompt',
+                `**Tenant:** \`${currentTenantId}\`\n**Length:** ${tenant.system_prompt.length} chars\n**Limit:** 4000`,
+                'warning'
+            )
+        }
+
+        // SAFETY: Verify we're updating the correct tenant
+        if (tenant.id !== currentTenantId) {
+            const errMsg = `[${fn}] CRITICAL: tenant.id (${tenant.id}) !== currentTenantId (${currentTenantId}) — aborting save to prevent cross-tenant overwrite`
+            console.error(errMsg)
+            Sentry.captureMessage(errMsg, 'error')
+            notifyDiscord(
+                '🚨 CROSS-TENANT SAVE BLOCKED',
+                `**tenant.id:** \`${tenant.id}\`\n**currentTenantId:** \`${currentTenantId}\`\n**Action:** Save aborted to prevent data corruption`,
+                'error'
+            )
+            alert('Error de seguridad: el tenant activo no coincide con los datos cargados. Recarga la página.')
+            return
+        }
+
+        setSaving(true)
+        setSaveSuccess(false)
+        try {
+            const { error } = await supabase
+                .from('tenants')
+                .update({
+                    llm_provider: tenant.llm_provider,
+                    llm_model: tenant.llm_model,
+                    system_prompt: tenant.system_prompt
+                })
+                .eq('id', currentTenantId) // CRITICAL: always scope by current tenant
+
+            if (error) {
+                const errMsg = `[${fn}] Save failed | tenant=${currentTenantId} | error=${error.message}`
+                console.error(errMsg)
+                Sentry.captureMessage(errMsg, 'error')
+                notifyDiscord(
+                    '🔴 Config Save Failed',
+                    `**Tenant:** \`${currentTenantId}\`\n**Error:** ${error.message}\n**Provider:** ${tenant.llm_provider}\n**Model:** ${tenant.llm_model}`,
+                    'error'
+                )
+                alert(`Error al guardar: ${error.message}`)
+                return
+            }
+
+            console.info(`[${fn}] Config saved successfully | tenant=${currentTenantId} | provider=${tenant.llm_provider} | model=${tenant.llm_model}`)
+            Sentry.addBreadcrumb({ category: 'config', message: `Config saved for tenant ${currentTenantId}`, level: 'info' })
+            setSaveSuccess(true)
+            setTimeout(() => setSaveSuccess(false), 3000)
+        } catch (err: any) {
+            const errMsg = `[${fn}] CRASH saving config | tenant=${currentTenantId} | error=${String(err).slice(0, 300)}`
+            console.error(errMsg, err)
+            Sentry.captureException(err, { extra: { where: fn, tenant_id: currentTenantId } })
+            notifyDiscord(
+                '🔴 Config Save CRASH',
+                `**Tenant:** \`${currentTenantId}\`\n**Error:** ${String(err).slice(0, 500)}\n**Where:** ${fn}`,
+                'error'
+            )
+            alert('Error inesperado al guardar. Revisa tu conexión e intenta de nuevo.')
+        } finally {
+            setSaving(false)
         }
     }
 
@@ -52,8 +163,19 @@ export default function ConfigPanel() {
         <div className="flex items-center justify-center h-screen bg-slate-50">
              <div className="flex flex-col items-center gap-4">
                  <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                 <p className="text-slate-500 font-bold animate-pulse">Cargando configuración Enterprise...</p>
+                 <p className="text-slate-500 font-bold animate-pulse">Cargando configuración...</p>
              </div>
+        </div>
+    )
+
+    if (!currentTenantId || !tenant) return (
+        <div className="flex items-center justify-center h-screen bg-slate-50">
+            <div className="text-center space-y-3">
+                <p className="text-slate-500 font-bold">No hay tenant seleccionado</p>
+                <Link href="/">
+                    <Button variant="outline">Volver al Dashboard</Button>
+                </Link>
+            </div>
         </div>
     )
 
@@ -68,7 +190,9 @@ export default function ConfigPanel() {
                                 <ChevronLeft size={20} /> Volver al Dashboard
                             </Button>
                         </Link>
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-4 py-1 font-black uppercase tracking-widest text-[10px]">Configuración Global</Badge>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-4 py-1 font-black uppercase tracking-widest text-[10px]">
+                            {currentTenant?.business_name || 'Configuración'}
+                        </Badge>
                     </div>
 
                     <Card className="border-slate-100 shadow-2xl overflow-hidden rounded-[2rem]">
@@ -80,15 +204,19 @@ export default function ConfigPanel() {
                                     </div>
                                     <div>
                                         <CardTitle className="text-3xl font-black tracking-tight">Cerebro del Asistente</CardTitle>
-                                        <CardDescription className="text-slate-400 font-medium text-lg mt-1">Configura el modelo y compartamiento de la IA para toda la clínica.</CardDescription>
+                                        <CardDescription className="text-slate-400 font-medium text-lg mt-1">Configura el modelo y comportamiento de la IA para tu negocio.</CardDescription>
                                     </div>
                                 </div>
                                 <Button 
                                     onClick={handleSave} 
                                     disabled={saving}
-                                    className="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-8 py-6 rounded-2xl shadow-xl shadow-emerald-500/20 text-lg transition-all active:scale-95"
+                                    className={`font-black px-8 py-6 rounded-2xl shadow-xl text-lg transition-all active:scale-95 ${
+                                        saveSuccess 
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' 
+                                            : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
+                                    } text-white`}
                                 >
-                                    {saving ? 'Guardando...' : <><Save size={22} className="mr-2" /> Guardar Cambios</>}
+                                    {saving ? 'Guardando...' : saveSuccess ? <><CheckCircle2 size={22} className="mr-2" /> Guardado ✓</> : <><Save size={22} className="mr-2" /> Guardar Cambios</>}
                                 </Button>
                             </div>
                             {/* Abstract bg element */}
@@ -129,7 +257,7 @@ export default function ConfigPanel() {
                                         <Tooltip>
                                             <TooltipTrigger><Info size={14} className="text-slate-300" /></TooltipTrigger>
                                             <TooltipContent className="bg-slate-800 text-white border-none p-3 rounded-xl shadow-2xl">
-                                                <p className="text-xs font-bold">Los modelos 'Mini' o 'Flash' son ideales para agendamientos rápidos.<br/>Modelos 'Pro' son mejores para consultas clínicas complejas.</p>
+                                                <p className="text-xs font-bold">Los modelos 'Mini' o 'Flash' son ideales para tareas rápidas.<br/>Modelos 'Pro' son mejores para consultas complejas.</p>
                                             </TooltipContent>
                                         </Tooltip>
                                     </label>
@@ -181,7 +309,7 @@ export default function ConfigPanel() {
                                 <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-3">
                                     <Info className="text-amber-500 flex-shrink-0 mt-0.5" size={18} />
                                     <p className="text-xs text-amber-700 font-semibold leading-relaxed">
-                                        Recuerda incluir siempre el nombre de la clínica y los horarios de atención. El prompt es la base de la confianza del paciente.
+                                        Recuerda incluir siempre el nombre de tu negocio y los horarios de atención. El prompt es la base de la confianza del cliente.
                                     </p>
                                 </div>
                             </div>
@@ -221,7 +349,7 @@ export default function ConfigPanel() {
                                         <Calendar size={20} className="text-white" />
                                     </div>
                                     <h4 className="font-bold text-slate-800 text-lg">Recursos</h4>
-                                    <p className="text-sm text-slate-500 mt-1">Boxes, equipos o mesas para round-robin.</p>
+                                    <p className="text-sm text-slate-500 mt-1">Equipos, técnicos o salas para round-robin.</p>
                                 </Link>
 
                                 <Link href="/agenda" className="group p-6 bg-emerald-50 border border-emerald-100 rounded-2xl hover:shadow-lg hover:border-emerald-300 transition-all">
@@ -246,7 +374,7 @@ export default function ConfigPanel() {
                         <div className="relative z-10 max-w-xl text-center md:text-left">
                             <h3 className="text-4xl font-black mb-4">¿Necesitas un modelo a medida?</h3>
                             <p className="text-emerald-200 font-medium text-lg leading-relaxed">
-                                Nuestro equipo puede entrenar un modelo específico con tu protocolo médico para una precisión del 99.9%.
+                                Nuestro equipo puede entrenar un modelo específico con tu flujo de negocio para una precisión del 99.9%.
                             </p>
                         </div>
                         <Button className="relative z-10 bg-white text-emerald-900 font-black hover:bg-slate-100 px-12 py-8 rounded-2xl text-xl shadow-2xl active:scale-95 transition-all">
