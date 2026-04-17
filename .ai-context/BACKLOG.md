@@ -1,5 +1,5 @@
 # BACKLOG.md — Recall Memory (Active Pending Work)
-> **Tier 2 | Updated:** 2026-04-16 15:34 CLT
+> **Tier 2 | Updated:** 2026-04-16 19:36 CLT
 > Single source of truth for ALL pending work. No history — completed items go to execution_tracker.md.
 
 ---
@@ -10,18 +10,20 @@
 |:---|:---|:---|:---|
 | BUG-8 | P2 | Desktop cursor tracking on deployed site (CF Workers) — mouse not tracked by Vortex after deploy | Investigate CSP/pointer-events |
 | BUG-9 | P2 | Sandbox chat "Enviar Prueba" — `test_feedback` may need `tenant_id` column check on DEV | Verify schema |
+| ~~BUG-10~~ | ~~P1~~ | ~~Sandbox "Reiniciar" button not working — `confirm()` blocked by Edge runtime~~ | ~~✅ FIXED `3915990`~~ |
 
 ---
 
-## §2 — Active Sprint (Block W — Session Close-Out)
+## §2 — Active Sprint (Block X — Stabilization Close-Out)
 
 | ID | Priority | Task | Status |
 |:---|:---|:---|:---|
-| W-1 | 🔴 | E2E self-onboarding (instagramelectrimax live) — **Round 5** | 🔄 IN PROGRESS |
-| W-2 | 🔴 | JIT mobile UX fixes (JIT as reported) | 🔄 WATCHING |
-| W-3 | 🔴 | PROD migration gate — present schema diff, await approval | ⏳ Blocked on W-1 pass |
-| W-4 | 🟡 | Append session results to execution_tracker.md | ⏳ Pending |
-| W-5 | 🟡 | Archive task_v2.md and implementation_plan.md → _archived/ | ⏳ Pending |
+| X-1 | 🔴 | Verify Reiniciar button works after deploy (React inline confirmation) | ✅ User verified |
+| X-2 | 🔴 | Configure `SENTRY_AUTH_TOKEN` as **Build Secret** in CF Workers Builds dashboard | ✅ User configured |
+| X-3 | 🟡 | 3-way isolation re-test (Superadmin vs Jose Mancilla vs CasaVitaCure) | ✅ Passed |
+| X-4 | 🟡 | PROD migration gate — present schema diff, await approval | ✅ Applied 6 groups |
+| X-5 | 🟡 | `NEXT_PUBLIC_*` vars as **Build Secrets** in CF dashboard (for build-time inlining) | ✅ User configured (dev+prod) |
+| X-6 | 🟢 | Append session results to execution_tracker.md | ✅ Done |
 
 ---
 
@@ -50,6 +52,7 @@
 | TD-5 | Tektur font loads per-component — consider global via layout.tsx | Low |
 | TD-6 | `_provision_services_and_resources` full path (from onboarding data) not yet tested end-to-end — fallback always fires for reset users | High |
 | TD-7 | **Migrate tenant resolution to JWT `app_metadata` claims** — see details below | High |
+| TD-8 | **Env Var Architecture audit** — Ensure `NEXT_PUBLIC_*` vars are in CF Build Secrets (build-time inlining) AND wrangler.toml `[vars]` (runtime). Currently only in `[vars]`. | Medium |
 
 ### TD-7: Tenant Resolution via JWT `app_metadata` (Performance + Security)
 
@@ -89,19 +92,37 @@ eliminating the `tenant_users` lookup on every page load and enabling faster RLS
 - [Custom Access Token Hook](https://supabase.com/docs/guides/auth/auth-hooks/custom-access-token-hook)
 - [SSR Auth with Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs)
 
+### TD-8: Env Var Architecture (Build-Time vs Runtime)
+
+**Current state:** `NEXT_PUBLIC_*` vars are in `wrangler.toml [vars]` (runtime only).
+Per OpenNext docs, they ALSO need to be in CF Workers Builds "Build variables and secrets"
+for Next.js to inline them into the client bundle at build time.
+
+**Target state:** Same vars in BOTH places — wrangler.toml for runtime, CF Build Secrets for build-time.
+
+**Official references:**
+- [OpenNext Env Vars](https://opennext.js.org/cloudflare/howtos/env-vars)
+- [CF Workers Build Config](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+- [CF Environment Variables](https://developers.cloudflare.com/workers/configuration/environment-variables/)
+
 ---
 
-## §5 — PROD Migration Gate (⚠️ Approval Required Before Merge to main)
+## §5 — PROD Migration Gate (✅ ALL APPLIED — 2026-04-16 20:00 CLT)
 
 | Migration | Tables Affected | DEV | PROD |
 |:---|:---|:---|:---|
-| Onboarding schema | tenant_onboarding, onboarding_messages | ✅ | ❌ |
-| Native calendar schema | resources, appointments, scheduling_config, tenant_services | ✅ | ❌ |
-| Profiles table | profiles | ✅ | ❌ |
+| Onboarding schema | tenant_onboarding, onboarding_messages | ✅ | ✅ |
+| Native calendar schema | resources, appointments, scheduling_config, tenant_services | ✅ | ✅ |
+| Profiles table | profiles | ✅ | ✅ |
+| tenants ALTER | ws_phone_id, ws_token, system_prompt → nullable | ✅ | ✅ |
+| tenant_users ALTER | role, created_at columns added | ✅ | ✅ |
+| Functions | is_superadmin, get_my_tenant_id, handle_new_user | ✅ | ✅ |
+| Superadmin RLS | All 13 tables | ✅ | ✅ |
+| Profile backfill | tomasgemes=superadmin, instagramelectrimax=admin | ✅ | ✅ |
 
-> `is_setup_complete` on tenants: ✅ PROD already applied (emergency fix today).
+> `is_setup_complete` on tenants: ✅ PROD already applied (emergency fix earlier today).
 
-**Action required:** User must explicitly approve each group before PROD migration.
+> **Data preservation verified:** 1 tenant, 7 contacts, 122 messages, 12 alerts, 41 test_feedback — all intact.
 
 ---
 
@@ -113,3 +134,5 @@ eliminating the `tenant_users` lookup on every page load and enabling faster RLS
 | [execution_tracker.md](execution_tracker.md) | Permanent history log (Tier 3) |
 | [master_plan.md](master_plan.md) | Strategic north star (Tier 4) |
 | [README.md](../README.md) | Technical documentation |
+| [OpenNext Env Vars](https://opennext.js.org/cloudflare/howtos/env-vars) | Cloudflare env var architecture |
+| [Sentry Next.js Setup](https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/) | Sentry configuration |

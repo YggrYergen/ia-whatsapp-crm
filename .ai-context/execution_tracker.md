@@ -594,8 +594,8 @@ All backend, DB, and frontend components built:
 
 - [x] E2E test: full self-onboarding flow â†’ provisioning creates services/resources/config âœ… (Apr 15 ~19:41)
 - [x] E2E test: sandbox chat â†’ real tool calls â†’ AI responses received âœ… (Apr 15 ~19:45)
-- [ ] E2E test: tenant switching â†’ verify zero cross-tenant data leaks (needs frontend deploy)
-- [ ] E2E test: message send â†’ verify exactly 1 bubble (no duplicates) (needs frontend deploy)
+- [ ] E2E test: tenant switching â†’ verify zero cross-tenant data leaks (verify on DEV site)
+- [ ] E2E test: message send â†’ verify exactly 1 bubble (no duplicates) (verify on DEV site)
 - [x] E2E test: re-test onboarding after schema fix â†’ all provisioning rows created âœ… (Apr 16 ~02:48 UTC)
 
 #### Remaining Items (Pending â€” P1 and beyond)
@@ -604,7 +604,7 @@ All backend, DB, and frontend components built:
 - [ ] P1-4: Agenda real appointment progress bars
 - [ ] P1-5: Permanent sandbox link in contacts sidebar
 - [ ] P2: Services/Products CRUD frontend page (designed, architecture ready)
-- [ ] Frontend deploy to check tenant isolation + dedup in live UI
+- [ ] Verify tenant isolation + dedup in live DEV UI (auto-deployed via Workers Builds)
 - [ ] PROD migration sync â€” 10 migrations pending approval
 
 #### Block V: Multi-Tenancy Forensic Audit âœ… COMPLETE (2026-04-15 ~21:00-22:30 CLT)
@@ -826,3 +826,97 @@ All backend, DB, and frontend components built:
 | **Supabase Pricing** | https://supabase.com/pricing | Plan limits monitoring |
 | **Cloud Run Pricing** | https://cloud.google.com/run/pricing | Cost tracking |
 | **Sentry FastAPI** | https://docs.sentry.io/platforms/python/integrations/fastapi/ | Error monitoring |
+
+---
+
+## 2026-04-16 Afternoon — Session 812a34ad — Sprint 1.5 Block V + W Start
+
+**Commit:** `3b28116` ? branch `desarrollo`
+**Session focus:** Cinematic login overhaul + agenda improvements + observability audit + context consolidation
+
+### Block V — Cinematic Login Overhaul ?
+
+| Item | Detail |
+|:---|:---|
+| Vortex particle system | 920 particles, magnetic field topology (3 Lissajous attractors, simplex noise dual-frequency) |
+| Dark matter dust | 8% of particles — white specks, darken to black + grow 3x approaching accretion disk |
+| Glassmorphic login card | backdrop-blur(40px), Google SSO, Sentry on OAuth error |
+| CLI animated text | Tektur Google Font, 15 Pre-Suasion phrases, typewriter 69ms/char |
+| Brand block removed | Replaced with CLI animated pre-suasion priming |
+
+### Block W — Audit, README, E2E, Context ?
+
+| Check | Result |
+|:---|:---|
+| Observability audit (except blocks) | 0 silent — all 3-channel compliant |
+| README §2/§3/§4/§10 | Updated with 7 new tables, native calendar arch, Blocks R-W |
+| E2E RLS isolation | ? PASS (messages, alerts, appointments) |
+| E2E message dedup | ? PASS — 0 duplicate wamids |
+| Context consolidation | NOW.md rewritten, BACKLOG.md created, tracker appended |
+
+### instagramelectrimax ? Fresh Newcomer Reset ?
+
+Tenant: Jose Mancilla / FumigaMax (`f12ca5b3`)
+Verification: onboarding_msgs=0, record=0, resources=0, services=0, sched_config=0, is_setup_complete=false, prompt_cleared=true
+
+### Migration Parity
+
+| Table Group | DEV | PROD |
+|:---|:---|:---|
+| tenant_onboarding + onboarding_messages | ? | ? PENDING USER APPROVAL |
+| resources + appointments + scheduling_config | ? | ? PENDING USER APPROVAL |
+| tenant_services | ? | ? PENDING USER APPROVAL |
+| profiles | ? | ? PENDING USER APPROVAL |
+| tenants.is_setup_complete | ? | ? PENDING USER APPROVAL |
+
+> User testing E2E live now. PROD gate opens after test pass confirmation.
+
+
+---
+
+## 2026-04-16 Evening - Session 6550aa28 - Block X: Sandbox Stabilization + Sentry + Env Vars
+
+**Commits:** `7561ba9`, `d356dcb`, `3915990`, `132602d` | branch `desarrollo`
+**Session focus:** Fix sandbox Reiniciar button, configure Sentry frontend, version-control env vars in wrangler.toml
+
+### Block X - Sandbox Reset + Sentry Config
+
+| # | What | Commit | Evidence |
+|:---|:---|:---|:---|
+| 23 | Tenant-scoped DashboardView, PacientesView, AgendaView | `9ca7af2` | Browser isolation test screenshots |
+| 24 | Renamed Pacientes -> Clientes across UI | `9ca7af2` | Visual in browser |
+| 25 | Config page crash on pre-render -> direct auth query pattern | `9ca7af2` | CF build pass |
+| 26 | Sandbox initRef boolean -> tenantId-aware re-init on tenant switch | `7561ba9` | Code review |
+| 27 | Sandbox handleReset tenant_id scoping + 3-channel error reporting | `7561ba9` | Code review |
+| 28 | Created `instrumentation.ts` for server-side Sentry capture | `d356dcb` | Build log: warning suppressed |
+| 29 | Hardcoded Sentry org/project in next.config.js + authToken from env | `d356dcb` | Code review |
+| 30 | Sandbox Reiniciar: `confirm()` blocked by Edge runtime -> React inline double-click | `3915990` | Console log: CLICKED with valid IDs but no dialog |
+| 31 | wrangler.toml `[vars]` - version-controlled runtime env vars | `132602d` | Build log: no more dashboard wipe warning |
+| 32 | TD-7 + TD-8 added to BACKLOG | `7561ba9` + `132602d` | BACKLOG.md |
+
+### Root Causes Found
+
+| Bug | Evidence Method | Root Cause | Fix |
+|:---|:---|:---|:---|
+| Reiniciar button does nothing | Console log showed CLICKED 9x with valid IDs | `confirm()` API blocked by browser in Edge/Workers context | Replaced with React state-based double-click confirmation |
+| Sentry not uploading source maps | Build log: `No auth token provided` | `SENTRY_ORG` and `SENTRY_PROJECT` empty string, `SENTRY_AUTH_TOKEN` missing | Hardcoded org/project, token via CF Build Secret |
+| Dashboard vars wiped on deploy | Build log WARNING: remote config differs from local | wrangler.toml had no `[vars]`, `--keep-vars` insufficient | Added `[vars]` section to wrangler.toml |
+| initRef prevented tenant re-init | Code review | `useRef(false)` blocked re-init permanently | Changed to `useRef<string|null>(null)` tracking tenantId |
+
+### Env Var Architecture (Documented)
+
+| Layer | Where | Purpose | Ref |
+|:---|:---|:---|:---|
+| Build-time | CF Workers Builds dashboard (Build Secrets) | `NEXT_PUBLIC_*` inlining + `SENTRY_AUTH_TOKEN` | opennext.js.org/cloudflare/howtos/env-vars#workers-builds |
+| Runtime | wrangler.toml `[vars]` | Worker `env` object at request time | developers.cloudflare.com/workers/configuration/environment-variables/ |
+| Secrets | CF dashboard or `wrangler secret put` | Sensitive tokens (`SENTRY_AUTH_TOKEN`) | developers.cloudflare.com/workers/configuration/secrets/ |
+| Local dev | `.env.local` + `.dev.vars` | Next.js dev + wrangler dev | opennext.js.org/cloudflare/howtos/env-vars#local-development |
+
+### Pending User Actions
+
+| Action | Why |
+|:---|:---|
+| Set `SENTRY_AUTH_TOKEN` as **Build Secret** (not just runtime) in CF Workers Builds dashboard | Token available during `next build` for source map upload |
+| Set `NEXT_PUBLIC_*` vars as **Build variables** in CF Workers Builds dashboard | Next.js needs them at build time to inline into client bundle |
+| Verify Reiniciar button works with new double-click pattern | Deployed in `3915990` |
+| Approve PROD migrations | 6 table groups pending |

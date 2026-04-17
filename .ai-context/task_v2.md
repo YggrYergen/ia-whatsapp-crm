@@ -81,9 +81,10 @@
 
 ##### Remaining Items (Priority Order)
 
-###### R-WELCOME: WelcomeStep never shown — HIGH
-- [ ] Investigate OnboardingWizard `getInitialStep()` — user jumps straight to ConfigChat
-- [ ] Verify step guard logic and data loading sequence
+###### R-WELCOME: WelcomeStep ✅ RESOLVED
+- [x] WelcomeStep renders correctly for real newcomers (confirmed by user Apr 16)
+- [x] Step guard logic works — only appeared broken during dev testing with existing users
+- [ ] Minor polish: CTA button click feels slow (aesthetic, not functional)
 
 ###### R-CONFETTI: Completion confetti/fireworks not firing — MEDIUM
 - [ ] Check `CompletionStep.tsx` class names match `globals.css` keyframe names
