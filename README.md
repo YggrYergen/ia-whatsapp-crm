@@ -466,7 +466,7 @@ Enabled on `contacts`, `messages`, `alerts`. Frontend channels: `chat_contacts_c
 | 4 | **DO NOT delete `app/global-error.tsx`** | Required for React render error capture |
 | 5 | **DO NOT revert to `@cloudflare/next-on-pages`** | DEPRECATED. Doesn't support `instrumentation-client.ts` |
 | 6 | **DO NOT commit `.env.local`** | Contains `BACKEND_URL=http://localhost:8000` — crashes prod Worker |
-| 7 | **DO NOT remove `--keep-vars`** from deploy command | Wipes runtime env vars from CF dashboard |
+| 7 | **DO NOT put DEV values in `wrangler.toml [vars]`** | `[vars]` ALWAYS overwrite CF dashboard values, even with `--keep-vars`. Caused P0 incident 2026-04-17: PROD pointed to DEV for 24+h. Keep `--keep-vars` AND verify `[vars]` match PROD. |
 | 8 | **DO NOT lower `compatibility_date`** below `2025-08-16` in wrangler.toml | Breaks Sentry SDK `https.request` |
 
 ### Backend — DO NOT
