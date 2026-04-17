@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import * as Sentry from '@sentry/nextjs'
+import { formatWhatsAppMessage, messageBubbleStyles } from '@/lib/whatsappFormatter'
 
 const supabase = createClient()
 
@@ -185,42 +186,7 @@ export default function TestChatArea() {
         setNoteValue("")
     }
 
-    const formatWhatsAppText = (text: string) => {
-        if (!text) return '';
-        let processedText = text.replace(/\*\*/g, '*');
-        
-        const lines = processedText.split('\n').map((line, i) => {
-            if (line.trim().startsWith('>')) {
-                return (
-                    <blockquote key={i} className="border-l-4 border-slate-300 pl-3 py-1 my-2 bg-slate-50/50 italic text-slate-600 rounded-r">
-                        {line.trim().substring(1).trim()}
-                    </blockquote>
-                );
-            }
-            if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
-                 return <li key={i} className="ml-4 list-disc marker:text-emerald-500">{line.trim().substring(2).trim()}</li>
-            }
-            
-            const parts = line.split(/(\*[^*]+\*|_[^_]+_|~[^~]+~)/g);
-            return (
-                <div key={i} className="min-h-[1em]">
-                    {parts.map((part, j) => {
-                        if (part.startsWith('*') && part.endsWith('*')) {
-                            return <strong key={j} className="font-bold text-inherit">{part.slice(1, -1)}</strong>;
-                        }
-                        if (part.startsWith('_') && part.endsWith('_')) {
-                            return <em key={j}>{part.slice(1, -1)}</em>;
-                        }
-                        if (part.startsWith('~') && part.endsWith('~')) {
-                            return <del key={j} className="opacity-70">{part.slice(1, -1)}</del>;
-                        }
-                        return part;
-                    })}
-                </div>
-            );
-        });
-        return lines;
-    };
+    // formatWhatsAppText replaced by shared /lib/whatsappFormatter
 
     return (
         <div className="flex-col relative bg-[#efeae2] flex-1 flex h-full overflow-hidden">
@@ -322,7 +288,7 @@ export default function TestChatArea() {
                                         setNoteValue(m.note || "")
                                     }
                                 }}>
-                                    {formatWhatsAppText(m.content)}
+                                    {formatWhatsAppMessage(m.content)}
                                     <div className="text-[9px] text-slate-500/70 text-right mt-1 font-medium tracking-tighter">
                                         {m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                                     </div>

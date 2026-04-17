@@ -1,8 +1,8 @@
 # 🗺️ Master Plan v6 — AI WhatsApp CRM SaaS (ALL DECISIONS FINALIZED)
 
-> **Documento vivo** — Última actualización: 2026-04-13 01:50 CLT  
-> **Estado:** APPROVED v7 — Sprint 1 Blocks A-L COMPLETE, Blocks M-Q pending. All CC items resolved.  
-> **Deep Dives:** [A v3 (Response Quality)](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B v3 (Multi-Channel)](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C v3 (Dashboard + Observability)](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)
+> **Documento vivo** — Última actualización: 2026-04-14 16:55 CLT  
+> **Estado:** APPROVED v8 — Sprint 1 Blocks A-L COMPLETE, Blocks M-Q pending, Block R (Newcomer Onboarding) IN PROGRESS.  
+> **Deep Dives:** [A v3 (Response Quality)](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B v3 (Multi-Channel)](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C v3 (Dashboard + Observability)](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) | [Reasoning Effort Diagnostic](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
 
 > [!CAUTION]
 > **MODEL DECISION FINALIZED (v6):** Production model = **`gpt-5.4-mini`** ($0.75/$4.50/1M). Dev/budget = **`gpt-5.4-nano`** ($0.20/$1.25/1M). Cost cap: `max_completion_tokens=500` → ~$0.00225/response max. Margins: **88-90%** with cap. Codebase must be updated from `gpt-4o-mini` (DEPRECATED).
@@ -80,6 +80,18 @@ COMPLIANT (FUTURE):
   Your Meta App → Tech Provider access via Embedded Signup
   Your Backend → Uses client's WABA ID + Phone ID + Token
 ```
+
+### Dual-Adapter Architecture (Added v8 — 2026-04-14)
+
+> [!IMPORTANT]
+> **Two OpenAI adapters coexist in the backend.** This is intentional — zero-risk approach to migrating from Chat Completions to Responses API.
+
+| Adapter | File | API Endpoint | Used By | Supports |
+|:---|:---|:---|:---|:---|
+| `OpenAIStrategy` | `openai_adapter.py` | `/v1/chat/completions` | WhatsApp conversation pipeline | Tools ✅, Streaming ❌, `reasoning_effort` ❌ |
+| `OpenAIResponsesStrategy` | `openai_responses_adapter.py` | `/v1/responses` | Onboarding config agent | Tools ✅, Streaming ✅, `reasoning.effort` ✅, Reasoning summaries ✅ |
+
+**Migration path:** Once `OpenAIResponsesStrategy` is proven stable in the onboarding agent, the WhatsApp pipeline will be migrated to it (Sprint 2). This eliminates the Chat Completions adapter entirely.
 
 **DB Change:** The `tenants` table already has `ws_phone_id` and `ws_token` per tenant. For the BSP model, we'll also need:
 - `waba_id` — WhatsApp Business Account ID
@@ -243,30 +255,37 @@ When an error occurs:
 
 ## 6. Architecture Roadmap
 
-### Current State
+### Current State (v8 — 2026-04-14)
 ```
-WhatsApp → Cloud Run (FastAPI) → OpenAI → Supabase → Response → WhatsApp
-                                           ↕
-                                     Google Calendar (hardcoded CVC)
+WhatsApp → Cloud Run (FastAPI) → OpenAI Chat Completions → Supabase → Response → WhatsApp
+                                            ↕
+                                      Google Calendar (hardcoded CVC)
+
+Google OAuth → Supabase Auth → Frontend (panel layout auth gate)
+                                  ↓ (NO onboarding, NO tenant auto-provision)
+                                Dashboard (requires manual tenant_users row)
 ```
 
 ### Target State (May 2026)
 ```
-┌─ Channels ─────────┐     ┌── Backend ──────────┐     ┌── LLM ─────────┐
-│ WhatsApp            │     │ Channel Router       │     │ gpt-5.4-mini     │
-│ Instagram           │ ──► │ CorrelationMiddleware│ ──► │ (future: gemini│
-│ Messenger           │     │ ProcessMessage       │     │  anthropic)    │
-│ Email               │     │ Agentic Tool Loop    │     └────────────────┘
-└─────────────────────┘     │ Usage Tracker        │            ↕
-                            │ Booking Engine       │     ┌── Tools ───────┐
-┌─ Frontend ─────────┐     └──────────────────────┘     │ check_avail    │
-│ Dashboard           │            ↕                     │ book_appointment│
-│ Conversations       │     ┌── Database ─────────┐     │ escalate_human │
-│ Agenda              │     │ tenants              │     │ update_scoring │
-│ Config              │     │ contacts (multi-ch)  │     │ ...per-tenant  │
-│ SuperAdmin          │     │ messages (channel)   │     └────────────────┘
-│ Reportes            │     │ bookings             │
-└─────────────────────┘     │ usage_logs           │
+┌─ Channels ─────────┐     ┌── Backend ──────────┐     ┌── LLM ─────────────┐
+│ WhatsApp            │     │ Channel Router       │     │ OpenAIStrategy      │ ← Chat Completions (legacy)
+│ Instagram           │ ──► │ CorrelationMiddleware│ ──► │ OpenAIResponses     │ ← Responses API (new)
+│ Messenger           │     │ ProcessMessage       │     │ (future: gemini     │
+│ Email               │     │ Agentic Tool Loop    │     │  anthropic)         │
+└─────────────────────┘     │ Usage Tracker        │     └─────────────────────┘
+                            │ Booking Engine       │            ↕
+┌─ Frontend ─────────┐     │ Onboarding Agent     │     ┌── Tools ───────┐
+│ Dashboard           │     └──────────────────────┘     │ check_avail    │
+│ Conversations       │            ↕                     │ book_appointment│
+│ Agenda              │     ┌── Database ─────────┐     │ escalate_human │
+│ Config              │     │ tenants              │     │ update_scoring │
+│ SuperAdmin          │     │ profiles             │     │ report_config  │ ← onboarding
+│ Reportes            │     │ contacts (multi-ch)  │     │ ...per-tenant  │
+│ Onboarding Wizard   │     │ messages (channel)   │     └────────────────┘
+└─────────────────────┘     │ tenant_onboarding    │
+                            │ bookings             │
+                            │ usage_logs           │
                             │ tenant_plans         │
                             └──────────────────────┘
 ```
@@ -285,8 +304,8 @@ WhatsApp → Cloud Run (FastAPI) → OpenAI → Supabase → Response → WhatsA
 |:---|:---|:---|
 | **Fri Apr 11** | Research DONE ✅ (50+ searches). Deep dives v3 + all docs enriched. Model decided. Sprint 1 restructured. | ✅ Done |
 | **Sat Apr 12** | Block A-H: strict tools, agentic loop, resilience, observability, BSUID, deploy. Block I: response quality fix (5 steps). Block J: escalation UX. Block L: dashboard + mobile frontend overhaul. | ✅ Done |
-| **Sun Apr 13** | Step 6: Enriched patient context. Merge `desarrollo` → `main` (needs drift check). | ⏳ In progress |
-| **Mon Apr 14** | Fumigation tenant setup via provisioning script, full E2E testing, Meta audit. | ⏳ Pending |
+| **Sun Apr 13** | Step 6: Enriched patient context. Merge `desarrollo` → `main` (needs drift check). | ✅ Done |
+| **Mon Apr 14** | Block R: Newcomer Onboarding System (dual-adapter, DB schema, wizard). Fumigation tenant setup, E2E testing, Meta audit. | ⏳ In progress |
 | **Tue Apr 15** | Onboarding 🚀, monitoring, post-onboarding (prompt refinement + rescue template). | ⏳ Pending |
 
 ### Sprint 2: Product Expansion (Apr 16-25)
@@ -299,9 +318,10 @@ WhatsApp → Cloud Run (FastAPI) → OpenAI → Supabase → Response → WhatsA
 | S2.4 | Multi-squad booking engine (DB + tools) | Day 5-7 | 8h |
 | S2.5 | Credits/billing system (usage_logs + tenant_plans) | Day 7-8 | 6h |
 | S2.6 | Dashboard Blocks 3-4 (Opportunities + Performance) | Day 8-9 | 6h |
-| S2.7 | Daily briefing generation tool | Day 9 | 4h |
-| S2.8 | Staff comments on AI responses | Day 9-10 | 4h |
-| S2.9 | SuperAdmin panel v1 | Day 10 | 6h |
+| S2.7 | WhatsApp pipeline → Responses API migration | Day 9 | 4h |
+| S2.8 | Daily briefing generation tool | Day 9 | 4h |
+| S2.9 | Staff comments on AI responses | Day 9-10 | 4h |
+| S2.10 | SuperAdmin panel v1 | Day 10 | 6h |
 
 ### Sprint 3: Scale to 7 (Apr 26 → May 4)
 
@@ -367,3 +387,5 @@ CRITICAL RULES:
 | Cost explosion from o4-mini usage | Low | 🟡 High | Removed from selectable models, `max_completion_tokens=2048` cap | ✅ Fixed |
 | Supabase free tier exhausted | Medium | 🟡 High | Monitor DB size, upgrade to Pro at tenant #3 | ⏳ |
 | Single point of failure (you) | High | 🔴 Critical | Document everything, build for automation | ⏳ |
+| **Dual-adapter divergence** | Low | 🟡 Medium | Two adapters may drift in behavior. Mitigated: both use `LLMResponse` DTO. Sprint 2: full migration unifies them. | ⏳ Monitor |
+| **Newcomer onboarding breaks existing tenants** | Low | 🟡 Medium | `is_setup_complete=true` set for existing tenants. Panel layout gate skips wizard for them. | ⏳ Test |

@@ -1,4 +1,4 @@
-# AI CRM — Task Tracker v2 (2026-04-12)
+# AI CRM — Task Tracker v2 (updated 2026-04-15)
 
 > **Replaces:** `task.md` (v1 had 1000+ lines of completed Phase 0-5 history, many stale checkboxes)  
 > **Source of truth for daily status:** `execution_tracker.md`  
@@ -20,20 +20,25 @@
 
 ## 📋 REMAINING SPRINT 1 WORK (Apr 12-15)
 
-### Tonight (Sat Apr 12)
+### Tonight (Sat Apr 12) — CLOSED
 
 #### Pending from Mobile Fix
-- [ ] Test on actual phone browser (pending merge to main)
+- [ ] Test on actual phone browser (PROD deployed via merge `6ee6cd8`)
 
 #### Pending Diagnosis
 - [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
 
-#### Step 6: Enriched Patient Context (30 min)
-- [ ] `use_cases.py` — Build richer context block (name, phone, role, created_at, notes, tags)
+#### Step 6: Enriched Patient Context — DEFERRED TO MONDAY
+- [ ] `use_cases.py` — needs proper design session (LLM context ↔ PacientesView ↔ staff actions)
 
-#### Merge `desarrollo` → `main`
-- [ ] Pre-merge drift check per §8
-- [ ] Merge and verify PROD deployment
+#### Merge `desarrollo` → `main` ✅
+- [x] Pre-merge drift check: 6 tables, **PASS** (tenant_users drift safe)
+- [x] Merge commit `6ee6cd8`, pushed. Auto-deploy triggered.
+
+#### Docs Session ✅
+- [x] README.md rewrite (1581→508 lines)
+- [x] All `.ai-context/` docs synchronized
+- [x] `reasoning_effort_diagnostic.md` persisted to `deep_dives_&_misc/`
 
 ---
 
@@ -58,6 +63,51 @@
 - [ ] **O1.** Verify App permissions: `whatsapp_business_messaging` active
 - [ ] **O2.** Verify webhook fields subscribed: `messages`, `message_template_status_update`
 - [ ] **O3.** Verify System User token: never-expiring, correct permissions
+
+#### Block R: Newcomer Onboarding System — 🔧 STABILIZING (Apr 14-15)
+
+> **Last updated:** 2026-04-15 11:40 CLT | Session 13d7385c
+
+##### R1–R3: Core Implementation ✅ ALL COMPLETE
+- [x] **R1** DB: `tenant_onboarding`, `onboarding_messages`, `profiles`, `is_setup_complete`, RLS policies
+- [x] **R2** Backend: `openai_responses_adapter.py`, `/api/onboarding/chat` SSE endpoint, `agent_prompt.py`, follow-up loop, finalization, 3-channel observability
+- [x] **R3** Frontend: `TenantContext.tsx`, `OnboardingWizard.tsx`, `ConfigChat.tsx`, `ConfigProgress.tsx`, `CompletionStep.tsx`, `useOnboardingStream.ts`
+
+##### Bugs Fixed (Apr 15 session)
+- [x] **FIX-BUILD** CSS scoping (styled-jsx incompatible with keyframes → moved to `globals.css`)
+- [x] **FIX-DEDUP** Message flash: streaming bubble hidden when content matches last `messages[]` entry
+- [x] **FIX-MULTITN** `setIsStreaming(false)` moved to outer finally (was killing follow-up bubbles)
+- [x] **FIX-SSE-ROOT** `currentEventType/Data` declared inside `while` loop → reset on each `reader.read()` → TCP-split SSE events silently dropped. Moved before loop. Commit `2c5d2a5`.
+
+##### Remaining Items (Priority Order)
+
+###### R-WELCOME: WelcomeStep ✅ RESOLVED
+- [x] WelcomeStep renders correctly for real newcomers (confirmed by user Apr 16)
+- [x] Step guard logic works — only appeared broken during dev testing with existing users
+- [ ] Minor polish: CTA button click feels slow (aesthetic, not functional)
+
+###### R-CONFETTI: Completion confetti/fireworks not firing — MEDIUM
+- [ ] Check `CompletionStep.tsx` class names match `globals.css` keyframe names
+- [ ] Verify trigger condition (`isConfigComplete` → `onConfigComplete()` chain)
+
+###### R-SANDBOX: Standalone sandbox route — HIGH (architecture change)
+- [ ] **DECISION MADE:** Option A — `/chats/sandbox` dedicated route, no contacts table dependency
+- [ ] NEW: `Frontend/app/(panel)/chats/sandbox/page.tsx` — self-contained chat, always available
+- [ ] NEW: `Backend/app/api/sandbox/chat_endpoint.py` — uses tenant `system_prompt` to answer
+- [ ] MODIFY: `CompletionStep.tsx` — CTA button → `router.push('/chats/sandbox')`
+- [ ] MODIFY: Sidebar — permanent "🧪 Chat de Pruebas" link to `/chats/sandbox`
+- [ ] MODIFY: `Backend/app/main.py` — mount sandbox router
+
+###### R-PHONE: Phone number as 2nd onboarding field — MEDIUM (priority over PROD migration)
+- [ ] MODIFY: `agent_prompt.py` — add `phone_number` field, instruct as 2nd question asked
+- [ ] MODIFY: `chat_endpoint.py` — handle `phone_number` in tool schema + `_save_field()`
+- [ ] MODIFY: `useOnboardingStream.ts` — add to `ONBOARDING_FIELDS` array (→ 11 fields)
+- [ ] MODIFY: `ConfigProgress.tsx` — update total field count display
+- [ ] MIGRATION (DEV): `ALTER TABLE tenant_onboarding ADD COLUMN phone_number TEXT`
+- [ ] MIGRATION (PROD): ⏳ PENDING APPROVAL
+
+###### R-PROD-MIGRATION: onboarding_messages table to PROD — BLOCKED PENDING APPROVAL
+- [ ] `onboarding_messages` table + RLS policy + index → DEV ✅ | PROD ⏳
 
 ---
 
@@ -156,7 +206,8 @@
 | Item | Why Deferred | Priority |
 |:---|:---|:---|
 | Dashboard MVP (Charts, KPIs) | Bot quality > dashboard for Tuesday | 🔴 First Sprint 2 |
-| Responses API migration | Enables `reasoning.effort` + tools. Major adapter rewrite | 🔴 |
+| ~~Responses API migration~~ | ~~Enables `reasoning.effort` + tools. Major adapter rewrite~~ | ~~🔴~~ **PULLED FORWARD (partial)** — `openai_responses_adapter.py` built in Block R2.1 for onboarding agent. Full WhatsApp pipeline migration deferred. |
+| WhatsApp pipeline → Responses API | Migrate existing `openai_adapter.py` from Chat Completions to Responses API | 🔴 After onboarding adapter proven |
 | Instagram DM integration | SELLING POINT but not needed Tuesday | 🔴 |
 | Multi-squad booking engine | SELLING POINT for scaling | 🔴 |
 | Gemini adapter (+ SDK migration) | `google.generativeai` deprecated → `google.genai` | 🟡 |
@@ -191,8 +242,11 @@
 |:---|:---|
 | OpenAI Function Calling | https://platform.openai.com/docs/guides/function-calling |
 | OpenAI Structured Outputs | https://platform.openai.com/docs/guides/structured-outputs |
+| OpenAI Responses API | https://platform.openai.com/docs/api-reference/responses |
+| OpenAI Streaming (Responses) | https://platform.openai.com/docs/guides/streaming |
 | Meta WhatsApp Cloud API | https://developers.facebook.com/docs/whatsapp/cloud-api/ |
 | Supabase Python Client | https://supabase.com/docs/guides/getting-started/quickstarts/python |
+| Supabase Auth (Managing User Data) | https://supabase.com/docs/guides/auth/managing-user-data |
 | Sentry FastAPI | https://docs.sentry.io/platforms/python/integrations/fastapi/ |
 
 ---

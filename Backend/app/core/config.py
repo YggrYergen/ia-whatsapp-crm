@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # The FROM phone is dynamic per tenant (uses tenant.ws_phone_id + ws_token)
     SHADOW_FORWARD_PHONE: str | None = None
     
+    # Block R: Superadmin emails — comma-separated list of Google emails
+    # Users with these emails get is_superadmin=true in profiles table,
+    # which grants them read-all RLS policies on all tables + tenant switching.
+    # Ref: https://cloud.google.com/run/docs/configuring/environment-variables
+    SUPERADMIN_EMAILS: str | None = None
+    
     GOOGLE_SERVICE_ACCOUNT_JSON: str | None = None
     GOOGLE_OAUTH_CLIENT_ID: str | None = None
     GOOGLE_OAUTH_CLIENT_SECRET: str | None = None

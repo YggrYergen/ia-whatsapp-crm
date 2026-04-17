@@ -6,6 +6,7 @@ import { useCrm } from '@/contexts/CrmContext'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from '@/lib/supabase'
+import { notifyDiscord } from '@/lib/notifyDiscord'
 import * as Sentry from '@sentry/nextjs'
 
 const supabase = createClient()
@@ -42,6 +43,7 @@ export default function TestConfigPanel() {
     }, [selectedContact?.tenant_id])
 
     const fetchTenantConfig = async () => {
+        const fn = 'TestConfigPanel.fetchTenantConfig'
         setIsLoading(true)
         try {
             const { data, error } = await supabase
@@ -50,16 +52,29 @@ export default function TestConfigPanel() {
                 .eq('id', selectedContact.tenant_id)
                 .single()
             
-            if (data) setPrompt(data.system_prompt)
-        } catch (err) {
-            console.error(err)
-            Sentry.captureException(err as Error)
+            if (error) {
+                const errMsg = `[${fn}] Fetch failed | tenant=${selectedContact.tenant_id} | error=${error.message}`
+                console.error(errMsg)
+                Sentry.captureMessage(errMsg, 'error')
+                notifyDiscord('🔴 TestConfig Fetch Failed', `**Tenant:** \`${selectedContact.tenant_id}\`\n**Error:** ${error.message}`, 'error')
+                return
+            }
+            if (data) {
+                setPrompt(data.system_prompt)
+                Sentry.addBreadcrumb({ category: 'config', message: `Loaded config for tenant ${selectedContact.tenant_id}`, level: 'info' })
+            }
+        } catch (err: any) {
+            const errMsg = `[${fn}] CRASH | tenant=${selectedContact.tenant_id} | error=${String(err).slice(0, 300)}`
+            console.error(errMsg, err)
+            Sentry.captureException(err, { extra: { where: fn, tenant_id: selectedContact.tenant_id } })
+            notifyDiscord('🔴 TestConfig Fetch CRASH', `**Tenant:** \`${selectedContact.tenant_id}\`\n**Error:** ${String(err).slice(0, 500)}`, 'error')
         } finally {
             setIsLoading(false)
         }
     }
 
     const handleSavePrompt = async () => {
+        const fn = 'TestConfigPanel.handleSavePrompt'
         setIsSaving(true)
         try {
             const { error } = await supabase
@@ -67,12 +82,22 @@ export default function TestConfigPanel() {
                 .update({ system_prompt: prompt })
                 .eq('id', selectedContact.tenant_id)
             
-            if (!error) {
-                setToasts(prev => [...prev, { id: Date.now(), payload: { content: 'Instrucciones actualizadas correctamente! ✅' } }])
+            if (error) {
+                const errMsg = `[${fn}] Save failed | tenant=${selectedContact.tenant_id} | error=${error.message}`
+                console.error(errMsg)
+                Sentry.captureMessage(errMsg, 'error')
+                notifyDiscord('🔴 TestConfig Save Failed', `**Tenant:** \`${selectedContact.tenant_id}\`\n**Error:** ${error.message}`, 'error')
+                setToasts(prev => [...prev, { id: Date.now(), payload: { content: `Error al guardar: ${error.message}` } }])
+                return
             }
-        } catch (err) {
-            console.error(err)
-            Sentry.captureException(err as Error)
+            console.info(`[${fn}] Prompt saved | tenant=${selectedContact.tenant_id} | len=${prompt.length}`)
+            Sentry.addBreadcrumb({ category: 'config', message: `Prompt saved for tenant ${selectedContact.tenant_id}`, level: 'info' })
+            setToasts(prev => [...prev, { id: Date.now(), payload: { content: 'Instrucciones actualizadas correctamente! ✅' } }])
+        } catch (err: any) {
+            const errMsg = `[${fn}] CRASH | tenant=${selectedContact.tenant_id} | error=${String(err).slice(0, 300)}`
+            console.error(errMsg, err)
+            Sentry.captureException(err, { extra: { where: fn, tenant_id: selectedContact.tenant_id } })
+            notifyDiscord('🔴 TestConfig Save CRASH', `**Tenant:** \`${selectedContact.tenant_id}\`\n**Error:** ${String(err).slice(0, 500)}`, 'error')
         } finally {
             setIsSaving(false)
         }

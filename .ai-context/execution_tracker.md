@@ -2,7 +2,7 @@
 
 > **Master Plan:** [Master Plan v3](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md)  
 > **Deep Dives:** [A](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) | [B](file:///d:/WebDev/IA/.ai-context/deep_dive_b_multi_channel.md) | [C](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md)  
-> **Last Updated:** 2026-04-12 22:10 CLT
+> **Last Updated:** 2026-04-16 06:50 CLT (Session cb937bcc — Multi-Tenancy Audit + Schema Fix + Resource Count)
 
 ---
 
@@ -173,7 +173,7 @@
 - [x] Error: "Function tools with reasoning_effort are not supported. Please use /v1/responses instead."
 - [x] Impact: every request was doubling (fail→retry) + spamming Discord (7+ alerts per test)
 - [x] Fix: removed entire experiment (commit `627c93e`). Zero quality impact — param never worked with tools
-- [ ] Sprint 2: Migrate adapter to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively
+- [x] Sprint 2: ~~Migrate adapter to Responses API~~ → **PULLED FORWARD to Block R2.1 (2026-04-14)**: New `openai_responses_adapter.py` built side-by-side for onboarding agent. Existing adapter untouched.
 - [ ] Full diagnostic: [reasoning_effort_diagnostic.md](file:///d:/WebDev/IA/.ai-context/deep_dives_&_misc/reasoning_effort_diagnostic.md)
 
 **Step 5b: Rapid-fire message batching ✅ MERGED TO PROD** (commit `1f7b250` → merged `73789ef`)
@@ -277,15 +277,63 @@
 
 **Commits:** Multiple on `desarrollo` branch. Build verified (0 errors).
 
-#### Pending for Day 3 Continuation
+#### Session 3 Close-Out (Apr 12 ~23:00 CLT)
 
-- [ ] Test on actual phone browser (pending merge to main)
+- [x] README.md rewrite — 1581→508 lines (Project README + Operational Runbook + Roadmap)
+- [x] All `.ai-context/` docs synchronized (master_plan, implementation_plan, execution_tracker)
+- [x] `reasoning_effort_diagnostic.md` persisted to `deep_dives_&_misc/`
+- [x] Pre-merge drift check: 6 tables compared, **✅ PASS** (tenant_users +role/+created_at on DEV only — safe)
+- [x] Merge `desarrollo` → `main` — commit `6ee6cd8`, pushed. Auto-deploy triggered.
+- [ ] Test on actual phone browser (PROD now deployed)
 - [ ] **U-69:** Read OpenAI docs on tool execution patterns for gpt-5.4-mini
-- [ ] **Step 6:** Enriched Patient Context — `use_cases.py`: richer context block (name, phone, role, created_at, notes, tags)
-- [ ] Pre-merge drift check per §8
-- [ ] Merge `desarrollo` → `main` and verify PROD deployment
 
-### Day 4: Monday April 14 — Fumigation Tenant Setup
+#### Deferred to Monday
+- [ ] **Step 6:** Enriched Patient Context — deferred for proper design (interconnected: LLM context ↔ PacientesView ↔ staff actions)
+
+### Day 4: Monday April 14 — Newcomer Onboarding System + Fumigation Tenant Setup
+
+#### Block R: Newcomer Onboarding System 🔧 IN STABILIZATION
+
+> **Session:** 13d7385c (2026-04-15)  
+> **Commit:** `2c5d2a5` — SSE parser root cause fix  
+> **Last updated:** 2026-04-15 11:30 CLT
+
+##### R1–R3: Core Implementation ✅ COMPLETE
+
+All backend, DB, and frontend components built:
+- [x] `onboarding_messages` Supabase table (DEV ✅ | PROD ⏳ PENDING APPROVAL)
+- [x] `openai_responses_adapter.py` — new Responses API adapter (reasoning + tools + streaming)
+- [x] `chat_endpoint.py` — full config-agent SSE endpoint (10-field wizard, follow-up loop, finalization)
+- [x] `useOnboardingStream.ts` — SSE consumer hook with persistence, history load, progress tracking
+- [x] `ConfigChat.tsx` — streaming chat UI with dedup rendering
+- [x] `CompletionStep.tsx` — confetti/fireworks celebration (CSS keyframes in globals.css)
+- [x] `OnboardingWizard.tsx` — multi-step wizard (Welcome → Chat → Completion)
+
+##### Block R: Bugs Fixed (April 15 session)
+
+| Fix | Commit | Description |
+|:---|:---|:---|
+| Build: CSS scoping | `f7d705a` | Moved keyframes from styled-jsx to globals.css; flattened multiline classNames |
+| Rendering: DEDUP arch | `f7d705a` | Eliminated flushSync; streaming bubble hides when content matches last message |
+| Multi-turn: isStreaming | `f7d705a` | Moved setIsStreaming(false) to outer finally — no longer kills follow-up bubbles |
+| **SSE Parser: ROOT CAUSE** | `2c5d2a5` | `currentEventType/Data` declared inside while loop → reset on every read() call → events split across TCP chunks were silently dropped. Moved before loop. |
+
+##### Block R: Remaining Known Issues (Post-Fix)
+
+| ID | Issue | Priority | Status |
+|:---|:---|:---|:---|
+| **R-1** | WelcomeStep (Step 1) not seen — user goes straight to ConfigChat | High | ⏳ To investigate |
+| **R-2** | Confetti/fireworks at completion not firing | Medium | ⏳ CompletionStep CSS paths to verify |
+| **R-3** | After completion, user sent to `/chats` (empty for newcomers) | High | ⏳ Needs sandbox route |
+| **R-4** | Sandbox "Chat de Pruebas" requires DB contact row to display | Critical | ⏳ Architecture change needed |
+| **R-5** | `onboarding_messages` migration not applied to PROD | Critical | PENDING APPROVAL |
+| **R-6** | Phone number not collected during onboarding (11th field) | Medium | Backlog |
+
+##### Block R: Architecture Decision — Sandbox Route (APPROVED DIRECTION)
+
+> Option A chosen: dedicated `/chats/sandbox` standalone route, no contacts table dependency.
+> Self-contained, always available for newcomers, powered by tenant's `system_prompt`.
+> CompletionStep CTA → `router.push('/chats/sandbox')` instead of `/chats`.
 
 #### Step 11: WhatsApp Number Setup (1 hour)
 - [ ] Buy SIM card (if not done)
@@ -352,17 +400,300 @@
 - [ ] Smoke test both tenants (CVC + fumigation)
 - [ ] Prepare onboarding notes for tomorrow
 
-### Day 5: Tuesday April 15 — Client Onboarding
+### Day 5: Tuesday April 15 — Block R + S: Onboarding + Sandbox Isolation
 
-- [ ] **Morning:** Walk fumigation owner through dashboard
-- [ ] **Morning:** Show conversation management, how to read chats
-- [ ] **Morning:** Explain escalation (when human needs to intervene)
-- [ ] **Morning:** Test with owner — have them message the WhatsApp number
-- [ ] **All day:** Monitor Sentry + Discord for any errors
-- [ ] **As needed:** Hotfix any issues discovered during onboarding
-- [ ] **End of day:** Check CasaVitaCure is still working properly (regression test)
+> **Session** (13d7385c) — 10:00 CLT → ongoing  
+> **Last updated:** 2026-04-15 13:35 CLT
+
+#### Block R: Newcomer Onboarding Flow ✅ (All core items COMPLETE)
+
+**R1: SSE Parser Fix (ROOT CAUSE)** ✅
+- `currentEventType` and `currentEventData` re-initialized inside `while(true)` loop
+- TCP chunk splits caused event type to be lost → messages vanished
+- Fix: move declarations outside the loop (useOnboardingStream.ts:318-319)
+
+**R2: TenantContext Optimization** ✅
+- Token refreshes caused redundant DB re-resolves → wizard unmounted
+- Added guard in TenantContext to skip resolve when tenantId unchanged
+
+**R3: CompletionStep CSS Fix** ✅
+- Keyframe animations (confettiBurst, fireworkBurst, glitterFloat, shockwave) not loading
+- Root cause: CSS module scoping + caching
+- Fix: Injected raw `<style>` blocks directly in CompletionStep.tsx
+
+**R4: Confetti Unmount Fix (ROOT CAUSE)** ✅
+- `markSetupComplete()` → `isSetupComplete=true` → `OnboardingGate returns null`
+- Wizard unmounted BEFORE CompletionStep (confetti/fireworks) could render
+- Fix: OnboardingGate now tracks `wizardActive` locally — wizard stays alive until CTA click
+
+**R5: /chats/sandbox Route** ✅
+- Standalone testing page with zero contacts dependency
+- Auto-creates sandbox pseudo-contact (phone=`sandbox-test-000`)
+- Realtime subscription for message updates
+- Suggestion chips for first-time users
+- Sidebar nav item added ("Chat de Pruebas")
+
+**R6: Phone Number (11th Field)** ✅ — REFINED 2026-04-15 13:00
+- Added `phone_number` to `ONBOARDING_FIELDS` (backend + frontend)
+- Updated system prompt: field 11, completion threshold 10→11
+- **Wording fix:** Changed from "de la empresa" → "tu número personal de WhatsApp o celular (para que NOSOTROS podamos contactarte a TI — soporte, avisos, facturación)"
+- **Persistence fix:** Added `phone_number` to `valid_columns` in `_save_field()` (was causing Sentry "Unknown onboarding field: phone_number")
+- **DB migration:** `ALTER TABLE tenant_onboarding ADD COLUMN phone_number text` applied to DEV ✅ | PROD ⏳
+
+**R7: onboarding_messages Table** ✅ DEV | ❌ PROD PENDING APPROVAL
+- Migration applied to DEV (nzsksjczswndjjbctasu)
+- PROD blocked — user has not approved yet
+
+#### Block S: Sandbox Isolation ✅ CORE COMPLETE (2026-04-15 13:00 CLT)
+
+> **Architecture:** Completely isolated `/api/sandbox/chat` endpoint using OpenAI Responses API.  
+> **Ref:** [Responses API docs](https://platform.openai.com/docs/api-reference/responses/create)
+
+**S1: Backend Endpoint** ✅
+- Created `Backend/app/api/sandbox/chat_endpoint.py` (269 lines)
+- Uses `OpenAIResponsesStrategy` (NOT `OpenAIStrategy`)
+- Direct `tenants` table query for `system_prompt` (NOT `TenantContext`)
+- History loaded from `messages` table, response persisted back
+- Every except block → logger + Sentry + Discord (3 channels)
+
+**S2: Frontend Proxy** ✅
+- Created `Frontend/app/api/sandbox/chat/route.ts` (Next.js API route)
+- Proxies requests to backend Cloud Run service
+- Updated `/chats/sandbox/page.tsx` to call `/api/sandbox/chat`
+
+**S3: Registration** ✅
+- `Backend/app/main.py` — added `include_router(sandbox_chat_router)`
+- Zero changes to WhatsApp webhook path
+
+**S4: Isolation Guarantee** ✅
+- Does NOT import: `ProcessMessageUseCase`, `TenantContext`, `MetaGraphAPIClient`, `LLMFactory`, `tool_registry`
+- Separate `OpenAIResponsesStrategy` instance per request (not singleton)
+- Zero shared state with production webhook pipeline
+
+**S5: Model Configuration Review** ✅ (report generated)
+| Path | Model | Streaming | Tools | Adapter |
+|:---|:---|:---|:---|:---|
+| Onboarding Config Agent | `gpt-5.4` (flagship) | Yes (SSE) | Yes (ONBOARDING_TOOLS) | `OpenAIResponsesStrategy` (singleton) |
+| Sandbox Chat | `gpt-5.4-mini` fallback | No | `tools=[]` ⚠️ | `OpenAIResponsesStrategy` (per-request) |
+| WhatsApp Webhook | `tenant.llm_model` | No | Yes (tool_registry) | `OpenAIStrategy` (Chat Completions) — UNTOUCHED |
+
+**S6: Sandbox Tools** ✅ COMPLETE (2026-04-15 18:05 CLT)
+- All 5 calendar tools now call real `NativeSchedulingService` (commit `cd6240e`)
+- `_real_availability()`, `_real_booking()`, `_real_update()`, `_real_delete()`, `_real_list_appointments()`
+- Appointments persist to DB and show up in Agenda
+- 3-channel observability on every failure path
+
+#### Block T: Native Calendar Infrastructure ✅ COMPLETE (2026-04-15 ~16:00 CLT)
+
+> **Session:** cb937bcc (2026-04-15)  
+> **Commit:** `670dd9d` — `feat: native scheduling + services/resources CRUD + config modernization`
+
+**T1: Schema DDL** ✅
+- `btree_gist` extension enabled
+- `resources` table with RLS + indexes
+- `appointments` table with `EXCLUDE USING gist` for race-condition-proof double-booking prevention
+- `scheduling_config` table with RLS
+- `tenant_services` table with RLS
+- All applied to DEV (`nzsksjczswndjjbctasu`) ✅ | PROD ⏳ PENDING
+
+**T2: NativeSchedulingService** ✅
+- `Backend/app/modules/scheduling/native_service.py` — 800+ lines
+- 6 operations: `get_merged_availability()`, `book_round_robin()`, `cancel_appointment()`, `update_appointment()`, `list_appointments()`, `list_events()`
+- Universal "Resource" abstraction (boxes, teams, tables, bays)
+- 3-channel observability (logger + Sentry + Discord) on all operations
+
+**T3: Services CRUD** ✅
+- Backend: `services.py` endpoints for tenant_services
+- Frontend skeleton: ConfigView for services management
+- Wire-up to tenant context
+
+**T4: GCal → Native Swap in services.py** ✅
+- Old Google Calendar imports removed from production tools
+- `main.py` endpoints updated to use native service
+- Sandbox tools still used simulated versions → **fixed in Block U**
+
+#### Block U: P0+P1 Stabilization Sprint ✅ COMPLETE (2026-04-15 18:10 CLT)
+
+> **Session:** cb937bcc (2026-04-15)  
+> **Commit:** `cd6240e` — `fix(P0+P1): tenant isolation, real sandbox tools, service provisioning, message dedup & formatting`  
+> **Files changed:** 8 (846 insertions, 237 deletions)  
+> **1 new file created:** `Frontend/lib/whatsappFormatter.tsx`
+
+##### U-P0-4: Tenant Isolation in UIContext + ChatContext ✅
+
+**Root cause (UIContext):** Alerts fetched from Supabase with NO `tenant_id` filter → all tenants' notifications leaked into current view.
+
+**Root cause (ChatContext):** Contacts query and Realtime subscriptions had NO `tenant_id` filter → contacts and messages from other tenants visible.
+
+**Fix:**
+- [x] `UIContext.tsx`: Added `useTenant()` hook, filtered initial fetch + Realtime by `currentTenantId`, dynamic re-subscription on tenant change
+- [x] `ChatContext.tsx`: Added `tenant_id` filter on contacts fetch, contacts Realtime, messages Realtime. Used `useRef` to prevent stale closure in callback.
+- [x] Sentry tracking on all error paths in both contexts
+
+##### U-P0-2: Onboarding Auto-Provisioning ✅
+
+**Root cause:** `_finalize_onboarding()` saved system prompt but never created `tenant_services`, `resources`, or `scheduling_config` rows.
+
+**Fix:**
+- [x] Created `_provision_services_and_resources()` function (260 lines) in `chat_endpoint.py`
+- [x] Called after finalization, reads `services_offered`, `business_hours`, `business_type` from `tenant_onboarding`
+- [x] Creates `tenant_services` rows with price/duration extraction (regex parsing for `$XX.XXX`, `XX min`, `Xh`)
+- [x] Creates contextual default `resource` based on business type (24 keyword mappings → Equipo/Box/Silla/Mesa/Consulta etc.)
+- [x] Creates `scheduling_config` with business hours extracted from onboarding data (regex parsing for `HH:MM` / `HH:00` patterns)
+- [x] All non-fatal — if provisioning fails, tenant remains functional, failures reported via Sentry+Discord
+
+##### U-P0-1: Sandbox Tools → Real NativeSchedulingService ✅
+
+**Root cause:** All 5 calendar tools returned hardcoded simulated data → Agenda dashboard permanently empty during demos.
+
+**Fix:**
+- [x] Replaced all 5 simulated functions with `async` implementations calling `NativeSchedulingService`
+- [x] `_real_availability()` — queries real scheduling_config + appointments
+- [x] `_real_booking()` — creates real appointment rows in DB
+- [x] `_real_update()` — updates real appointment time
+- [x] `_real_delete()` — cancels real appointments
+- [x] `_real_list_appointments()` — queries real appointments table
+- [x] Each wrapped in try/except with 3-channel observability
+- [x] Updated executor routing from `_simulate_*` → `await _real_*`
+
+##### U-P0-3: Duplicate Messages ✅
+
+**Root cause:** `ChatArea.tsx` adds optimistic temp message (ID: `temp-*`) on send. When Realtime delivers real DB row (UUID), dedup check (`m.id === newMsg.id`) doesn't match → both display.
+
+**Fix:**
+- [x] Enhanced Realtime INSERT handler in `ChatContext.tsx` to remove `temp-*` prefixed messages matching same `sender_role` before appending real row
+
+##### U-P1-1: WhatsApp Markdown Formatting ✅
+
+**Root cause:** AI responses with `*bold*`, `_italic_`, `~strike~`, code blocks, URLs rendered as raw text across all 3 chat views.
+
+**Fix:**
+- [x] Created shared `Frontend/lib/whatsappFormatter.tsx` (175 lines)
+- [x] Parses: `*bold*` → `<strong>`, `_italic_` → `<em>`, `~strike~` → `<del>`, `` `code` `` → `<code>`, ```` ```blocks``` ```` → `<code block>`, URLs → `<a>`, line breaks → `<br>`
+- [x] Includes `messageBubbleStyles` CSS class for word-break + overflow-wrap safety
+- [x] Applied to `ChatArea.tsx` (replaced 38-line inline `formatWhatsAppText`)
+- [x] Applied to `TestChatArea.tsx` (same replacement)
+- [x] Applied to `sandbox/page.tsx`
+
+#### Migration Parity Status (April 15 evening — 18:13 CLT)
+
+> ⚠️ **Schema gap:** DEV has 13 tables, PROD has 6. All new tables blocked on full E2E testing.
+
+| Migration | DEV | PROD |
+|:---|:---|:---|
+| `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
+| `phone_number` column on `tenant_onboarding` | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+
+#### E2E Testing Results (Apr 15-16)
+
+- [x] E2E test: full self-onboarding flow → provisioning creates services/resources/config ✅ (Apr 15 ~19:41)
+- [x] E2E test: sandbox chat → real tool calls → AI responses received ✅ (Apr 15 ~19:45)
+- [ ] E2E test: tenant switching → verify zero cross-tenant data leaks (verify on DEV site)
+- [ ] E2E test: message send → verify exactly 1 bubble (no duplicates) (verify on DEV site)
+- [x] E2E test: re-test onboarding after schema fix → all provisioning rows created ✅ (Apr 16 ~02:48 UTC)
+
+#### Remaining Items (Pending — P1 and beyond)
+
+- [ ] P1-3: Agenda real business hours from `scheduling_config`
+- [ ] P1-4: Agenda real appointment progress bars
+- [ ] P1-5: Permanent sandbox link in contacts sidebar
+- [ ] P2: Services/Products CRUD frontend page (designed, architecture ready)
+- [ ] Verify tenant isolation + dedup in live DEV UI (auto-deployed via Workers Builds)
+- [ ] PROD migration sync — 10 migrations pending approval
+
+#### Block V: Multi-Tenancy Forensic Audit ✅ COMPLETE (2026-04-15 ~21:00-22:30 CLT)
+
+> **Session:** cb937bcc (2026-04-15 evening)
+> **No code commit** — database operations only (Supabase MCP)
+
+**V1: Full RLS Policy Audit** ✅
+- Audited all 13 DEV tables' RLS policies via `pg_policies` view
+- Verified `get_user_tenant_ids()` helper function grants correct access
+- Verified `is_superadmin()` helper function checks `is_superadmin` column on `profiles`
+- Confirmed all 8 original tables have correct tenant + superadmin RLS
+- Found 5 new tables (appointments, resources, scheduling_config, tenant_services, onboarding_messages) had tenant RLS but **missing** `superadmin_select` policy
+
+**V2: Superadmin RLS Migration** ✅ — `add_superadmin_rls_to_new_tables`
+- Applied `superadmin_select` policies to all 5 tables
+- Enables superadmin cross-tenant visibility for support/debugging
+- DEV ✅ | PROD ⏳ PENDING APPROVAL
+
+**V3: Orphan Tenant Cleanup** ✅
+- Found 3 "Jose Mancilla" tenants from failed provisioning attempts
+- 2 orphans (no `tenant_users` rows): `4bda477d`, `af818a7c` → **DELETED**
+- Root cause: provisioning creates tenant before linking user — if linkage fails, orphan remains
+- Navbar tenant switcher now shows only valid tenants (1 CasaVitaCure + current test tenant)
+
+**V4: Test User Full Reset** ✅
+- Purged all data for `instagramelectrimax@gmail.com` test user
+- Deleted: tenant `e24bd648`, messages, contacts, alerts, onboarding data, tenant_users linkage
+- User returned to "newcomer" state for clean re-test
+- CasaVitaCure data verified untouched: 18 contacts, 27 msgs, 16 alerts
+
+#### Block W: Schema Mismatch Fix + Calendar Isolation + Resource Count ✅ COMPLETE (2026-04-15 22:30 → 2026-04-16 06:37 CLT)
+
+> **Session:** cb937bcc (2026-04-15 night → 2026-04-16 morning)
+> **Commits:** `3aba37e`, `25f929e`
+
+**W1: PGRST204 Provisioning Schema Fix** ✅ (commit `3aba37e`)
+- Root cause: provisioning code referenced 6 non-existent columns → Supabase returned PGRST204 (no rows)
+- `tenant_services`: `base_price` → `price`, `variable_pricing` → `price_is_variable`, `estimated_duration_min` → `duration_minutes`
+- `resources`: `resource_type` column doesn't exist → moved to `metadata` jsonb as `{"resource_type": "equipo"}`
+- `scheduling_config`: flat `open_time`/`close_time`/`working_days` → structured `business_hours` jsonb + added `default_duration_minutes`, `slot_interval_minutes`, `buffer_between_minutes`, `timezone`
+
+**W2: Hardcoded CasaVitaCure Tenant ID Removal** ✅ (commit `3aba37e`)
+- **CRITICAL SECURITY FIX:** Both calendar endpoints had CasaVitaCure's `tenant_id` (`d8376510-...`) as default
+- `GET /api/calendar/events` → tenant_id now required, returns 400 if missing
+- `POST /api/calendar/book` → tenant_id now required, returns 400 if missing
+- Without this fix, ANY tenant's calendar view showed CasaVitaCure's appointments
+
+**W3: Frontend Calendar + Resources Tenant Isolation** ✅ (commit `3aba37e`)
+- `AgendaView.tsx`: added `useTenant()`, passes `currentTenantId` to both fetch and booking calls
+- `calendar/events/route.ts`: proxy now forwards `tenant_id` to backend
+- `RecursosView.tsx`: interface updated — `resource_type` read from `metadata.resource_type` via helper
+
+**W4: Resource Count Feature** ✅ (commit `25f929e`)
+- Added `resource_count` as 12th onboarding field in `ONBOARDING_FIELDS`
+- Agent prompt: field #12 asks "¿Cuántos equipos/boxes/salas/mesas?" with examples
+- DB migration: `ALTER TABLE tenant_onboarding ADD COLUMN resource_count integer DEFAULT 1`
+- `_save_field()`: converts LLM string to clamped integer (1-20)
+- `_provision_services_and_resources()`: creates N resources with sequential names and rotating 10-color palette
+- Discord summary alert: shows `resources_created/resource_count`
+- DEV migration ✅ | PROD ⏳ PENDING APPROVAL
+
+**W5: E2E Verification** ✅
+- User completed full onboarding flow after W1 fix
+- Provisioning successfully created: 1 tenant_service, 1 resource (auto), 1 scheduling_config
+- User manually added 2nd resource via RecursosView UI
+- Sandbox chat received AI responses
+- Frontend rated "almost seamless" by user
+
+#### Migration Parity Status (April 16 06:45 CLT)
+
+> ⚠️ **Schema gap:** DEV has 13 tables + extended columns. PROD has 6 tables. 10 migrations pending.
+
+| Migration | DEV | PROD |
+|:---|:---|:---|
+| `onboarding_messages` table + index + RLS | ✅ | ⏳ PENDING APPROVAL |
+| `phone_number` column on `tenant_onboarding` | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_onboarding` table | ✅ | ⏳ PENDING APPROVAL |
+| `profiles` table | ✅ | ⏳ PENDING APPROVAL |
+| `resources` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `appointments` table + gist + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `scheduling_config` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `tenant_services` table + RLS | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| Superadmin RLS on 5 new tables | ✅ (2026-04-15) | ⏳ PENDING APPROVAL |
+| `resource_count` column on `tenant_onboarding` | ✅ (2026-04-16) | ⏳ PENDING APPROVAL |
+
 
 ---
+
 
 ## Sprint 2: Product Expansion (Apr 16-25)
 
@@ -495,3 +826,97 @@
 | **Supabase Pricing** | https://supabase.com/pricing | Plan limits monitoring |
 | **Cloud Run Pricing** | https://cloud.google.com/run/pricing | Cost tracking |
 | **Sentry FastAPI** | https://docs.sentry.io/platforms/python/integrations/fastapi/ | Error monitoring |
+
+---
+
+## 2026-04-16 Afternoon � Session 812a34ad � Sprint 1.5 Block V + W Start
+
+**Commit:** `3b28116` ? branch `desarrollo`
+**Session focus:** Cinematic login overhaul + agenda improvements + observability audit + context consolidation
+
+### Block V � Cinematic Login Overhaul ?
+
+| Item | Detail |
+|:---|:---|
+| Vortex particle system | 920 particles, magnetic field topology (3 Lissajous attractors, simplex noise dual-frequency) |
+| Dark matter dust | 8% of particles � white specks, darken to black + grow 3x approaching accretion disk |
+| Glassmorphic login card | backdrop-blur(40px), Google SSO, Sentry on OAuth error |
+| CLI animated text | Tektur Google Font, 15 Pre-Suasion phrases, typewriter 69ms/char |
+| Brand block removed | Replaced with CLI animated pre-suasion priming |
+
+### Block W � Audit, README, E2E, Context ?
+
+| Check | Result |
+|:---|:---|
+| Observability audit (except blocks) | 0 silent � all 3-channel compliant |
+| README �2/�3/�4/�10 | Updated with 7 new tables, native calendar arch, Blocks R-W |
+| E2E RLS isolation | ? PASS (messages, alerts, appointments) |
+| E2E message dedup | ? PASS � 0 duplicate wamids |
+| Context consolidation | NOW.md rewritten, BACKLOG.md created, tracker appended |
+
+### instagramelectrimax ? Fresh Newcomer Reset ?
+
+Tenant: Jose Mancilla / FumigaMax (`f12ca5b3`)
+Verification: onboarding_msgs=0, record=0, resources=0, services=0, sched_config=0, is_setup_complete=false, prompt_cleared=true
+
+### Migration Parity
+
+| Table Group | DEV | PROD |
+|:---|:---|:---|
+| tenant_onboarding + onboarding_messages | ? | ? PENDING USER APPROVAL |
+| resources + appointments + scheduling_config | ? | ? PENDING USER APPROVAL |
+| tenant_services | ? | ? PENDING USER APPROVAL |
+| profiles | ? | ? PENDING USER APPROVAL |
+| tenants.is_setup_complete | ? | ? PENDING USER APPROVAL |
+
+> User testing E2E live now. PROD gate opens after test pass confirmation.
+
+
+---
+
+## 2026-04-16 Evening - Session 6550aa28 - Block X: Sandbox Stabilization + Sentry + Env Vars
+
+**Commits:** `7561ba9`, `d356dcb`, `3915990`, `132602d` | branch `desarrollo`
+**Session focus:** Fix sandbox Reiniciar button, configure Sentry frontend, version-control env vars in wrangler.toml
+
+### Block X - Sandbox Reset + Sentry Config
+
+| # | What | Commit | Evidence |
+|:---|:---|:---|:---|
+| 23 | Tenant-scoped DashboardView, PacientesView, AgendaView | `9ca7af2` | Browser isolation test screenshots |
+| 24 | Renamed Pacientes -> Clientes across UI | `9ca7af2` | Visual in browser |
+| 25 | Config page crash on pre-render -> direct auth query pattern | `9ca7af2` | CF build pass |
+| 26 | Sandbox initRef boolean -> tenantId-aware re-init on tenant switch | `7561ba9` | Code review |
+| 27 | Sandbox handleReset tenant_id scoping + 3-channel error reporting | `7561ba9` | Code review |
+| 28 | Created `instrumentation.ts` for server-side Sentry capture | `d356dcb` | Build log: warning suppressed |
+| 29 | Hardcoded Sentry org/project in next.config.js + authToken from env | `d356dcb` | Code review |
+| 30 | Sandbox Reiniciar: `confirm()` blocked by Edge runtime -> React inline double-click | `3915990` | Console log: CLICKED with valid IDs but no dialog |
+| 31 | wrangler.toml `[vars]` - version-controlled runtime env vars | `132602d` | Build log: no more dashboard wipe warning |
+| 32 | TD-7 + TD-8 added to BACKLOG | `7561ba9` + `132602d` | BACKLOG.md |
+
+### Root Causes Found
+
+| Bug | Evidence Method | Root Cause | Fix |
+|:---|:---|:---|:---|
+| Reiniciar button does nothing | Console log showed CLICKED 9x with valid IDs | `confirm()` API blocked by browser in Edge/Workers context | Replaced with React state-based double-click confirmation |
+| Sentry not uploading source maps | Build log: `No auth token provided` | `SENTRY_ORG` and `SENTRY_PROJECT` empty string, `SENTRY_AUTH_TOKEN` missing | Hardcoded org/project, token via CF Build Secret |
+| Dashboard vars wiped on deploy | Build log WARNING: remote config differs from local | wrangler.toml had no `[vars]`, `--keep-vars` insufficient | Added `[vars]` section to wrangler.toml |
+| initRef prevented tenant re-init | Code review | `useRef(false)` blocked re-init permanently | Changed to `useRef<string|null>(null)` tracking tenantId |
+
+### Env Var Architecture (Documented)
+
+| Layer | Where | Purpose | Ref |
+|:---|:---|:---|:---|
+| Build-time | CF Workers Builds dashboard (Build Secrets) | `NEXT_PUBLIC_*` inlining + `SENTRY_AUTH_TOKEN` | opennext.js.org/cloudflare/howtos/env-vars#workers-builds |
+| Runtime | wrangler.toml `[vars]` | Worker `env` object at request time | developers.cloudflare.com/workers/configuration/environment-variables/ |
+| Secrets | CF dashboard or `wrangler secret put` | Sensitive tokens (`SENTRY_AUTH_TOKEN`) | developers.cloudflare.com/workers/configuration/secrets/ |
+| Local dev | `.env.local` + `.dev.vars` | Next.js dev + wrangler dev | opennext.js.org/cloudflare/howtos/env-vars#local-development |
+
+### Pending User Actions
+
+| Action | Why |
+|:---|:---|
+| Set `SENTRY_AUTH_TOKEN` as **Build Secret** (not just runtime) in CF Workers Builds dashboard | Token available during `next build` for source map upload |
+| Set `NEXT_PUBLIC_*` vars as **Build variables** in CF Workers Builds dashboard | Next.js needs them at build time to inline into client bundle |
+| Verify Reiniciar button works with new double-click pattern | Deployed in `3915990` |
+| Approve PROD migrations | 6 table groups pending |

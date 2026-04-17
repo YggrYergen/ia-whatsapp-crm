@@ -71,7 +71,7 @@ export default function ReportesPage() {
                 </div>
                 <h2 className="text-2xl font-black text-white mb-2 relative z-10 tracking-tight">Módulo en Construcción</h2>
                 <p className="text-slate-400 max-w-md text-sm leading-relaxed relative z-10 font-medium">
-                    Estamos preparando una suite completa de reportería que te permitirá medir el impacto real y el ROI de los agentes de Inteligencia Artificial en tus pacientes.
+                    Estamos preparando una suite completa de reportería que te permitirá medir el impacto real y el ROI de los agentes de Inteligencia Artificial en tus clientes.
                 </p>
                 <div className="mt-8 relative z-10">
                     <div className="flex gap-2 justify-center">

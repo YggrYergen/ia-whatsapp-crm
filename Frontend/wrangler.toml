@@ -1,10 +1,21 @@
 # OpenNext Cloudflare Workers configuration
 # Per docs: https://opennext.js.org/cloudflare/get-started#3-create-a-wrangler-configuration-file
 #
-# ⚠️ DO NOT add [vars] for NEXT_PUBLIC_* — they must be set as:
-#   - "Build variables and secrets" in Workers Builds (for build-time inlining)
-#   - "Environment variables" in Workers dashboard (for runtime access)
-# See: https://opennext.js.org/cloudflare/howtos/env-vars#production
+# ─── Environment Variable Architecture ───────────────────────────────
+#
+# 1. BUILD-TIME vars (NEXT_PUBLIC_*, SENTRY_AUTH_TOKEN):
+#    Set in Workers Builds → "Build variables and secrets" in CF dashboard.
+#    These are needed during `next build` to inline values into the client bundle.
+#    Ref: https://opennext.js.org/cloudflare/howtos/env-vars#workers-builds
+#
+# 2. RUNTIME vars (non-sensitive, needed by the Worker at request time):
+#    Set here in [vars]. Version-controlled and always present.
+#    Ref: https://developers.cloudflare.com/workers/configuration/environment-variables/
+#
+# 3. SECRETS (sensitive, must NOT be in code):
+#    Set via `wrangler secret put <NAME>` or CF dashboard.
+#    Currently: SENTRY_AUTH_TOKEN
+#    Ref: https://developers.cloudflare.com/workers/configuration/secrets/
 #
 # ⚠️ compatibility_date >= 2025-08-16 is REQUIRED for Sentry SDK to work.
 #   It introduces https.request to the Workers runtime, which @sentry/nextjs
@@ -27,6 +38,16 @@ binding = "ASSETS"
 [[services]]
 binding = "WORKER_SELF_REFERENCE"
 service = "ia-whatsapp-crm"
+
+# ─── Runtime Variables ───────────────────────────────────────────────
+# Non-sensitive config needed by the Worker at request time.
+# These are injected into the Worker's `env` object.
+[vars]
+BACKEND_URL = "https://ia-backend-dev-645489345350.us-central1.run.app"
+NEXT_PUBLIC_SUPABASE_URL = "https://nzsksjczswndjjbctasu.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_vkY-NiKdH4oUDT_QQHs3ug_zuAJB1jX"
+NEXT_PUBLIC_SENTRY_DSN = "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"
+NEXT_PUBLIC_DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1491131114025123940/eF2IlU86HIHP0FrQufHwl_N3hIu3_ONbCQS_C3Rte-CF1ayRcgUW499_RpbRcdUs0Hvz"
 
 # ─── Observability ───────────────────────────────────────────────────
 # Workers Logs: enables console.log + invocation logs in the CF dashboard.

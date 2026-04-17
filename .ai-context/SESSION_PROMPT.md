@@ -10,12 +10,12 @@
 ## ✏️ [MODIFIABLE] §0 — Session Identity
 
 ```
-SESSION DATE:    2026-04-12
-CURRENT SPRINT:  Sprint 1
-CURRENT DAY:     Day 2 of Sprint (Saturday)
-SESSION GOAL:    Block 0 (emergency incident fix) + Block I (diagnose + fix 7 response quality bugs)
-SESSION BLOCKS:  Block 0 (⏳ EMERGENCY), Block I (⏳ DIAGNOSTIC FIRST)
-LAST COMMIT:     030ef94 (main) — HMAC fix + debug cleanup, synced desarrollo↔main
+SESSION DATE:    2026-04-15
+CURRENT SPRINT:  Sprint 1 (final stabilization) → transitioning to Sprint 2
+CURRENT DAY:     Day 5 — Onboarding Polish + Sandbox Isolation
+SESSION GOAL:    Complete onboarding flow: WelcomeStep + confetti + isolated sandbox + phone number + model config
+SESSION BLOCKS:  Block R (onboarding stabilization) + Block S (sandbox isolation)
+LAST COMMIT:     6508668 (desarrollo) — fix(sandbox+phone): isolated sandbox via Responses API, phone_number field fix
 ```
 
 ---
@@ -105,47 +105,45 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 
 ### What Is Being Done RIGHT NOW (This Session)
 
-**🔴 Block 0 (EMERGENCY) — Production incident fix from April 12 00:47 CLT**
-- Contact 83dc2480 permanently locked (`is_processing_llm=true`) — must unlock
-- `updated_at` column missing from PROD — Block E3 TTL is dead in production
-- Lock release retry/finally pattern needed in `use_cases.py`
-- Full incident report: `.ai-context/incident_report_apr12.md`
+**🔧 Block R — Onboarding Flow Polish (April 15) ✅ MOSTLY COMPLETE**
 
-**🔴 Block I — Assistant Response Quality — DIAGNOSTIC FIRST, THEN FIX**
-- 7 bugs identified from PROD conversation analysis (`.ai-context/conversation_diagnostic_apr12.md`)
-- Phase 1: Root cause investigation across 5 tracks (history, OpenAI API, tools, prompt, dedup)
-- Phase 2: Implement fixes ONLY after diagnosis is confirmed
-- DO NOT prescribe fixes until we understand WHY each bug occurs
+The core message-disappearing bug is FIXED (commit `2c5d2a5`). The full onboarding flow E2E works (greeting → config → provisioning animation → completion → confetti/fireworks). Sub-items completed:
 
-### What Comes Next (After This Session)
-- Day 3 (Sun): Blocks J (escalation UX), K (provisioning script), L (status page)
-- Day 4 (Mon): Blocks M (fumigation tenant setup), N (E2E testing), O (Meta audit)
-- Day 5 (Tue): Blocks P (go-live 🚀), Q (post-onboarding)
-- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking, gpt-5.4-nano testing
+1. **R-WELCOME** ✅ — WelcomeStep (Step 1 of wizard) now shows correctly.
+2. **R-CONFETTI** ✅ — Completion confetti/fireworks animation fires as expected.
+3. **R-SANDBOX** ✅ — Isolated `/api/sandbox/chat` endpoint (Responses API), standalone `/chats/sandbox` page.
+4. **R-PHONE** ✅ — Phone number collected as 11th field; wording changed to personal contact; persistence fixed via `valid_columns` + DB column.
+5. **R-PROD-MIGRATION** ⏳ — `onboarding_messages` + `phone_number` column NOT on PROD. BLOCKED pending user approval.
+
+**🔧 Block S — Sandbox Isolation (April 15) ✅ CORE COMPLETE**
+
+The sandbox testing endpoint is now completely decoupled from the WhatsApp webhook pipeline:
+- `Backend/app/api/sandbox/chat_endpoint.py` — uses `OpenAIResponsesStrategy` (Responses API)
+- Does NOT import: `TenantContext`, `ProcessMessageUseCase`, `MetaGraphAPIClient`, `LLMFactory`, `tool_registry`
+- Queries `system_prompt` directly from `tenants` table (zero `TenantContext` dependency)
+- Model: `gpt-5.4-mini` (tenant default or fallback), non-streaming
+- **⚠️ Pending:** Sandbox currently has `tools=[]`. User wants tenant tools available; architectural decision needed.
+
+### What Comes Next (After Onboarding Complete)
+- **Sandbox tools decision** — which tools, safe execution, tenant-scoped
+- Merge `desarrollo → main` (drift check first — `onboarding_messages` + `phone_number` DEV-only, may block)
+- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking
+- PROD migration for `onboarding_messages` + `phone_number` (user must approve)
 
 ### Known Blockers & Risks
-- ~~⚠️ `META_APP_SECRET` env var needed for Block E1~~ → **Stored in Google Secret Manager, set on both DEV + PROD**
-- ~~⚠️ Block D (agentic loop) is the highest-risk block~~ → **DONE ✅ — tested via sandbox, all 5 tests passed**
-- ~~⚠️ CasaVitaCure client is experiencing poor AI responses RIGHT NOW — Block A deployment provides immediate relief~~ → **Deployed to PROD**
-- ~~⚠️ Graph API v19.0 deprecation deadline: May 21, 2026 (40 days)~~ → **Fixed: now v25.0**
-- ~~⚠️ HMAC webhook 401 errors~~ → **Fixed: Secret Manager trailing `\r\n` on META_APP_SECRET — `.strip()` added**
-- ~~⚠️ PROD in europe-west1 causing 3x latency~~ → **PROD migrated to us-central1 (2026-04-11)**
-- ~~⚠️ Old europe-west1 `ia-backend-prod` still exists~~ → **DELETED (2026-04-12)**
-- ⚠️ OpenAI platform docs (platform.openai.com) return 403 when accessed programmatically — use `search_web` to verify API details instead
-- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN** (no GCal credentials in dev, production client data isolation). Booking engine in Sprint 2 will replace GCal dependency.
-- ⚠️ `parallel_tool_calls` param must be OMITTED (not set to None/null) when no tools — OpenAI SDK serializes None as JSON null which the API rejects
-- ⚠️ Shadow-forwarding (E4) uses tenant's WABA phone → admin number. Requires active 24h conversation window on admin's WhatsApp. If window expired, forward silently fails (non-blocking).
-- ⚠️ **Cloud Build trigger** on `ia-calendar-bot@saas-javiera.iam.gserviceaccount.com` auto-deploys from `main` push. ALWAYS push to main before expecting PROD to have new code.
-- 🔴 **PROD calendar booking UNVERIFIED** (2026-04-12) — No `book_round_robin` tool call has been triggered on PROD in 24+ hours. Cannot confirm if CasaVitaCure booking works. Must trigger a test booking to verify before Tuesday.
-- 🔴 **Mobile frontend BROKEN** (2026-04-12) — Dashboard and chat UI completely unusable on mobile. Clients would not be able to use it. Must fix before Tuesday onboarding.
-- 🔴 **Escalation UX missing** (2026-04-12) — Block J not started. No visual badge for escalated contacts, no "resolve" button, no filter. Staff cannot see or handle escalated chats. First client interaction could trigger escalation.
-- 🔴 **Booking flow repetition loop (U-14)** (2026-04-12) — On PROD, assistant re-asks info already provided (name, zone, time) and demands multiple confirmations before booking. Extremely bothersome — will anger clients. Root cause unclear: prompt phrasing, model tool execution limitations on `/v1/chat/completions`, history not surfacing provided info, or agentic loop re-processing. **Must diagnose with OpenAI official docs** on sequential/concurrent tool calling patterns for gpt-5.4-mini.
-- 🟡 **wamid extraction broken** (2026-04-12) — `wamid` values in messages table are `null`. Webhook payload structure may differ from expected. Dedup relies on wamid uniqueness; without it, duplicate messages may still process.
-- 🟡 **Rapid-fire batching on DEV only** (2026-04-12) — Fix committed to `desarrollo` (`1f7b250`) but NOT merged to `main`. PROD still silently drops rapid-fire messages 2+.
-- 🟡 **Gemini adapter deprecation** (2026-04-12) — PROD startup logs show: `google.generativeai` package deprecated, must migrate to `google.genai`. Not blocking (Gemini not used for any tenant), but will break when package is removed.
-- 🟡 **reasoning_effort → Sprint 2** (2026-04-12) — OpenAI hard-rejects `reasoning_effort` + tools on `/v1/chat/completions` for gpt-5.4-mini. Removed entirely. Sprint 2: migrate to Responses API (`/v1/responses`) which supports `reasoning.effort` + tools natively. Full diagnostic: `reasoning_effort_diagnostic.md` in Antigravity brain.
-- 🟡 **Prompt Phase 1 skip regression** (2026-04-12) — Multiple PROD messages show bot asking "¿Me compartes tu nombre y hora?" immediately, skipping the 3-question triaje (Phase 1). Prompt v2.1 was applied but may not have fully fixed this. Needs E2E test.
-- 🟡 **Dashboard shows fake data** (2026-04-12) — Block L not started. Dashboard still displays mock/placeholder numbers. Must replace with real Supabase queries.
+- ~~⚠️ SSE message disappearance~~ → **FIXED `2c5d2a5` (2026-04-15)**
+- ~~⚠️ Sandbox TenantContext crash~~ → **FIXED `6508668` (2026-04-15)** — isolated endpoint, zero TenantContext
+- ~~⚠️ Phone number field not persisting~~ → **FIXED `6508668`** — added to valid_columns + DB column
+- ⚠️ OpenAI platform docs return 403 programmatically — use `search_web` instead
+- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN**
+- ⚠️ `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK serializes None as JSON null
+- ⚠️ **`onboarding_messages` table on DEV only** — PROD merge BLOCKED until user approves migration
+- ⚠️ **`phone_number` column on DEV only** — PROD merge BLOCKED until user approves migration
+- 🟢 **Dual-Adapter Strategy** — `OpenAIResponsesStrategy` for onboarding (Responses API), `OpenAIStrategy` for WhatsApp (Chat Completions). Zero cross-contamination.
+- 🟢 **Triple-Adapter Strategy** — Sandbox also uses `OpenAIResponsesStrategy` but with separate instance (non-streaming, `gpt-5.4-mini`). Zero conflict with onboarding adapter (streaming, `gpt-5.4`).
+- 🟡 **wamid extraction null** — dedup falls back to atomic lock (working). Low priority.
+- 🟡 **Gemini adapter deprecation** — `google.generativeai` deprecated. Not blocking (not used).
+- 🟡 **Prompt Phase 1 skip** — Prompt v2 deployed, testing ongoing.
 
 ---
 
@@ -166,12 +164,19 @@ AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assi
 | Rate limit behavior | Auto-resume when limit refreshes + notify us | 2026-04-11 | Don't permanently block contacts, just throttle + alert. |
 | Config cache | 3-min TTL, ~250KB for 50 tenants | 2026-04-11 | Negligible memory vs 512MB Cloud Run limit. |
 | WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
-| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap, nullable phone, tool updates) is separate task. |
+| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap) before June 2026. |
 | BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
-| reasoning_effort | REMOVED, Sprint 2 Responses API | 2026-04-12 | Hard-rejected by OpenAI on chat/completions with tools. Responses API supports it. Zero quality change since param never worked. |
+| reasoning_effort | Dual-adapter: new `openai_responses_adapter.py` for `/v1/responses` | 2026-04-14 | Hard-rejected on chat/completions. New adapter uses Responses API with `reasoning.effort` + tools + streaming. Existing adapter untouched. |
+| Dual-adapter architecture | `OpenAIStrategy` (chat/completions) + `OpenAIResponsesStrategy` (responses) | 2026-04-14 | Zero risk to WhatsApp pipeline. New adapter for onboarding agent; future path for full migration. |
+| Newcomer onboarding | 3-step wizard: Welcome → AI Config Chat → Test Chat redirect | 2026-04-14 | Detect first-time Google logins, auto-provision tenant, AI-guided configuration with streamed reasoning. |
 | Rapid-fire batching | Re-fetch history after 3s sleep | 2026-04-12 | 80/20 fix. Ideal solution (abort in-flight LLM) deferred to S2 backlog. |
 | PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies (Supabase us-east-2, OpenAI US, Meta US) are in the US. Europe added 600-1000ms per request. |
 | Secret Manager values | Always `.strip()` before use | 2026-04-11 | GCP Secret Manager stores values with trailing `\r\n`. Caused HMAC mismatch (34 chars vs 32). |
+| **Sandbox isolation** | **Dedicated `/api/sandbox/chat` via Responses API** | **2026-04-15** | **Sandbox must NOT touch ProcessMessageUseCase or TenantContext. Separate `OpenAIResponsesStrategy` instance. Zero shared state with WhatsApp webhook.** |
+| **Phone number field** | **User's personal contact number (NOT business assistant number)** | **2026-04-15** | **Used for platform communications: support, billing, WhatsApp contact. Added to `tenant_onboarding` table.** |
+| **Sandbox model** | **`gpt-5.4-mini` with reasoning.effort=medium, non-streaming** | **2026-04-15** | **Per user requirement. Docs confirm reasoning + tools work simultaneously on all GPT-5.4 models.** |
+| **Onboarding model** | **`gpt-5.4` (flagship) with streaming + reasoning** | **2026-04-15** | **Fixed — onboarding always uses top model for best config experience. Separate singleton adapter instance.** |
+| **Three adapters, zero conflict** | **Webhook=OpenAIStrategy(ChatCompletions), Onboarding=ResponsesStrategy(gpt-5.4), Sandbox=ResponsesStrategy(gpt-5.4-mini)** | **2026-04-15** | **Three completely independent code paths with separate adapter instances. Zero shared state.** |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |

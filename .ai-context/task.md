@@ -1,8 +1,7 @@
 # AI CRM — Production Stabilization Tasks
 
 > **⚠️ REGLA INQUEBRANTABLE:** Toda implementación DEBE ser respaldada por la doc oficial más actualizada. Sin excepciones.
-
-> **⚠️ LEY POST-IMPLEMENTACIÓN:** Toda solución confirmada como funcional DEBE documentarse EN ESE MOMENTO con: qué se hizo, por qué funciona, links a docs oficiales. Esto previene que futuras sesiones de LLM rompan lo que ya funciona por desconocimiento.
+> **Last Updated:** 2026-04-15 13:35 CLT
 
 > **⚠️ LEY DE DOCUMENTACIÓN (v5):** CADA paso de implementación tiene un link a la documentación oficial correspondiente en los Deep Dives v3. **CONSULTAR el Deep Dive ANTES de implementar cada paso.** Los Deep Dives están en `.ai-context/`:
 > - [`deep_dive_a_response_quality.md`](file:///d:/WebDev/IA/.ai-context/deep_dive_a_response_quality.md) — BUG-6 fix, OpenAI API, strict mode, prompt caching
@@ -966,6 +965,42 @@ Docs consulted:
   - 📚 [Message Templates](https://developers.facebook.com/docs/whatsapp/message-templates)
 - [ ] **Q3. Update all documentation** — Record what worked, what didn't, lessons learned
 
+#### Block R: Newcomer Onboarding Flow ✅ COMPLETE (2026-04-15)
+
+> **Session:** 13d7385c (April 14-15)  
+> **Ref:** [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses/create)
+
+- [x] **R1. SSE Parser ROOT CAUSE** — `currentEventType/Data` inside while loop reset on TCP chunk boundaries (commit `2c5d2a5`)
+- [x] **R2. TenantContext Optimization** — Guard added to skip redundant DB re-resolves when tenantId unchanged
+- [x] **R3. CompletionStep CSS** — Keyframe animations injected as raw `<style>` blocks (CSS module scoping was eating them)
+- [x] **R4. Confetti Unmount** — OnboardingGate tracks `wizardActive` locally; wizard stays alive until CTA click
+- [x] **R5. /chats/sandbox Route** — Standalone page, auto-creates pseudo-contact, suggestion chips, sidebar nav
+- [x] **R6. Phone Number (11th Field)** — Wording: personal contact number (not business). Persistence: added to `valid_columns` + DB column. (commit `6508668`)
+- [x] **R7. WelcomeStep** — Step 1 of wizard now renders correctly before ConfigChat
+- [ ] **R8. PROD Migration** — `onboarding_messages` + `phone_number` column. **DEV ✅ | PROD ⏳ PENDING APPROVAL**
+
+#### Block S: Sandbox Isolation ✅ CORE COMPLETE (2026-04-15)
+
+> **Architecture Decision:** Completely isolated `/api/sandbox/chat` endpoint using OpenAI Responses API.  
+> **Isolation Guarantee:** Does NOT import TenantContext, ProcessMessageUseCase, MetaGraphAPIClient, LLMFactory, or tool_registry.  
+> **Ref:** [Responses API](https://platform.openai.com/docs/api-reference/responses/create)
+
+- [x] **S1. Backend endpoint** — `Backend/app/api/sandbox/chat_endpoint.py` (269 lines)
+  - Uses `OpenAIResponsesStrategy` (NOT `OpenAIStrategy`)
+  - Direct `tenants` table query for system_prompt (no TenantContext)
+  - History from `messages` table, response persisted back
+  - Default model: `gpt-5.4-mini` with `reasoning.effort=medium`
+  - 3-channel observability: logger + Sentry + Discord on every except block
+- [x] **S2. Frontend proxy** — `Frontend/app/api/sandbox/chat/route.ts` (Next.js API route)
+- [x] **S3. Registration** — `main.py` include_router (zero changes to webhook path)
+- [x] **S4. Frontend integration** — `/chats/sandbox/page.tsx` calls `/api/sandbox/chat` instead of `/api/simulate`
+- [x] **S5. Model Configuration** — Verified:
+  - Sandbox: `gpt-5.4-mini` (non-streaming, reasoning+tools compatible per docs) ✅
+  - Onboarding: `gpt-5.4` (streaming, reasoning, ONBOARDING_TOOLS) ✅
+  - Webhook: `tenant.llm_model` via Chat Completions — UNTOUCHED ✅
+  - 📚 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses/create) — confirms reasoning+tools simultaneous on all GPT-5.4 models
+- [ ] **S6. Sandbox tools** — ⚠️ Currently `tools=[]`. User wants tenant tools available. Architectural decision needed.
+
 ---
 
 ## 📋 DEFERRED TO SPRINT 2 (Apr 16-22, 2026)
@@ -980,10 +1015,13 @@ Docs consulted:
 | Instagram DM integration | Backlog S2 | 🔴 **SELLING POINT** for outreach but not needed Tuesday | 🔴 Sprint 2 priority |
 | Multi-squad booking engine | Backlog S2 | 🔴 **SELLING POINT** — needed for fumigation scaling | 🔴 Sprint 2 priority |
 | `gpt-5.4-nano` dev testing | New | Need to verify compatibility in practice | 🟡 After mini is stable |
-| Responses API migration | Step 5 (2026-04-12) | OpenAI rejects `reasoning_effort` + tools on chat/completions. `/v1/responses` supports both. Adapter rewrite needed. | 🔴 Enables reasoning + tools |
+| Responses API migration | Step 5 (2026-04-12) | OpenAI rejects `reasoning_effort` + tools on chat/completions. `/v1/responses` supports both. **Partially done — onboarding + sandbox use Responses API. Webhook still on Chat Completions.** | 🟡 Webhook migration when proven stable |
 | Gemini SDK migration | PROD logs (2026-04-12) | `google.generativeai` deprecated → `google.genai`. No tenant uses Gemini yet. | 🟡 With Gemini adapter (S2.1) |
 | Ideal rapid-fire batching | Step 5b (2026-04-12) | Current fix re-fetches after sleep. Ideal: abort in-flight LLM on new message. Complex. | 🟡 After basic batching proven |
 | wamid extraction investigation | Step 4 (2026-04-12) | `wamid` values are `null` in DB. Payload path may differ. Dedup partially broken. | 🟡 After Tuesday |
+| Sandbox tools | Block S6 (2026-04-15) | Sandbox endpoint currently has `tools=[]`. User wants tenant tools available for testing. Need safe execution path. | 🔴 Sprint 2 early |
+| Tool Detection & Superadmin Notification | Block R backlog (2026-04-14) | Detect if newcomer’s business needs tools we don’t have. Notify superadmins. | 🟡 Sprint 2 |
+| Superadmin onboarding conversation viewer | Block R backlog (2026-04-14) | UI for superadmins to review onboarding chat histories. | 🟡 Sprint 2 |
 
 ---
 

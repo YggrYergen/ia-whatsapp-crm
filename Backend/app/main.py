@@ -31,6 +31,18 @@ import sentry_sdk
 from app.modules.communication.routers import router as webhook_router
 from app.modules.integrations.google_oauth_router import router as google_oauth_router
 
+# Block R: Onboarding API routes (newcomer auto-provisioning + config agent chat)
+from app.api.onboarding.provision import router as onboarding_provision_router
+from app.api.onboarding.chat_endpoint import router as onboarding_chat_router
+
+# Block R: Sandbox chat — isolated from webhook pipeline, uses Responses API
+from app.api.sandbox.chat_endpoint import router as sandbox_chat_router
+
+# Services, Resources, and Scheduling Config CRUD APIs
+from app.api.services_api import router as services_router
+from app.api.resources_api import router as resources_router
+from app.api.scheduling_config_api import router as scheduling_config_router
+
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy
 from app.infrastructure.llm_providers.gemini_adapter import GeminiStrategy
@@ -190,6 +202,7 @@ def create_app() -> FastAPI:
 
     allowed_origins = [
         "https://dash.tuasistentevirtual.cl",
+        "https://ohno.tuasistentevirtual.cl",  # Block R: Private frontend for onboarding
         "https://ia-whatsapp-crm.tomasgemes.workers.dev",
         os.getenv("FRONTEND_URL", ""),
     ]
@@ -267,6 +280,18 @@ def create_app() -> FastAPI:
 
     app.include_router(webhook_router)
     app.include_router(google_oauth_router)
+    
+    # Block R: Onboarding routes
+    app.include_router(onboarding_provision_router)
+    app.include_router(onboarding_chat_router)
+    
+    # Block R: Sandbox chat — isolated, uses Responses API
+    app.include_router(sandbox_chat_router)
+
+    # Services, Resources, and Scheduling Config CRUD APIs
+    app.include_router(services_router)
+    app.include_router(resources_router)
+    app.include_router(scheduling_config_router)
 
     @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():
@@ -364,7 +389,43 @@ def create_app() -> FastAPI:
             return ORJSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
     @app.get("/api/calendar/events")
-    async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = "d8376510-911e-42ef-9f3b-e018d9f10915"):
+    async def api_get_calendar_events(start_iso: str, end_iso: str, tenant_id: str = ""):
+        """Fetch structured calendar events for the frontend AgendaView.
+        
+        Now uses NativeSchedulingService (Supabase) instead of GoogleCalendarClient.
+        Ref: native_calendar_plan.md §5 — Frontend proxy routes: keep API shape, swap backend.
+        
+        IMPORTANT: tenant_id is REQUIRED. Was previously hardcoded to CasaVitaCure — fixed 2026-04-15.
+        """
+        if not tenant_id:
+            logger.warning("[api_get_calendar_events] Missing tenant_id")
+            return ORJSONResponse(status_code=400, content={"status": "error", "message": "tenant_id is required"})
+        try:
+            from app.modules.scheduling.native_service import NativeSchedulingService
+            return await NativeSchedulingService.get_structured_events(tenant_id, start_iso, end_iso)
+        except Exception as e:
+            logger.error(f"Calendar events error: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)
+            from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+            await send_discord_alert(
+                title=f"❌ /api/calendar/events Failed | Tenant {tenant_id}",
+                description=f"**Range:** {start_iso} → {end_iso}\n**Error:** ```{str(e)[:300]}```",
+                severity="error",
+                error=e,
+            )
+            return ORJSONResponse(status_code=500, content={"status": "error", "message": "Error interno al obtener eventos del calendario."})
+
+    @app.post("/api/calendar/book")
+    async def api_book_calendar_event(payload: dict = Body(...)):
+        """Book a calendar event from the frontend manual booking modal.
+        
+        Now uses NativeSchedulingService (Supabase) instead of GoogleCalendarClient.
+        EXCLUDE USING gist constraint prevents double-booking at DB level.
+        """
+        tenant_id = payload.get("tenant_id", "")
+        if not tenant_id:
+            logger.warning("[api_book_calendar_event] Missing tenant_id in payload")
+            return ORJSONResponse(status_code=400, content={"status": "error", "message": "tenant_id is required in payload"})
         try:
             from app.infrastructure.database.supabase_client import SupabasePooler
             db = await SupabasePooler.get_client()
@@ -373,37 +434,28 @@ def create_app() -> FastAPI:
                 return {"status": "error", "message": "Tenant not found"}
             from app.core.models import TenantContext
             tenant = TenantContext(**tenant_res.data[0])
-            from app.infrastructure.calendar.google_client import GoogleCalendarClient
-            return await GoogleCalendarClient.get_structured_events(tenant, start_iso, end_iso)
-        except Exception as e:
-            logger.error(f"Calendar events error: {e}", exc_info=True)
-            sentry_sdk.capture_exception(e)
-            return ORJSONResponse(status_code=500, content={"status": "error", "message": "Error interno al obtener eventos del calendario."})
-
-    @app.post("/api/calendar/book")
-    async def api_book_calendar_event(payload: dict = Body(...)):
-        tenant_id = payload.get("tenant_id", "d8376510-911e-42ef-9f3b-e018d9f10915")
-        from app.infrastructure.database.supabase_client import SupabasePooler
-        db = await SupabasePooler.get_client()
-        tenant_res = await db.table("tenants").select("*").eq("id", tenant_id).execute()
-        if not tenant_res.data:
-            return {"status": "error", "message": "Tenant not found"}
-        from app.core.models import TenantContext
-        tenant = TenantContext(**tenant_res.data[0])
-        from app.infrastructure.calendar.google_client import GoogleCalendarClient
-        try:
-            result = await GoogleCalendarClient.book_round_robin(
+            from app.modules.scheduling.native_service import NativeSchedulingService
+            result = await NativeSchedulingService.book_appointment(
                 tenant,
                 date_str=payload.get("date_str"),
                 time_str=payload.get("time_str"),
                 duration_minutes=payload.get("duration", 30),
                 user_name=payload.get("patient_name", "Reserva Manual UI"),
-                phone=payload.get("phone", "+5600000000")
+                patient_phone=payload.get("phone", "+5600000000"),
+                booked_by="manual_ui",
+                resource_id=payload.get("resource_id"),
             )
             return result
         except Exception as e:
             logger.error(f"Calendar book error: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)
+            from app.infrastructure.telemetry.discord_notifier import send_discord_alert
+            await send_discord_alert(
+                title=f"❌ /api/calendar/book Failed | Tenant {tenant_id}",
+                description=f"**Payload:** {str(payload)[:300]}\n**Error:** ```{str(e)[:300]}```",
+                severity="error",
+                error=e,
+            )
             return ORJSONResponse(status_code=500, content={"status": "error", "message": "Error interno al agendar cita."})
 
     @app.exception_handler(AppBaseException)
