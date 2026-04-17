@@ -42,10 +42,15 @@ service = "ia-whatsapp-crm"
 # ─── Runtime Variables ───────────────────────────────────────────────
 # Non-sensitive config needed by the Worker at request time.
 # These are injected into the Worker's `env` object.
+#
+# ⚠️ INCIDENT 2026-04-17: These values were DEV, causing PROD frontend to
+#    silently point to DEV backend + DEV Supabase for 24+ hours.
+#    ALWAYS verify these match PROD identifiers in README.md §5.
+#    Ref: https://developers.cloudflare.com/workers/configuration/environment-variables/
 [vars]
-BACKEND_URL = "https://ia-backend-dev-645489345350.us-central1.run.app"
-NEXT_PUBLIC_SUPABASE_URL = "https://nzsksjczswndjjbctasu.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_vkY-NiKdH4oUDT_QQHs3ug_zuAJB1jX"
+BACKEND_URL = "https://ia-backend-prod-645489345350.us-central1.run.app"
+NEXT_PUBLIC_SUPABASE_URL = "https://nemrjlimrnrusodivtoa.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_VgBbGeISLGQy1GSXrS-Drg_IGBoVsyn"
 NEXT_PUBLIC_SENTRY_DSN = "https://b5b7a769848286fcfcc7f367a970c34f@o4511179991416832.ingest.us.sentry.io/4511184254402560"
 NEXT_PUBLIC_DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1491131114025123940/eF2IlU86HIHP0FrQufHwl_N3hIu3_ONbCQS_C3Rte-CF1ayRcgUW499_RpbRcdUs0Hvz"
 

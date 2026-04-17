@@ -27,11 +27,11 @@ const nextConfig = {
     return [
       {
         source: '/api/calendar/:path*',
-        destination: `${process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'}/api/calendar/:path*`,
+        destination: `${process.env.BACKEND_URL || 'https://ia-backend-prod-645489345350.us-central1.run.app'}/api/calendar/:path*`,
       },
       {
         source: '/api/:path*',
-        destination: `${process.env.BACKEND_URL || 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'}/api/:path*`,
+        destination: `${process.env.BACKEND_URL || 'https://ia-backend-prod-645489345350.us-central1.run.app'}/api/:path*`,
       },
     ]
   },
@@ -48,6 +48,12 @@ module.exports = withSentryConfig(nextConfig, {
 
   // Suppress Sentry debug output in production builds
   silent: !process.env.CI,
+
+  // Tunnel Sentry events through our own origin to bypass ad blockers
+  // and tracking protection (Firefox ETP, uBlock, etc.)
+  // Events go to dash.tuasistentevirtual.cl/monitoring → sentry.io
+  // Ref: https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/#tunneling
+  tunnelRoute: "/monitoring",
 
   // Hide source maps from the client bundle (Sentry still reads them)
   hideSourceMaps: true,
