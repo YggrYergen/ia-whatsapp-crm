@@ -486,7 +486,7 @@ Enabled on `contacts`, `messages`, `alerts`. Frontend channels: `chat_contacts_c
 |:---|:---|:---|
 | 15 | **MUST verify migrations on BOTH DEV and PROD** | Schema drift = crashes after merge |
 | 16 | **MUST run health check after every PROD change** | Apr 12 incident: broken change was invisible 12+ hours |
-| 17 | **Hardcoded backend URL fallback** in `next.config.js` is `europe-west1` | `BACKEND_URL` MUST be set as build var pointing to `us-central1` |
+| 17 | **MUST set `BACKEND_URL` to `us-central1` in ALL CF configs** | Old `europe-west1` URL caused 404s for 24+h (2026-04-17). Check Build Secrets AND Runtime vars AND wrangler.toml. |
 
 > **Detailed postmortems:** See `deep_dives_&_misc/` for Auth PKCE, Sentry/Next.js 15, OpenNext migration, Sentry coverage hardening.
 
