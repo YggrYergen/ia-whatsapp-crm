@@ -1,16 +1,22 @@
 # ================================================================================
-# ⚠️  DOCS FIRST: OpenAI Responses API adapter — side-by-side with openai_adapter.py
-#     The existing openai_adapter.py (Chat Completions) is NOT modified.
-#     This adapter uses /v1/responses which supports:
+# ⚠️  DOCS FIRST: OpenAI Responses API adapter
+#     Uses /v1/responses which supports:
 #       - reasoning.effort + tools (simultaneously)
 #       - Native streaming with typed events
 #       - Reasoning summaries
-#     Ref: https://platform.openai.com/docs/api-reference/responses
-#     Ref: https://platform.openai.com/docs/guides/streaming
+#       - parallel_tool_calls (default true)
+#       - truncation: "auto" (auto-drops old messages if context overflows)
+#       - response.status == "incomplete" for truncation detection
+#     Ref: https://platform.openai.com/docs/api-reference/responses/create
+#     Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
 #
-# ⚠️  ARCHITECTURE: This adapter is used ONLY by the onboarding configuration agent.
-#     The WhatsApp pipeline continues to use openai_adapter.py (Chat Completions).
-#     Sprint 2: migrate WhatsApp pipeline to this adapter once battle-tested.
+# ⚠️  ARCHITECTURE: Used by BOTH the WhatsApp pipeline AND the onboarding agent.
+#     Sprint 2 (2026-04-18): migrated from openai_adapter.py (Chat Completions)
+#     to unlock reasoning.effort + tools simultaneously.
+#
+# ⚠️  IMPORTANT: Responses API does NOT support frequency_penalty/presence_penalty.
+#     Anti-repetition is handled by the model's reasoning capabilities instead.
+#     Ref: https://platform.openai.com/docs/api-reference/responses/create
 #
 # ⚠️  OBSERVABILITY: Every except block → logger + Sentry + Discord (3 channels).
 #     Every error includes: where (function), what (operation), who (model/context),
@@ -46,7 +52,7 @@ class OpenAIResponsesStrategy(LLMStrategy):
     Ref: https://platform.openai.com/docs/api-reference/responses
     """
     
-    def __init__(self, api_key: str = None, model_id: str = "gpt-5.4"):
+    def __init__(self, api_key: str = None, model_id: str = "gpt-5.4-mini"):
         key = api_key or settings.OPENAI_API_KEY
         super().__init__(api_key=key, model_id=model_id)
         if AsyncOpenAI:
@@ -76,9 +82,23 @@ class OpenAIResponsesStrategy(LLMStrategy):
         """Non-streaming response using Responses API (for compatibility with LLMStrategy interface).
         
         Converts the Chat Completions-style message_history to Responses API input format.
+        Supports:
+          - reasoning.effort + tools simultaneously
+          - parallel_tool_calls (enabled by default)
+          - tool_choice override (force specific tool)
+          - truncation detection (status="incomplete")
+          - auto-truncation of context overflow
+        
+        Ref: https://platform.openai.com/docs/api-reference/responses/create
+        Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
         """
         _where = "OpenAIResponsesStrategy.generate_response"
-        _ctx = f"model={self.model_id} | history_len={len(message_history)} | tools={len(tools)} | chain={'→'+previous_response_id[:20] if previous_response_id else 'none'} | env={settings.ENVIRONMENT}"
+        _ctx = (
+            f"model={self.model_id} | history_len={len(message_history)} | "
+            f"tools={len(tools)} | "
+            f"chain={'→'+previous_response_id[:20] if previous_response_id else 'none'} | "
+            f"env={settings.ENVIRONMENT}"
+        )
         
         if not AsyncOpenAI or not self.client:
             _msg = f"[{_where}] SDK not available — cannot generate response | {_ctx}"
@@ -91,39 +111,55 @@ class OpenAIResponsesStrategy(LLMStrategy):
             )
             return LLMResponse(content="Error interno del sistema. Por favor intenta de nuevo.")
         
-        # Set Sentry context for this request
+        # Set Sentry context for this request — helps debug any downstream error
         sentry_sdk.set_context("responses_api_request", {
             "model": self.model_id,
             "history_length": len(message_history),
             "tools_count": len(tools),
             "prompt_length": len(system_prompt),
+            "tool_choice_override": str(tool_choice_override)[:100] if tool_choice_override else None,
+            "previous_response_id": previous_response_id[:20] if previous_response_id else None,
             "environment": settings.ENVIRONMENT,
         })
         
         try:
             # Convert Chat Completions message format → Responses API input format
-            # Ref: https://platform.openai.com/docs/api-reference/responses/create
-            # When chaining, skip system prompt (already in the chain)
+            # When chaining via previous_response_id, skip system prompt (already in the chain)
             # Ref: https://platform.openai.com/docs/api-reference/responses/create
             effective_system = system_prompt if not previous_response_id else ""
             input_items = self._convert_messages_to_input(effective_system, message_history)
             
+            # ── Build API kwargs ──
+            # max_output_tokens: reasoning tokens are INCLUDED in this budget.
+            # With reasoning.effort="low", 4096 is sufficient for WhatsApp responses.
+            # OpenAI docs recommend 25K+ for complex reasoning, but our use case
+            # (short WhatsApp messages + tool calls) rarely exceeds 500 output tokens.
+            # Ref: https://platform.openai.com/docs/api-reference/responses/create
             api_kwargs = {
                 "model": self.model_id,
                 "input": input_items,
                 "max_output_tokens": 4096,
-                # store=True required for previous_response_id chaining
+                # store=False: WhatsApp pipeline manages its own message history
+                # in Supabase. No need to store on OpenAI servers.
+                # Set to True when using previous_response_id for chaining.
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
-                "store": True,
+                "store": bool(previous_response_id),
+                # truncation="auto": if input exceeds context window, auto-drop
+                # older messages instead of failing with 400.
+                # Ref: https://platform.openai.com/docs/api-reference/responses/create
+                "truncation": "auto",
                 # Reasoning config — works WITH tools on Responses API
+                # effort="low" for WhatsApp (speed matters, short responses)
+                # Summary disabled (not needed for non-streaming pipeline)
                 "reasoning": {
-                    "effort": "medium",
+                    "effort": "low",
                     "summary": "auto",
                 },
             }
             
+            # ── Tool conversion ──
             # Tools must be re-supplied every request (not inherited from chain)
-            # Ref: OpenAI docs confirmed via web search 2026-04-15
+            # Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
             #
             # IMPORTANT: Responses API uses a FLAT format for tools:
             #   {type: "function", name: "...", description: "...", parameters: {...}, strict: true}
@@ -149,12 +185,49 @@ class OpenAIResponsesStrategy(LLMStrategy):
                         # Already in Responses API format
                         converted_tools.append(t)
                     else:
-                        # Unknown format — pass through and let OpenAI error clearly
-                        _bad_msg = f"[{_where}] Unknown tool format — no 'function' or 'name' key: {list(t.keys())}"
+                        # Unknown format — log + pass through for OpenAI to error clearly
+                        _bad_msg = (
+                            f"[{_where}] Unknown tool format — no 'function' or 'name' key: "
+                            f"{list(t.keys())} | {_ctx}"
+                        )
                         logger.warning(_bad_msg)
                         sentry_sdk.capture_message(_bad_msg, level="warning")
+                        await send_discord_alert(
+                            title="⚠️ Unknown Tool Format",
+                            description=f"**Where:** `{_where}`\n**Keys:** {list(t.keys())}\n**Context:** {_ctx}",
+                            severity="warning"
+                        )
                         converted_tools.append(t)
                 api_kwargs["tools"] = converted_tools
+                
+                # parallel_tool_calls: allow model to call multiple tools per turn.
+                # Default is true per OpenAI docs. We keep it enabled for speed.
+                # Ref: https://platform.openai.com/docs/api-reference/responses/create
+                api_kwargs["parallel_tool_calls"] = True
+            
+            # ── Tool choice override ──
+            # Used for force_escalation (forces model to call a specific tool)
+            # Responses API format: {"type": "function", "name": "..."}
+            # (Note: slightly different from Chat Completions which nests under "function")
+            # Ref: https://platform.openai.com/docs/api-reference/responses/create
+            if tool_choice_override and tools:
+                if isinstance(tool_choice_override, dict):
+                    # Convert from Chat Completions format if needed
+                    if "function" in tool_choice_override and isinstance(tool_choice_override["function"], dict):
+                        # Chat Completions: {"type": "function", "function": {"name": "X"}}
+                        # Responses API:    {"type": "function", "name": "X"}
+                        api_kwargs["tool_choice"] = {
+                            "type": "function",
+                            "name": tool_choice_override["function"]["name"],
+                        }
+                    else:
+                        api_kwargs["tool_choice"] = tool_choice_override
+                elif isinstance(tool_choice_override, str):
+                    # String values: "auto", "none", "required"
+                    api_kwargs["tool_choice"] = tool_choice_override
+                logger.info(
+                    f"🔒 [{_where}] tool_choice override applied: {api_kwargs.get('tool_choice')}"
+                )
             
             # Chain to a previous response (for tool call follow-ups)
             if previous_response_id:
@@ -165,22 +238,69 @@ class OpenAIResponsesStrategy(LLMStrategy):
             
             response = await self.client.responses.create(**api_kwargs)
             
+            # ── Truncation detection (Responses API equivalent of finish_reason="length") ──
+            # Per OpenAI docs: response.status can be "completed" or "incomplete".
+            # If incomplete, response.incomplete_details.reason tells us why.
+            # Ref: https://platform.openai.com/docs/api-reference/responses/object
+            response_status = getattr(response, 'status', 'completed')
+            was_truncated = False
+            if response_status == "incomplete":
+                was_truncated = True
+                incomplete_reason = "unknown"
+                if hasattr(response, 'incomplete_details') and response.incomplete_details:
+                    incomplete_reason = getattr(response.incomplete_details, 'reason', 'unknown')
+                _trunc_msg = (
+                    f"[{_where}] Response INCOMPLETE (status=incomplete, reason={incomplete_reason}) | "
+                    f"{_ctx} | output_items={len(response.output) if response.output else 0}"
+                )
+                logger.warning(_trunc_msg)
+                sentry_sdk.set_context("responses_api_truncation", {
+                    "status": response_status,
+                    "reason": incomplete_reason,
+                    "model": self.model_id,
+                    "has_output": bool(response.output),
+                    "output_count": len(response.output) if response.output else 0,
+                    "environment": settings.ENVIRONMENT,
+                })
+                sentry_sdk.capture_message(
+                    f"Responses API incomplete (reason={incomplete_reason}) | model={self.model_id}",
+                    level="warning"
+                )
+                await send_discord_alert(
+                    title=f"⚠️ Responses API INCOMPLETE | {self.model_id}",
+                    description=(
+                        f"**Where:** `{_where}`\n"
+                        f"**Status:** incomplete\n"
+                        f"**Reason:** {incomplete_reason}\n"
+                        f"**Env:** {settings.ENVIRONMENT}\n"
+                        f"**Context:** {_ctx}"
+                    ),
+                    severity="warning"
+                )
+            
             # Guard: response.output could be None or empty
             if not response.output:
-                _msg = f"[{_where}] Empty response.output from API | {_ctx}"
+                _msg = f"[{_where}] Empty response.output from API | {_ctx} | status={response_status}"
                 logger.warning(_msg)
                 sentry_sdk.capture_message(_msg, level="warning")
                 await send_discord_alert(
                     title="⚠️ Empty Responses API Output",
-                    description=f"**Where:** `{_where}`\n**What:** response.output is empty/None\n**Context:** {_ctx}",
+                    description=(
+                        f"**Where:** `{_where}`\n"
+                        f"**What:** response.output is empty/None\n"
+                        f"**Status:** {response_status}\n"
+                        f"**Context:** {_ctx}"
+                    ),
                     severity="warning"
                 )
-                return LLMResponse(content="")
+                return LLMResponse(content="", was_truncated=was_truncated)
             
             # Parse the response output items
             dto = LLMResponse()
             dto.model_used = self.model_id
             dto.response_id = getattr(response, 'id', None)
+            dto.was_truncated = was_truncated
+            dto.finish_reason = response_status  # "completed" or "incomplete"
             
             for item in response.output:
                 if item.type == "message":
@@ -194,15 +314,38 @@ class OpenAIResponsesStrategy(LLMStrategy):
                         "name": item.name,
                         "arguments": item.arguments,
                     })
+                elif item.type == "reasoning":
+                    # Reasoning items are internal — log for diagnostics but don't expose
+                    logger.debug(
+                        f"🧠 [{_where}] Reasoning item present | "
+                        f"summary_len={len(getattr(item, 'summary', []) or [])}"
+                    )
+                else:
+                    # Unexpected output item type — log for investigation
+                    _unk_msg = (
+                        f"[{_where}] Unexpected output item type: {item.type} | {_ctx}"
+                    )
+                    logger.warning(_unk_msg)
+                    sentry_sdk.capture_message(_unk_msg, level="info")
             
-            # Usage tracking
+            # ── Usage tracking ──
+            # Responses API uses input_tokens/output_tokens (not prompt/completion)
+            # We map to the LLMResponse DTO fields for backward compatibility
+            # with the cost tracking in use_cases.py
             try:
                 if response.usage:
                     dto.prompt_tokens = response.usage.input_tokens
                     dto.completion_tokens = response.usage.output_tokens
+                    
+                    # Detailed token breakdown if available
+                    output_details = getattr(response.usage, 'output_tokens_details', None)
+                    if output_details:
+                        dto.reasoning_tokens = getattr(output_details, 'reasoning_tokens', None)
+                    
                     logger.info(
                         f"📊 [LLM Usage Responses] model={self.model_id} "
                         f"input={response.usage.input_tokens} output={response.usage.output_tokens} "
+                        f"reasoning={dto.reasoning_tokens or 0} "
                         f"env={settings.ENVIRONMENT}"
                     )
             except Exception as usage_err:
@@ -214,7 +357,12 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 sentry_sdk.capture_exception(usage_err)
                 await send_discord_alert(
                     title="⚠️ Responses API Usage Parsing Failed",
-                    description=f"**Where:** `{_where}`\n**What:** Usage parsing error (response still valid)\n**Error:** {str(usage_err)[:300]}\n**Context:** {_ctx}",
+                    description=(
+                        f"**Where:** `{_where}`\n"
+                        f"**What:** Usage parsing error (response still valid)\n"
+                        f"**Error:** {str(usage_err)[:300]}\n"
+                        f"**Context:** {_ctx}"
+                    ),
                     severity="warning"
                 )
             
@@ -450,17 +598,22 @@ class OpenAIResponsesStrategy(LLMStrategy):
         Chat Completions uses: [{"role": "system", "content": "..."}, {"role": "user", ...}]
         Responses API uses: [{"role": "developer", "content": "..."}, {"role": "user", ...}]
         
-        Also handles pre-formatted Responses API items (those with a 'type' key,
-        e.g. function_call_output) by passing them through unchanged.
+        Also handles:
+          - Pre-formatted Responses API items (those with a 'type' key)
+          - Assistant messages with tool_calls (from agentic loop in use_cases.py)
+            → converted to function_call items
+          - Tool result messages (role: "tool") → function_call_output items
         
         Key mapping:
           - "system" → "developer" (Responses API renamed this)
-          - "assistant" → "assistant" (same)
-          - "user" → "user" (same)
-          - "tool" → converted to function_call_output items
+          - "assistant" (plain) → "assistant"
+          - "assistant" (with tool_calls) → function_call items
+          - "user" → "user" 
+          - "tool" → function_call_output
           - items with "type" key → passed through as-is
         
         Ref: https://platform.openai.com/docs/api-reference/responses/create
+        Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
         """
         input_items = []
         
@@ -488,20 +641,47 @@ class OpenAIResponsesStrategy(LLMStrategy):
             elif role == "user":
                 input_items.append({"role": "user", "content": content})
             elif role == "assistant":
-                input_items.append({"role": "assistant", "content": content})
+                # ── Assistant messages: two cases ──
+                # Case 1: Assistant msg WITH tool_calls (from agentic loop in use_cases.py)
+                #   Chat Completions format: {"role": "assistant", "tool_calls": [{"id": ..., "type": "function", "function": {"name": ..., "arguments": ...}}]}
+                #   Responses API: each tool_call becomes a separate function_call item
+                # Case 2: Plain text assistant message → pass through
+                if "tool_calls" in msg and msg["tool_calls"]:
+                    # First, add any content the assistant sent alongside tool_calls
+                    if content:
+                        input_items.append({"role": "assistant", "content": content})
+                    # Convert each tool_call to a function_call input item
+                    # Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
+                    for tc in msg["tool_calls"]:
+                        func = tc.get("function", {})
+                        call_id = tc.get("id", "")
+                        # Support both nested (Chat Completions) and flat formats
+                        name = func.get("name", "") if func else tc.get("name", "")
+                        arguments = func.get("arguments", "{}") if func else tc.get("arguments", "{}")
+                        input_items.append({
+                            "type": "function_call",
+                            "call_id": call_id,
+                            "name": name,
+                            "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments),
+                        })
+                else:
+                    input_items.append({"role": "assistant", "content": content})
             elif role == "tool":
                 # Tool results → function_call_output format
+                # Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
                 input_items.append({
                     "type": "function_call_output",
                     "call_id": msg.get("tool_call_id", ""),
                     "output": content,
                 })
             else:
-                # Unknown role — log it, treat as user
-                logger.warning(
+                # Unknown role — log and treat as user to avoid silent drops
+                _unk_msg = (
                     f"[_convert_messages_to_input] Unknown message role: '{role}' — "
                     f"treating as user | content_preview={content[:80]}"
                 )
+                logger.warning(_unk_msg)
+                sentry_sdk.capture_message(_unk_msg, level="info")
                 input_items.append({"role": "user", "content": content})
         
         return input_items

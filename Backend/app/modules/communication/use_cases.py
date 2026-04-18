@@ -486,7 +486,7 @@ class ProcessMessageUseCase:
             # are silently dropped from the conversation context.
             # ============================================================
             if not is_simulation:
-                await asyncio.sleep(3)
+                await asyncio.sleep(1.5)  # Sprint 2: reduced from 3s → 1.5s for faster responses
 
             chile_tz = pytz.timezone("America/Santiago")
             current_time_str = datetime.now(chile_tz).strftime("%Y-%m-%d %H:%M")
@@ -529,7 +529,12 @@ class ProcessMessageUseCase:
                 history.append({"role": "user", "content": text_body})
 
             # Error points #9-10: LLM strategy creation + schema fetch
-            logger.info(f"🧠 [ORCH] Calling LLM (Provider={tenant.llm_provider})...")
+            import time as _time_mod
+            _pipeline_llm_start = _time_mod.monotonic()
+            logger.info(
+                f"🧠 [ORCH] Calling LLM (Provider={tenant.llm_provider} | "
+                f"Adapter={type(llm_strategy).__name__ if 'llm_strategy' in dir() else 'pending'})..."
+            )
             try:
                 llm_strategy = LLMFactory.create(tenant_context=tenant)
             except Exception as factory_err:
@@ -720,9 +725,13 @@ class ProcessMessageUseCase:
                 total_prompt_tokens += response_dto.prompt_tokens or 0
                 total_completion_tokens += response_dto.completion_tokens or 0
 
+                _round_elapsed = _time_mod.monotonic() - _pipeline_llm_start
                 logger.info(
                     f"✅ [ORCH] Round {rounds_executed}/{MAX_TOOL_ROUNDS} — "
                     f"ToolCalls={response_dto.has_tool_calls} | "
+                    f"Elapsed={_round_elapsed:.1f}s | "
+                    f"Tokens(in={response_dto.prompt_tokens or 0},out={response_dto.completion_tokens or 0}"
+                    f",reasoning={getattr(response_dto, 'reasoning_tokens', 0) or 0}) | "
                     f"ContentPreview='{(response_dto.content or '')[:120]}'"
                 )
 
