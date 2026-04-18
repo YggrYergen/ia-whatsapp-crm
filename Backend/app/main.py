@@ -44,7 +44,8 @@ from app.api.resources_api import router as resources_router
 from app.api.scheduling_config_api import router as scheduling_config_router
 
 from app.modules.intelligence.router import LLMFactory
-from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy
+from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy  # Keep for rollback
+from app.infrastructure.llm_providers.openai_responses_adapter import OpenAIResponsesStrategy
 from app.infrastructure.llm_providers.gemini_adapter import GeminiStrategy
 from app.infrastructure.llm_providers.mock_adapter import MockStrategy
 from app.modules.intelligence.tool_registry import tool_registry
@@ -266,7 +267,7 @@ def create_app() -> FastAPI:
         LLMFactory.register_strategy("openai", MockStrategy)
         LLMFactory.register_strategy("gemini", MockStrategy)
     else:
-        LLMFactory.register_strategy("openai", OpenAIStrategy)
+        LLMFactory.register_strategy("openai", OpenAIResponsesStrategy)  # Sprint 2: Responses API — unlocks reasoning + tools
         LLMFactory.register_strategy("gemini", GeminiStrategy)
 
     logger.info("Firming AITool registrations statically")
