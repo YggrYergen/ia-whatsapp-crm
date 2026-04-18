@@ -133,13 +133,6 @@ class OpenAIResponsesStrategy(LLMStrategy):
             # ── Build API kwargs ──
             # max_output_tokens: WhatsApp responses are short (rarely >500 tokens).
             # 2048 is generous for our use case (greeting + tool calls).
-            # NOTE: reasoning parameter REMOVED. It caused 4.5+ minute latency
-            # because the model generates hidden chain-of-thought tokens before
-            # producing the actual output. For a customer service chatbot,
-            # this is pure overhead — the model doesn't need to "think deeply"
-            # to say hello or book an appointment.
-            # If reasoning is needed in the future, add it conditionally:
-            #   if needs_reasoning: api_kwargs["reasoning"] = {"effort": "low"}
             # Ref: https://platform.openai.com/docs/api-reference/responses/create
             api_kwargs = {
                 "model": self.model_id,
@@ -155,6 +148,32 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
                 "truncation": "auto",
             }
+            
+            # ── Adaptive Reasoning Strategy ──
+            # Problem: reasoning adds quality but KILLS latency (4.5+ min observed).
+            # Solution: conditionally enable based on conversation stage.
+            #
+            # Stage 1 (greeting): history ≤ 2 msgs → NO reasoning → instant response
+            #   The model doesn't need chain-of-thought to say "Hola, bienvenido".
+            #
+            # Stage 2 (conversation): history > 2 msgs → reasoning.effort="low"
+            #   Quality matters for booking, answering service questions, etc.
+            #   NOTE: summary="auto" was REMOVED — it added extra generation pass
+            #   with no benefit (we don't surface reasoning to the user).
+            #
+            # Ref: https://platform.openai.com/docs/api-reference/responses/create
+            _history_len = len(message_history)
+            if _history_len > 2:
+                api_kwargs["reasoning"] = {"effort": "low"}
+                logger.debug(
+                    f"🧠 [{_where}] Reasoning ENABLED (effort=low) — "
+                    f"history={_history_len} msgs (>2 threshold)"
+                )
+            else:
+                logger.debug(
+                    f"⚡ [{_where}] Reasoning DISABLED — "
+                    f"history={_history_len} msgs (≤2 = greeting stage)"
+                )
             
             # ── Tool conversion ──
             # Tools must be re-supplied every request (not inherited from chain)
