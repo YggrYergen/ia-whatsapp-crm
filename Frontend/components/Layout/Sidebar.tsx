@@ -81,7 +81,7 @@ export default function Sidebar() {
         <div className={`
             bg-slate-900 border-t md:border-t-0 md:border-r border-slate-800 flex-shrink-0 z-50
             fixed bottom-0 left-0 w-full h-[60px] flex flex-row items-center justify-around px-2
-            md:relative md:w-20 md:h-full md:flex-col md:justify-start md:py-6 md:px-0 md:gap-6
+            md:relative md:w-20 md:h-full md:flex-col md:justify-between md:py-6 md:px-0
             pb-safe md:pb-6
         `}>
             {/* ─── Superadmin Tenant Switcher (desktop only) ─── */}
@@ -144,7 +144,8 @@ export default function Sidebar() {
                     )}
                 </div>
             )}
-
+            {/* ─── Top section: logo + nav (flex-1 so bottom stays pinned) ─── */}
+            <div className="contents md:!flex md:flex-col md:items-center md:gap-6 md:w-full md:flex-1 md:min-h-0">
             <div className="hidden md:flex w-10 h-10 bg-emerald-500 rounded-xl items-center justify-center shadow-lg flex-shrink-0 ring-4 ring-emerald-500/20">
                 <Sparkles className="text-white w-6 h-6" />
             </div>
@@ -194,8 +195,9 @@ export default function Sidebar() {
                     <span className="text-[10px] mt-1 md:hidden">Alertas</span>
                 </button>
             </div>
+            </div>
             
-            <div className="hidden md:flex flex-col gap-4 w-full px-2 mt-auto">
+            <div className="hidden md:flex flex-col gap-4 w-full px-2 flex-shrink-0">
                 <button 
                     onClick={() => setIsNotificationFeedOpen(!isNotificationFeedOpen)}
                     className={`w-full justify-center p-3 rounded-xl flex transition-all relative ${isNotificationFeedOpen ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-500 hover:text-emerald-400 hover:bg-slate-800/50'}`} 
