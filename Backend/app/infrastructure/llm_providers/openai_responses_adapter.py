@@ -75,7 +75,7 @@ class OpenAIResponsesStrategy(LLMStrategy):
         self,
         system_prompt: str,
         message_history: List[Dict[str, str]],
-        tools: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]] = None,
         tool_choice_override: Optional[Any] = None,
         previous_response_id: Optional[str] = None,
     ) -> LLMResponse:
@@ -93,6 +93,7 @@ class OpenAIResponsesStrategy(LLMStrategy):
         Ref: https://platform.openai.com/docs/guides/function-calling?api-mode=responses
         """
         _where = "OpenAIResponsesStrategy.generate_response"
+        tools = tools or []
         _ctx = (
             f"model={self.model_id} | history_len={len(message_history)} | "
             f"tools={len(tools)} | "
@@ -130,15 +131,20 @@ class OpenAIResponsesStrategy(LLMStrategy):
             input_items = self._convert_messages_to_input(effective_system, message_history)
             
             # ── Build API kwargs ──
-            # max_output_tokens: reasoning tokens are INCLUDED in this budget.
-            # With reasoning.effort="low", 4096 is sufficient for WhatsApp responses.
-            # OpenAI docs recommend 25K+ for complex reasoning, but our use case
-            # (short WhatsApp messages + tool calls) rarely exceeds 500 output tokens.
+            # max_output_tokens: WhatsApp responses are short (rarely >500 tokens).
+            # 2048 is generous for our use case (greeting + tool calls).
+            # NOTE: reasoning parameter REMOVED. It caused 4.5+ minute latency
+            # because the model generates hidden chain-of-thought tokens before
+            # producing the actual output. For a customer service chatbot,
+            # this is pure overhead — the model doesn't need to "think deeply"
+            # to say hello or book an appointment.
+            # If reasoning is needed in the future, add it conditionally:
+            #   if needs_reasoning: api_kwargs["reasoning"] = {"effort": "low"}
             # Ref: https://platform.openai.com/docs/api-reference/responses/create
             api_kwargs = {
                 "model": self.model_id,
                 "input": input_items,
-                "max_output_tokens": 4096,
+                "max_output_tokens": 2048,
                 # store=False: WhatsApp pipeline manages its own message history
                 # in Supabase. No need to store on OpenAI servers.
                 # Set to True when using previous_response_id for chaining.
@@ -148,13 +154,6 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 # older messages instead of failing with 400.
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
                 "truncation": "auto",
-                # Reasoning config — works WITH tools on Responses API
-                # effort="low" for WhatsApp (speed matters, short responses)
-                # Summary disabled (not needed for non-streaming pipeline)
-                "reasoning": {
-                    "effort": "low",
-                    "summary": "auto",
-                },
             }
             
             # ── Tool conversion ──
