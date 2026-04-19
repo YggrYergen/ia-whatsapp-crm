@@ -79,11 +79,11 @@ export default function Sidebar() {
     const navItems = [
         { href: '/dashboard', icon: LayoutDashboard, title: 'Panel', label: 'Panel' },
         { href: '/chats', icon: MessageCircle, title: 'Chats', label: 'Chats', escalationBadge: true },
-        { href: '/chats/sandbox', icon: Sparkles, title: 'Chat de Pruebas', label: 'Pruebas' },
+        { href: '/chats/sandbox', icon: Sparkles, title: 'Chat de Pruebas', label: 'Pruebas', desktopOnly: true },
         { href: '/agenda', icon: CalendarIcon, title: 'Agenda', label: 'Agenda' },
         { href: '/pacientes', icon: Users, title: 'Clientes', label: 'CRM' },
-        { href: '/servicios', icon: Package, title: 'Servicios', label: 'Servicios' },
-        { href: '/recursos', icon: Layers, title: 'Recursos', label: 'Recursos' },
+        { href: '/servicios', icon: Package, title: 'Servicios', label: 'Servicios', desktopOnly: true },
+        { href: '/recursos', icon: Layers, title: 'Recursos', label: 'Recursos', desktopOnly: true },
         { href: '/reportes', icon: BarChart3, title: 'Reportes', desktopOnly: true },
         { href: '/finops', icon: Receipt, title: 'FinOps', desktopOnly: true },
         // Block R: Use isSuperadmin instead of hardcoded email list for dev tools
@@ -227,6 +227,18 @@ export default function Sidebar() {
                     {isMobileMoreOpen && (
                         <div className="absolute bottom-full mb-2 right-0 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 py-2 z-[70]" 
                             style={{ animation: 'slideUp 0.15s ease-out' }}>
+                            <Link href="/chats/sandbox" onClick={() => setIsMobileMoreOpen(false)}
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                                <Sparkles size={16} /> Pruebas
+                            </Link>
+                            <Link href="/servicios" onClick={() => setIsMobileMoreOpen(false)}
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                                <Package size={16} /> Servicios
+                            </Link>
+                            <Link href="/recursos" onClick={() => setIsMobileMoreOpen(false)}
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                                <Layers size={16} /> Recursos
+                            </Link>
                             <Link href="/reportes" onClick={() => setIsMobileMoreOpen(false)}
                                 className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
                                 <BarChart3 size={16} /> Reportes
