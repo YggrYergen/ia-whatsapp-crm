@@ -653,12 +653,30 @@ class NativeSchedulingService:
                     "message": "No encontré ninguna cita en la franja de tiempo indicada.",
                 }
 
-            # Filter by phone if provided
+            # Filter by phone if provided — cancel exactly ONE appointment per invocation
+            # (LLM must call tool multiple times for bulk cancellation — safer)
             to_cancel = []
             for appt in matches.data:
                 if patient_phone and appt["client_phone"] != patient_phone:
                     continue
                 to_cancel.append(appt)
+                break  # Cancel exactly ONE appointment per tool invocation
+
+            # Observability: warn if multiple matched (helps diagnose bulk-cancel bugs)
+            phone_matches = [a for a in matches.data if not patient_phone or a["client_phone"] == patient_phone]
+            if len(phone_matches) > 1:
+                logger.warning(
+                    f"[{_WHERE}] Multiple appointments ({len(phone_matches)}) matched "
+                    f"window {date_str} {time_str} for phone {patient_phone} — "
+                    f"cancelling only first (id={to_cancel[0]['id'] if to_cancel else 'none'}) | "
+                    f"tenant={tenant_id}"
+                )
+                sentry_sdk.add_breadcrumb(
+                    category="scheduling",
+                    message=f"Multi-match cancel: {len(phone_matches)} found, cancelling 1",
+                    data={"phone": patient_phone, "window": f"{date_str} {time_str}"},
+                    level="warning",
+                )
 
             if not to_cancel:
                 return {
@@ -790,9 +808,15 @@ class NativeSchedulingService:
             original_notes = None
             try:
                 db = await SupabasePooler.get_client()
-                # Build time range: exact minute match for the original slot
-                start_lower = f"{date_str}T{time_str}:00"
-                start_upper = f"{date_str}T{time_str}:59"
+                # Build time range: localize to tenant timezone, then query
+                # (Same pattern as cancel_appointment line 634 — CLT→UTC)
+                config = await _get_tenant_config(tenant_id)
+                tz = pytz.timezone(config.get("timezone", "America/Santiago"))
+                target_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                target_time = datetime.datetime.strptime(time_str, "%H:%M").time()
+                target_start = tz.localize(datetime.datetime.combine(target_date, target_time))
+                start_lower = (target_start - datetime.timedelta(minutes=1)).isoformat()
+                start_upper = (target_start + datetime.timedelta(minutes=1)).isoformat()
                 original_res = await (
                     db.table("appointments")
                     .select("duration_minutes, service_name, notes")

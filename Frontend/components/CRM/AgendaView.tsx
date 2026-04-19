@@ -474,6 +474,25 @@ export default function AgendaView() {
             const startDt = new Date(`${editDate}T${editTime}:00`)
             const endDt = new Date(`${editDate}T${editEndTime}:00`)
 
+            // ── Conflict detection: check for overlapping appointments on the same resource ──
+            // This prevents silent double-bookings. The DB EXCLUDE constraint is the final safety net.
+            const { data: conflicts } = await supabase
+                .from('appointments')
+                .select('id, client_name, start_time')
+                .eq('resource_id', editResourceId)
+                .eq('status', 'confirmed')
+                .neq('id', selectedAppointment.id)
+                .lt('start_time', endDt.toISOString())
+                .gt('end_time', startDt.toISOString())
+                .limit(1)
+
+            if (conflicts && conflicts.length > 0) {
+                const conflictName = conflicts[0].client_name || 'otra cita'
+                setError(`Conflicto de horario: ${conflictName} ya tiene una cita en ese bloque. Elige otro horario o recurso.`)
+                setIsUpdating(false)
+                return
+            }
+
             const { error: updateErr } = await supabase
                 .from('appointments')
                 .update({
@@ -490,7 +509,13 @@ export default function AgendaView() {
             if (updateErr) {
                 console.error(`[${_where}]`, updateErr)
                 Sentry.captureException(updateErr, { tags: { where: _where, tenant_id: currentTenantId, appointment_id: selectedAppointment.id } })
-                setError(`Error al actualizar: ${updateErr.message}`)
+                // Handle EXCLUDE constraint violation (race condition: slot taken between check and update)
+                const errMsg = updateErr.message || ''
+                if (errMsg.includes('no_double_booking') || errMsg.includes('exclusion')) {
+                    setError('Ese horario se acaba de ocupar. Por favor elige otro.')
+                } else {
+                    setError(`Error al actualizar: ${updateErr.message}`)
+                }
             } else {
                 setIsDetailOpen(false)
                 setSelectedAppointment(null)
