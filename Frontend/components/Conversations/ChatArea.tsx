@@ -111,6 +111,52 @@ export default function ChatArea() {
                 Sentry.captureException(err as Error)
                 setIsIAProcessing(false)
             }
+        } else if (sender_role === 'human_agent') {
+            // ── Staff message → deliver via WhatsApp ──
+            // Calls backend POST /api/staff/send-message which:
+            //   1. Validates contact belongs to tenant (RLS)
+            //   2. Checks 24h messaging window
+            //   3. Sends via Meta Graph API
+            // On 24h window expiry, shows contact info so staff can reach them
+            try {
+                const baseUrl = 'https://ia-backend-prod-ftyhfnvyla-uc.a.run.app'
+                const res = await fetch(`${baseUrl}/api/staff/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenant_id: selectedContact.tenant_id,
+                        contact_id: selectedContact.id,
+                        phone: selectedContact.phone_number,
+                        message: text
+                    })
+                })
+                const data = await res.json()
+                
+                if (data.status === 'error') {
+                    // Handle specific error codes with user-friendly messages
+                    if (data.error_code === 'WINDOW_EXPIRED') {
+                        const contactInfo = data.contact_info || {}
+                        alert(
+                            `⏰ Ventana de 24h expirada\n\n` +
+                            `${data.message}\n\n` +
+                            `📱 Nombre: ${contactInfo.name || 'N/A'}\n` +
+                            `📞 Teléfono: ${contactInfo.phone || selectedContact.phone_number}\n\n` +
+                            `El mensaje fue guardado en el CRM pero NO fue enviado por WhatsApp.`
+                        )
+                    } else {
+                        console.error('[ChatArea] Staff send error:', data)
+                        Sentry.captureMessage(
+                            `Staff message delivery failed: ${data.error_code} — ${data.message}`,
+                            'warning'
+                        )
+                    }
+                }
+            } catch (err) {
+                console.error('[ChatArea] Staff send failed:', err)
+                Sentry.captureException(err as Error)
+                // Don't remove the optimistic message — it's saved in DB.
+                // The message just wasn't delivered via WhatsApp.
+            }
         }
     }
 

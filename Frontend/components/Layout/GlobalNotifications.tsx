@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertTriangle, XCircle, ArrowRight } from 'lucide-react'
 import { useCrm } from '@/contexts/CrmContext'
 import { useUI } from '@/contexts/UIContext'
@@ -11,6 +12,7 @@ const supabase = createClient()
 
 export default function GlobalNotifications() {
     const { toasts, setToasts, setSelectedContact, setMessages, setMobileView, setSimulationMode, contacts } = useCrm()
+    const router = useRouter()
 
     const fetchMessages = async (id: string) => {
         const { data } = await supabase.from('messages').select('*').eq('contact_id', id).order('created_at', { ascending: true })
@@ -22,6 +24,8 @@ export default function GlobalNotifications() {
         const targetContact = contacts.find(c => c.id === toast.payload.contact_id);
         
         if (targetContact) {
+            // Navigate to /chats FIRST (handles being on /dashboard, /agenda, etc.)
+            router.push('/chats');
             setSelectedContact(targetContact);
             fetchMessages(targetContact.id);
             setMobileView('chat');
