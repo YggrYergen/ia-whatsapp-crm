@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle, ChevronDown, Building2, Shield, Package, Layers } from 'lucide-react'
+import { Sparkles, LayoutDashboard, MessageCircle, CalendarIcon, Users, BarChart3, Receipt, Settings, LogOut, Terminal, Bell, AlertTriangle, ChevronDown, Building2, Shield, Package, Layers, MoreHorizontal, X as XIcon } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCrm } from '@/contexts/CrmContext'
@@ -17,7 +17,9 @@ export default function Sidebar() {
     // Block R: Tenant context for superadmin switching
     const { isSuperadmin, allTenants, currentTenant, switchTenant } = useTenant()
     const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false)
+    const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false)
     const dropdownRef = useRef<HTMLDivElement>(null)
+    const mobileMoreRef = useRef<HTMLDivElement>(null)
 
     // Count escalated contacts (bot_active=false, excluding test contact)
     const escalatedCount = contacts.filter((c: any) => !c.bot_active && c.phone_number !== '56912345678').length
@@ -43,6 +45,19 @@ export default function Sidebar() {
             return () => document.removeEventListener('mousedown', handleClickOutside)
         }
     }, [isTenantDropdownOpen])
+
+    // Close mobile more menu on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (mobileMoreRef.current && !mobileMoreRef.current.contains(e.target as Node)) {
+                setIsMobileMoreOpen(false)
+            }
+        }
+        if (isMobileMoreOpen) {
+            document.addEventListener('mousedown', handleClickOutside)
+            return () => document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [isMobileMoreOpen])
 
     const handleTenantSwitch = (tenantId: string) => {
         const _where = 'Sidebar.handleTenantSwitch'
@@ -194,6 +209,40 @@ export default function Sidebar() {
                     )}
                     <span className="text-[10px] mt-1 md:hidden">Alertas</span>
                 </button>
+
+                {/* Mobile More Menu (Logout, Settings, etc.) */}
+                <div ref={mobileMoreRef} className="relative flex md:hidden">
+                    <button 
+                        onClick={() => setIsMobileMoreOpen(!isMobileMoreOpen)}
+                        className={`
+                            p-2.5 rounded-xl flex flex-col items-center justify-center transition-all
+                            ${isMobileMoreOpen ? 'text-emerald-400 font-bold' : 'text-slate-500 hover:text-slate-300'}
+                        `} 
+                        title="Más opciones"
+                    >
+                        <MoreHorizontal className="w-[20px] h-[20px]" />
+                        <span className="text-[10px] mt-1">Más</span>
+                    </button>
+
+                    {isMobileMoreOpen && (
+                        <div className="absolute bottom-full mb-2 right-0 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 py-2 z-[70]" 
+                            style={{ animation: 'slideUp 0.15s ease-out' }}>
+                            <Link href="/reportes" onClick={() => setIsMobileMoreOpen(false)}
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                                <BarChart3 size={16} /> Reportes
+                            </Link>
+                            <Link href="/finops" onClick={() => setIsMobileMoreOpen(false)}
+                                className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                                <Receipt size={16} /> FinOps
+                            </Link>
+                            <div className="border-t border-slate-800 my-1" />
+                            <button onClick={() => { setIsMobileMoreOpen(false); handleLogout() }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors">
+                                <LogOut size={16} /> Cerrar Sesión
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
             </div>
             

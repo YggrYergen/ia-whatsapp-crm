@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { useTenant } from '@/contexts/TenantContext'
 import { useCrm } from '@/contexts/CrmContext'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -202,18 +203,15 @@ export default function PacientesView() {
                             <a href={`tel:${selectedPatient.phone_number}`} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold hover:bg-emerald-500/30 transition-colors">
                                 <Phone size={14} /> LLAMAR
                             </a>
-                            <button onClick={() => {
+                            <Link href="/chats" onClick={() => {
                                 setSelectedContact(selectedPatient as any)
                                 setMobileView('chat')
-                                router.push('/chats')
                             }} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-400 text-xs font-bold hover:bg-blue-500/30 transition-colors">
                                 <MessageCircle size={14} /> CHAT
-                            </button>
-                            <button onClick={() => {
-                                router.push('/agenda')
-                            }} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
+                            </Link>
+                            <Link href="/agenda" className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
                                 <Calendar size={14} /> AGENDAR
-                            </button>
+                            </Link>
                         </div>
                     </div>
 

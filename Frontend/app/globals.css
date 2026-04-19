@@ -132,6 +132,12 @@ body {
     animation: slide-in-right 0.25s ease-out forwards;
 }
 
+/* Slide up from bottom for mobile more menu */
+@keyframes slideUp {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    Block R: Onboarding — Matrix Thought Visualizer + Config Chat
    ═══════════════════════════════════════════════════════════════════════════════ */
