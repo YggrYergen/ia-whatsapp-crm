@@ -47,7 +47,7 @@ export default function PanelLayout({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen w-full bg-slate-50">
+      <div className="flex items-center justify-center w-full bg-slate-50" style={{ height: '100dvh' }}>
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-medium text-slate-400">Verificando sesión...</p>
@@ -64,7 +64,7 @@ export default function PanelLayout({
       <OnboardingGate />
       <GlobalNotifications />
       <GlobalFeedbackButton />
-      <div className="flex flex-col md:flex-row h-screen w-full bg-slate-50 overflow-hidden relative">
+      <div className="flex flex-col md:flex-row w-full bg-slate-50 overflow-hidden relative" style={{ height: '100dvh' }}>
         <Sidebar />
         <main className="flex-1 flex flex-col relative overflow-hidden h-full z-10 transition-all pb-sidebar md:pb-0">
           {children}
