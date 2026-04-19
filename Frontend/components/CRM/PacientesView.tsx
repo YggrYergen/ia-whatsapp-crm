@@ -4,6 +4,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Filter, Plus, Search, Sparkles, Pause, ChevronLeft, ChevronRight, User, Phone, Calendar, MessageCircle, AlertTriangle, Star, Clock, ArrowLeft, Edit3, Save, X, Activity, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useTenant } from '@/contexts/TenantContext'
+import { useCrm } from '@/contexts/CrmContext'
+import { useRouter } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -25,6 +27,8 @@ const PAGE_SIZE = 20
 
 export default function PacientesView() {
     const { currentTenantId } = useTenant()
+    const { setSelectedContact, setMobileView } = useCrm()
+    const router = useRouter()
     const [contacts, setContacts] = useState<Contact[]>([])
     const [totalCount, setTotalCount] = useState(0)
     const [page, setPage] = useState(0)
@@ -198,10 +202,16 @@ export default function PacientesView() {
                             <a href={`tel:${selectedPatient.phone_number}`} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold hover:bg-emerald-500/30 transition-colors">
                                 <Phone size={14} /> LLAMAR
                             </a>
-                            <button className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-400 text-xs font-bold hover:bg-blue-500/30 transition-colors">
+                            <button onClick={() => {
+                                setSelectedContact(selectedPatient as any)
+                                setMobileView('chat')
+                                router.push('/chats')
+                            }} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-500/20 border border-blue-500/30 rounded-xl text-blue-400 text-xs font-bold hover:bg-blue-500/30 transition-colors">
                                 <MessageCircle size={14} /> CHAT
                             </button>
-                            <button className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
+                            <button onClick={() => {
+                                router.push('/agenda')
+                            }} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400 text-xs font-bold hover:bg-indigo-500/30 transition-colors">
                                 <Calendar size={14} /> AGENDAR
                             </button>
                         </div>
