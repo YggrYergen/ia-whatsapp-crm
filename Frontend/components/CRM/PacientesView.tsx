@@ -34,6 +34,11 @@ export default function PacientesView() {
     const [selectedPatient, setSelectedPatient] = useState<Contact | null>(null)
     const [editingNotes, setEditingNotes] = useState(false)
     const [notesValue, setNotesValue] = useState('')
+    // Real data for patient detail panels
+    const [patientAppointments, setPatientAppointments] = useState<any[]>([])
+    const [patientAlerts, setPatientAlerts] = useState<any[]>([])
+    const [patientMessageCount, setPatientMessageCount] = useState(0)
+    const [patientLoadingPanels, setPatientLoadingPanels] = useState(false)
 
     const fetchContacts = async () => {
         if (!currentTenantId) return
@@ -61,6 +66,46 @@ export default function PacientesView() {
     }
 
     useEffect(() => { fetchContacts() }, [page, searchQuery, filterStatus, currentTenantId])
+
+    // Fetch patient detail data when a patient is selected
+    useEffect(() => {
+        if (!selectedPatient || !currentTenantId) return
+        const fetchPatientDetail = async () => {
+            setPatientLoadingPanels(true)
+            try {
+                // Appointments for this contact (by phone match)
+                const [apptRes, alertRes, msgRes] = await Promise.all([
+                    supabase
+                        .from('appointments')
+                        .select('id, start_time, end_time, duration_minutes, service_name, status, resource_id, notes, client_name')
+                        .eq('tenant_id', currentTenantId)
+                        .eq('client_phone', selectedPatient.phone_number)
+                        .order('start_time', { ascending: false })
+                        .limit(20),
+                    supabase
+                        .from('alerts')
+                        .select('id, type, message, is_resolved, created_at')
+                        .eq('tenant_id', currentTenantId)
+                        .eq('contact_id', selectedPatient.id)
+                        .order('created_at', { ascending: false })
+                        .limit(20),
+                    supabase
+                        .from('messages')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('tenant_id', currentTenantId)
+                        .eq('contact_id', selectedPatient.id)
+                ])
+                setPatientAppointments(apptRes.data || [])
+                setPatientAlerts(alertRes.data || [])
+                setPatientMessageCount(msgRes.count || 0)
+            } catch (err) {
+                console.error('[PacientesView] Detail fetch error:', err)
+            } finally {
+                setPatientLoadingPanels(false)
+            }
+        }
+        fetchPatientDetail()
+    }, [selectedPatient, currentTenantId])
 
     useEffect(() => {
         if (!currentTenantId) return
@@ -247,33 +292,87 @@ export default function PacientesView() {
                         )}
                     </div>
 
-                    {/* Mock sections — visually complete, data connections pending */}
+                    {/* Appointment History — REAL DATA */}
                     <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-5 backdrop-blur-xl space-y-3">
                         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Historial de citas</h3>
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03]">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center"><Calendar size={14} className="text-emerald-400" /></div>
-                                <div className="flex-1">
-                                    <div className="text-xs font-bold text-white">Evaluación diagnóstica</div>
-                                    <div className="text-[10px] text-slate-500">Pendiente conexión con calendario</div>
-                                </div>
-                                <span className="text-[9px] font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded-full">MOCK</span>
+                        {patientLoadingPanels ? (
+                            <div className="flex items-center gap-2 p-3">
+                                <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-[11px] text-slate-500">Cargando...</span>
                             </div>
-                        </div>
+                        ) : patientAppointments.length === 0 ? (
+                            <p className="text-[11px] text-slate-600">Sin citas registradas.</p>
+                        ) : (
+                            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                                {patientAppointments.map(appt => {
+                                    const apptDate = new Date(appt.start_time)
+                                    const isCancelled = appt.status === 'cancelled'
+                                    const isPast = apptDate < new Date()
+                                    return (
+                                        <div key={appt.id} className={`flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03] ${isCancelled ? 'opacity-50' : ''}`}>
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isCancelled ? 'bg-rose-500/20' : isPast ? 'bg-slate-500/20' : 'bg-emerald-500/20'}`}>
+                                                <Calendar size={14} className={isCancelled ? 'text-rose-400' : isPast ? 'text-slate-400' : 'text-emerald-400'} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-bold text-white truncate">{appt.service_name || 'Cita'}</div>
+                                                <div className="text-[10px] text-slate-500">
+                                                    {apptDate.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · {apptDate.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · {appt.duration_minutes}min
+                                                </div>
+                                            </div>
+                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                                isCancelled ? 'bg-rose-500/20 text-rose-400' 
+                                                : isPast ? 'bg-slate-500/20 text-slate-400' 
+                                                : 'bg-emerald-500/20 text-emerald-400'
+                                            }`}>
+                                                {isCancelled ? 'Cancelada' : isPast ? 'Completada' : 'Confirmada'}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
                     </div>
 
+                    {/* Incident History — REAL DATA */}
                     <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-5 backdrop-blur-xl space-y-3">
                         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Historial de incidentes</h3>
-                        <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03]">
-                            <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center"><AlertTriangle size={14} className="text-rose-400" /></div>
-                            <div className="flex-1">
-                                <div className="text-xs font-bold text-white">Sin incidentes registrados</div>
-                                <div className="text-[10px] text-slate-500">Se alimenta de alertas del sistema</div>
+                        {patientLoadingPanels ? (
+                            <div className="flex items-center gap-2 p-3">
+                                <div className="w-4 h-4 border-2 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-[11px] text-slate-500">Cargando...</span>
                             </div>
-                            <span className="text-[9px] font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded-full">MOCK</span>
-                        </div>
+                        ) : patientAlerts.length === 0 ? (
+                            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03]">
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center"><Star size={14} className="text-emerald-400" /></div>
+                                <div className="flex-1">
+                                    <div className="text-xs font-bold text-white">Sin incidentes registrados</div>
+                                    <div className="text-[10px] text-slate-500">Historial limpio</div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                                {patientAlerts.map(alert => (
+                                    <div key={alert.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03]">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${alert.is_resolved ? 'bg-emerald-500/20' : 'bg-rose-500/20'}`}>
+                                            <AlertTriangle size={14} className={alert.is_resolved ? 'text-emerald-400' : 'text-rose-400'} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-xs font-bold text-white truncate">{alert.type || 'Alerta'}</div>
+                                            <div className="text-[10px] text-slate-500 truncate">{alert.message}</div>
+                                            <div className="text-[9px] text-slate-600">{new Date(alert.created_at).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                                        </div>
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                            alert.is_resolved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                                        }`}>
+                                            {alert.is_resolved ? 'Resuelto' : 'Pendiente'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
+                    {/* Preferences & Behavior — REAL DATA */}
                     <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-5 backdrop-blur-xl space-y-3">
                         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Preferencias y comportamiento</h3>
                         <div className="grid grid-cols-2 gap-2">
@@ -282,19 +381,20 @@ export default function PacientesView() {
                                 <div className="text-sm text-white font-bold mt-1">WhatsApp</div>
                             </div>
                             <div className="p-3 rounded-xl bg-white/[0.03]">
-                                <div className="text-[9px] text-slate-500 font-bold uppercase">Horario activo</div>
-                                <div className="text-sm text-white font-bold mt-1">9:00 - 18:00</div>
+                                <div className="text-[9px] text-slate-500 font-bold uppercase">Total citas</div>
+                                <div className="text-sm text-white font-bold mt-1">{patientAppointments.length}</div>
                             </div>
                             <div className="p-3 rounded-xl bg-white/[0.03]">
-                                <div className="text-[9px] text-slate-500 font-bold uppercase">Sentimiento</div>
-                                <div className="text-sm text-emerald-400 font-bold mt-1">Positivo</div>
+                                <div className="text-[9px] text-slate-500 font-bold uppercase">Cancelaciones</div>
+                                <div className={`text-sm font-bold mt-1 ${patientAppointments.filter(a => a.status === 'cancelled').length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                    {patientAppointments.filter(a => a.status === 'cancelled').length}
+                                </div>
                             </div>
                             <div className="p-3 rounded-xl bg-white/[0.03]">
-                                <div className="text-[9px] text-slate-500 font-bold uppercase">Interacciones</div>
-                                <div className="text-sm text-white font-bold mt-1">—</div>
+                                <div className="text-[9px] text-slate-500 font-bold uppercase">Mensajes</div>
+                                <div className="text-sm text-white font-bold mt-1">{patientMessageCount}</div>
                             </div>
                         </div>
-                        <p className="text-[10px] text-slate-600 italic text-center mt-1">Datos de comportamiento se conectarán en Sprint 2</p>
                     </div>
                 </div>
             </div>

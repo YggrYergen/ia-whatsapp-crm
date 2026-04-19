@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, User, RefreshCw, CalendarCheck, CalendarDays, Plus, Loader2, AlertTriangle } from 'lucide-react'
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, User, RefreshCw, CalendarCheck, CalendarDays, Plus, Loader2, AlertTriangle, Pencil, Eye, Trash2, X as XIcon } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -141,6 +141,18 @@ export default function AgendaView() {
     const [patientPhone, setPatientPhone] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [tenantServices, setTenantServices] = useState<TenantService[]>([])
+
+    // Appointment Detail / Edit State
+    const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+    const [isDetailOpen, setIsDetailOpen] = useState(false)
+    const [isEditing, setIsEditing] = useState(false)
+    const [editDate, setEditDate] = useState('')
+    const [editTime, setEditTime] = useState('')
+    const [editEndTime, setEditEndTime] = useState('')
+    const [editNotes, setEditNotes] = useState('')
+    const [editServiceName, setEditServiceName] = useState('')
+    const [editResourceId, setEditResourceId] = useState('')
+    const [isUpdating, setIsUpdating] = useState(false)
 
     // ─── Data Fetching ───────────────────────────────────────────
 
@@ -292,6 +304,22 @@ export default function AgendaView() {
         [appointments]
     )
 
+    // Next 7 days appointments (excluding today)
+    const next7DaysAppointments = useMemo(() => {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const weekEnd = new Date(today)
+        weekEnd.setDate(weekEnd.getDate() + 8) // +8 because we exclude today
+        return appointments
+            .filter(a => {
+                const d = new Date(a.start_time)
+                return d >= tomorrow && d < weekEnd
+            })
+            .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    }, [appointments])
+
     const resourceStats = useMemo(() => {
         if (!todayHours) return resources.map(r => ({ ...r, bookedMin: 0, totalMin: 0, pct: 0 }))
         const totalMin = todayHours.endMin - todayHours.startMin
@@ -411,6 +439,93 @@ export default function AgendaView() {
             setError(err.message || 'Error al agendar')
         } finally {
             setIsSubmitting(false)
+        }
+    }
+
+    // ─── Appointment Detail / Edit ────────────────────────────────
+
+    const openAppointmentDetail = (app: Appointment) => {
+        setSelectedAppointment(app)
+        setIsEditing(false)
+        const start = new Date(app.start_time)
+        const end = new Date(app.end_time)
+        setEditDate(toLocalDateStr(start))
+        setEditTime(`${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`)
+        setEditEndTime(`${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`)
+        setEditNotes(app.notes || '')
+        setEditServiceName(app.service_name || '')
+        setEditResourceId(app.resource_id)
+        setIsDetailOpen(true)
+    }
+
+    const handleUpdateAppointment = async () => {
+        if (!selectedAppointment || !currentTenantId) return
+        const _where = `${_WHERE}.handleUpdateAppointment`
+        setIsUpdating(true)
+        try {
+            const [sh, sm] = editTime.split(':').map(Number)
+            const [eh, em] = editEndTime.split(':').map(Number)
+            const durationMin = (eh * 60 + em) - (sh * 60 + sm)
+            if (durationMin <= 0) {
+                setError('La hora de término debe ser posterior a la de inicio.')
+                setIsUpdating(false)
+                return
+            }
+            const startDt = new Date(`${editDate}T${editTime}:00`)
+            const endDt = new Date(`${editDate}T${editEndTime}:00`)
+
+            const { error: updateErr } = await supabase
+                .from('appointments')
+                .update({
+                    start_time: startDt.toISOString(),
+                    end_time: endDt.toISOString(),
+                    duration_minutes: durationMin,
+                    service_name: editServiceName || null,
+                    notes: editNotes.trim() || null,
+                    resource_id: editResourceId,
+                })
+                .eq('id', selectedAppointment.id)
+                .eq('tenant_id', currentTenantId)
+
+            if (updateErr) {
+                console.error(`[${_where}]`, updateErr)
+                Sentry.captureException(updateErr, { tags: { where: _where, tenant_id: currentTenantId, appointment_id: selectedAppointment.id } })
+                setError(`Error al actualizar: ${updateErr.message}`)
+            } else {
+                setIsDetailOpen(false)
+                setSelectedAppointment(null)
+                fetchAppointments()
+            }
+        } catch (err: any) {
+            console.error(`[${_where}]`, err)
+            Sentry.captureException(err, { tags: { where: _where, tenant_id: currentTenantId } })
+            setError(err.message || 'Error al actualizar cita')
+        } finally {
+            setIsUpdating(false)
+        }
+    }
+
+    const handleCancelAppointment = async () => {
+        if (!selectedAppointment || !currentTenantId) return
+        const _where = `${_WHERE}.handleCancelAppointment`
+        try {
+            const { error: cancelErr } = await supabase
+                .from('appointments')
+                .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+                .eq('id', selectedAppointment.id)
+                .eq('tenant_id', currentTenantId)
+
+            if (cancelErr) {
+                Sentry.captureException(cancelErr, { tags: { where: _where, tenant_id: currentTenantId } })
+                setError(`Error al cancelar: ${cancelErr.message}`)
+            } else {
+                setIsDetailOpen(false)
+                setSelectedAppointment(null)
+                fetchAppointments()
+            }
+        } catch (err: any) {
+            Sentry.captureException(err, { tags: { where: _where, tenant_id: currentTenantId } })
+            setError(err.message || 'Error al cancelar cita')
         }
     }
 
@@ -558,14 +673,14 @@ export default function AgendaView() {
                             </div>
                         </div>
 
-                        {/* Upcoming */}
+                        {/* Upcoming — Today */}
                         <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Próximas</h4>
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Hoy</h4>
                             <div className="space-y-2">
-                                {todaysAppointments.slice(0, 4).map(app => {
+                                {todaysAppointments.slice(0, 6).map(app => {
                                     const resource = resources.find(r => r.id === app.resource_id)
                                     return (
-                                        <div key={app.id} className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer">
+                                        <div key={app.id} onClick={() => openAppointmentDetail(app)} className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group">
                                             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                                                 style={{ backgroundColor: `${resource?.color || '#6366f1'}20` }}>
                                                 <User size={14} style={{ color: resource?.color || '#6366f1' }} />
@@ -573,13 +688,41 @@ export default function AgendaView() {
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-[12px] font-bold text-white truncate">{app.client_name}</p>
                                                 <div className="flex items-center gap-1 text-[9px] text-slate-500 font-bold">
-                                                    <Clock size={8} /> {new Date(app.start_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · {resource?.label || resource?.name || '?'}
+                                                    <Clock size={8} /> {new Date(app.start_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · {app.duration_minutes}min · {resource?.label || resource?.name || '?'}
                                                 </div>
                                             </div>
+                                            <Eye size={12} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
                                     )
                                 })}
                                 {todaysAppointments.length === 0 && <p className="text-[11px] text-slate-600">Sin citas hoy.</p>}
+                            </div>
+                        </div>
+
+                        {/* Upcoming — Next 7 days */}
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Próximos 7 días</h4>
+                            <div className="space-y-2">
+                                {next7DaysAppointments.slice(0, 8).map(app => {
+                                    const resource = resources.find(r => r.id === app.resource_id)
+                                    const appDate = new Date(app.start_time)
+                                    return (
+                                        <div key={app.id} onClick={() => openAppointmentDetail(app)} className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.04] transition-colors cursor-pointer group">
+                                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                                                style={{ backgroundColor: `${resource?.color || '#6366f1'}20` }}>
+                                                <CalendarDays size={14} style={{ color: resource?.color || '#6366f1' }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[12px] font-bold text-white truncate">{app.client_name}</p>
+                                                <div className="flex items-center gap-1 text-[9px] text-slate-500 font-bold">
+                                                    <Clock size={8} /> {appDate.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })} · {appDate.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · {app.duration_minutes}min
+                                                </div>
+                                            </div>
+                                            <Eye size={12} className="text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                    )
+                                })}
+                                {next7DaysAppointments.length === 0 && <p className="text-[11px] text-slate-600">Sin citas próximas.</p>}
                             </div>
                         </div>
                     </div>
@@ -656,7 +799,8 @@ export default function AgendaView() {
                                                             <div key={r.id} className={`p-0.5 md:p-1 relative ${rIdx < resources.length - 1 ? 'border-r border-white/[0.04]' : ''}`}
                                                                 style={app ? { height: `${getSlotSpan(app) * 100}%`, position: 'relative', zIndex: 5 } : {}}>
                                                                 {app ? (
-                                                                    <div className="rounded-lg md:rounded-xl p-1.5 md:p-2 border-l-3 md:border-l-4 shadow-sm overflow-hidden"
+                                                                    <div className="rounded-lg md:rounded-xl p-1.5 md:p-2 border-l-3 md:border-l-4 shadow-sm overflow-hidden cursor-pointer hover:brightness-125 transition-all"
+                                                                        onClick={() => openAppointmentDetail(app)}
                                                                         style={{ 
                                                                             backgroundColor: `${r.color}15`, 
                                                                             borderLeftColor: r.color,
@@ -993,6 +1137,186 @@ export default function AgendaView() {
                                 }
                             </Button>
                         </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* ═══════ APPOINTMENT DETAIL / EDIT DIALOG ═══════ */}
+                <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+                    <DialogContent className="bg-[#0d1220] border border-white/[0.08] text-white max-w-md shadow-2xl shadow-black/60 rounded-2xl p-0 overflow-hidden [&>button]:text-white">
+                        {selectedAppointment && (() => {
+                            const resource = resources.find(r => r.id === (isEditing ? editResourceId : selectedAppointment.resource_id))
+                            const startDt = new Date(selectedAppointment.start_time)
+                            const endDt = new Date(selectedAppointment.end_time)
+                            return (
+                                <>
+                                    <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                                                    style={{ backgroundColor: `${resource?.color || '#6366f1'}20` }}>
+                                                    <User size={18} style={{ color: resource?.color || '#6366f1' }} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-base font-black text-white">{selectedAppointment.client_name}</h3>
+                                                    <p className="text-[10px] text-slate-500 font-mono">{selectedAppointment.client_phone}</p>
+                                                </div>
+                                            </div>
+                                            {!isEditing && (
+                                                <button onClick={() => setIsEditing(true)}
+                                                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.06] text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all">
+                                                    <Pencil size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="px-6 py-5 space-y-4">
+                                        {isEditing ? (
+                                            /* ── EDIT MODE ── */
+                                            <>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="grid gap-1.5">
+                                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Fecha</label>
+                                                        <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                                                            className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]" />
+                                                    </div>
+                                                    <div className="grid gap-1.5">
+                                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inicio</label>
+                                                        <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)}
+                                                            className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]" />
+                                                    </div>
+                                                    <div className="grid gap-1.5">
+                                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Término</label>
+                                                        <input type="time" value={editEndTime} onChange={e => setEditEndTime(e.target.value)}
+                                                            className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]" />
+                                                    </div>
+                                                </div>
+
+                                                {tenantServices.length > 0 && (
+                                                    <div className="grid gap-1.5">
+                                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Servicio</label>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {tenantServices.map(svc => (
+                                                                <button key={svc.id}
+                                                                    onClick={() => {
+                                                                        setEditServiceName(svc.name)
+                                                                        if (editTime) {
+                                                                            const sm2 = timeToMinutes(editTime)
+                                                                            const em2 = sm2 + svc.duration_minutes
+                                                                            setEditEndTime(`${String(Math.floor(em2/60)%24).padStart(2,'0')}:${String(em2%60).padStart(2,'0')}`)
+                                                                        }
+                                                                    }}
+                                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                                                        editServiceName === svc.name
+                                                                            ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                                                                            : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:bg-white/[0.08]'
+                                                                    }`}>
+                                                                    {svc.name} <span className="text-[9px] opacity-60 ml-1">({svc.duration_minutes}m)</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {resources.length > 1 && (
+                                                    <div className="grid gap-1.5">
+                                                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recurso</label>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {resources.map(r => (
+                                                                <button key={r.id}
+                                                                    onClick={() => setEditResourceId(r.id)}
+                                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                                                        editResourceId === r.id
+                                                                            ? 'text-white border-transparent'
+                                                                            : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:bg-white/[0.08]'
+                                                                    }`}
+                                                                    style={editResourceId === r.id ? { backgroundColor: r.color } : {}}>
+                                                                    {r.label || r.name}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="grid gap-1.5">
+                                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Notas</label>
+                                                    <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={2}
+                                                        className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 resize-none placeholder:text-slate-600"
+                                                        placeholder="Notas..."
+                                                    />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            /* ── VIEW MODE ── */
+                                            <>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase">Fecha</div>
+                                                        <div className="text-sm text-white font-bold mt-1">{startDt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase">Horario</div>
+                                                        <div className="text-sm text-white font-bold mt-1">
+                                                            {startDt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} — {endDt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase">Duración</div>
+                                                        <div className="text-sm text-white font-bold mt-1">{selectedAppointment.duration_minutes}min</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase">Servicio</div>
+                                                        <div className="text-sm text-white font-bold mt-1 truncate">{selectedAppointment.service_name || '—'}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase">Recurso</div>
+                                                        <div className="text-sm font-bold mt-1 truncate" style={{ color: resource?.color || '#6366f1' }}>{resource?.label || resource?.name || '—'}</div>
+                                                    </div>
+                                                </div>
+
+                                                {selectedAppointment.notes && (
+                                                    <div className="p-3 rounded-xl bg-white/[0.04]">
+                                                        <div className="text-[9px] text-slate-500 font-bold uppercase mb-1">Notas</div>
+                                                        <p className="text-sm text-slate-300 leading-relaxed">{selectedAppointment.notes}</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Footer */}
+                                    <div className="px-6 pb-6 flex items-center gap-3">
+                                        {isEditing ? (
+                                            <>
+                                                <Button variant="outline" onClick={() => setIsEditing(false)}
+                                                    className="border-white/10 text-slate-400 hover:bg-white/[0.06]">
+                                                    Cancelar
+                                                </Button>
+                                                <Button onClick={handleUpdateAppointment} disabled={isUpdating}
+                                                    className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-black gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-40">
+                                                    {isUpdating ? <><Loader2 size={14} className="animate-spin" /> Guardando...</> : <><CalendarCheck size={14} /> Guardar Cambios</>}
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <button onClick={handleCancelAppointment}
+                                                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition-colors">
+                                                    <Trash2 size={14} /> Cancelar Cita
+                                                </button>
+                                                <div className="flex-1" />
+                                                <Button onClick={() => setIsEditing(true)}
+                                                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-black gap-2 shadow-lg shadow-indigo-500/20">
+                                                    <Pencil size={14} /> Editar
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                </>
+                            )
+                        })()}
                     </DialogContent>
                 </Dialog>
 
