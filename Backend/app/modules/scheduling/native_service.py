@@ -797,7 +797,7 @@ class NativeSchedulingService:
                     db.table("appointments")
                     .select("duration_minutes, service_name, notes")
                     .eq("tenant_id", str(tenant_id))
-                    .eq("patient_phone", patient_phone)
+                    .eq("client_phone", patient_phone)
                     .gte("start_time", start_lower)
                     .lte("start_time", start_upper)
                     .limit(1)
