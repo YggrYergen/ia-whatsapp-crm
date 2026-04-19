@@ -36,6 +36,19 @@ from app.infrastructure.telemetry.logger_service import logger
 # ────────────────────────────────────────────────────────────────────────────────
 
 
+def _normalize_phone(phone: str) -> str:
+    """Normalize phone numbers for comparison.
+
+    Different code paths store phones with or without the '+' prefix.
+    This strips any leading '+' and whitespace so comparisons are consistent.
+    Example: '+56931374341' → '56931374341', '56931374341' → '56931374341'
+    """
+    if not phone:
+        return ""
+    return phone.strip().lstrip("+")
+
+
+
 async def _get_tenant_config(tenant_id: str) -> dict:
     """
     Fetch scheduling_config for a tenant.
@@ -657,13 +670,13 @@ class NativeSchedulingService:
             # (LLM must call tool multiple times for bulk cancellation — safer)
             to_cancel = []
             for appt in matches.data:
-                if patient_phone and appt["client_phone"] != patient_phone:
+                if patient_phone and _normalize_phone(appt["client_phone"]) != _normalize_phone(patient_phone):
                     continue
                 to_cancel.append(appt)
                 break  # Cancel exactly ONE appointment per tool invocation
 
             # Observability: warn if multiple matched (helps diagnose bulk-cancel bugs)
-            phone_matches = [a for a in matches.data if not patient_phone or a["client_phone"] == patient_phone]
+            phone_matches = [a for a in matches.data if not patient_phone or _normalize_phone(a["client_phone"]) == _normalize_phone(patient_phone)]
             if len(phone_matches) > 1:
                 logger.warning(
                     f"[{_WHERE}] Multiple appointments ({len(phone_matches)}) matched "
@@ -1064,7 +1077,7 @@ class NativeSchedulingService:
                     )
                 else:
                     # Client only sees their own
-                    if caller_phone and appt["client_phone"] == caller_phone:
+                    if caller_phone and _normalize_phone(appt["client_phone"]) == _normalize_phone(caller_phone):
                         formatted.append(
                             f"[{start_fmt} - {end_fmt}] {resource_name}: Tienes una cita agendada."
                         )
