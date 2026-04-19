@@ -59,8 +59,8 @@ const DEFAULT_BUSINESS_HOURS: Record<string, { start: string; end: string } | nu
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
-/** Get business hours for a specific date */
-function getHoursForDate(date: Date, config: SchedulingConfig | null): { start: number; end: number } | null {
+/** Get business hours for a specific date — preserves minutes (e.g. 08:30) */
+function getHoursForDate(date: Date, config: SchedulingConfig | null): { startMin: number; endMin: number } | null {
     const dayName = DAY_NAMES[date.getDay()]
     const hours = config?.business_hours?.[dayName] ?? DEFAULT_BUSINESS_HOURS[dayName]
     if (!hours) return null // Closed day
@@ -72,22 +72,30 @@ function getHoursForDate(date: Date, config: SchedulingConfig | null): { start: 
 
     if (!startStr || !endStr) {
         console.warn('[AgendaView] Unexpected business_hours format for', dayName, hours)
-        return { start: 9, end: 19 } // safe fallback
+        return { startMin: 540, endMin: 1140 } // 9:00 - 19:00 safe fallback
     }
 
-    const startH = parseInt(startStr.split(':')[0])
-    const endH = parseInt(endStr.split(':')[0])
-    return { start: startH, end: endH }
+    const [startH, startM] = startStr.split(':').map(Number)
+    const [endH, endM] = endStr.split(':').map(Number)
+    return { startMin: startH * 60 + (startM || 0), endMin: endH * 60 + (endM || 0) }
 }
 
 
-/** Generate hour slots array for a given start/end */
-function generateHourSlots(startH: number, endH: number): string[] {
+/** Generate 30-minute slot labels from startMin to endMin */
+function generateTimeSlots(startMin: number, endMin: number, interval: number = 30): string[] {
     const slots: string[] = []
-    for (let h = startH; h < endH; h++) {
-        slots.push(`${h.toString().padStart(2, '0')}:00`)
+    for (let m = startMin; m < endMin; m += interval) {
+        const h = Math.floor(m / 60)
+        const min = m % 60
+        slots.push(`${h.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`)
     }
     return slots
+}
+
+/** Convert a time string 'HH:MM' to total minutes from midnight */
+function timeToMinutes(time: string): number {
+    const [h, m] = time.split(':').map(Number)
+    return h * 60 + (m || 0)
 }
 
 export default function AgendaView() {
@@ -225,10 +233,11 @@ export default function AgendaView() {
     // ─── Business Hours Logic ────────────────────────────────────
 
     const todayHours = useMemo(() => getHoursForDate(currentDate, schedulingConfig), [currentDate, schedulingConfig])
-    const hours = useMemo(() => {
-        if (!todayHours) return generateHourSlots(9, 19) // Closed day: show default for visual
-        return generateHourSlots(todayHours.start, todayHours.end)
-    }, [todayHours])
+    const slotInterval = schedulingConfig?.slot_interval_minutes || 30
+    const timeSlots = useMemo(() => {
+        if (!todayHours) return generateTimeSlots(540, 1140, slotInterval) // 9:00-19:00 fallback
+        return generateTimeSlots(todayHours.startMin, todayHours.endMin, slotInterval)
+    }, [todayHours, slotInterval])
 
     // ─── Stats ───────────────────────────────────────────────────
 
@@ -238,11 +247,13 @@ export default function AgendaView() {
     )
 
     const resourceStats = useMemo(() => {
-        if (!todayHours) return resources.map(r => ({ ...r, count: 0, total: 0, pct: 0 }))
-        const totalSlots = todayHours.end - todayHours.start
+        if (!todayHours) return resources.map(r => ({ ...r, bookedMin: 0, totalMin: 0, pct: 0 }))
+        const totalMin = todayHours.endMin - todayHours.startMin
         return resources.map(r => {
-            const count = todaysAppointments.filter(a => a.resource_id === r.id).length
-            return { ...r, count, total: totalSlots, pct: totalSlots > 0 ? Math.round((count / totalSlots) * 100) : 0 }
+            const bookedMin = todaysAppointments
+                .filter(a => a.resource_id === r.id)
+                .reduce((sum, a) => sum + (a.duration_minutes || 30), 0)
+            return { ...r, bookedMin, totalMin, pct: totalMin > 0 ? Math.round((bookedMin / totalMin) * 100) : 0 }
         })
     }, [resources, todaysAppointments, todayHours])
 
@@ -285,8 +296,8 @@ export default function AgendaView() {
         setBookingDate(dateStr)
         setBookingTime(timeStr)
         const defaultDur = schedulingConfig?.default_duration_minutes || 60
-        const [h, m] = timeStr.split(':').map(Number)
-        const endMin = h * 60 + (m || 0) + defaultDur
+        const slotMin = timeToMinutes(timeStr)
+        const endMin = slotMin + defaultDur
         setBookingEndTime(`${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`)
         setBookingResourceId(resources[0]?.id || '')
         setIsBookingOpen(true)
@@ -346,13 +357,36 @@ export default function AgendaView() {
         }
     }
 
-    // ─── Helper: find appointment at a specific resource/hour ───
+    // ─── Helper: Check if an appointment STARTS at this exact slot ───
 
-    const findAppointmentAt = (date: Date, hour: number, resourceId: string): Appointment | undefined => {
+    const getAppointmentStartingAt = (date: Date, slotTime: string, resourceId: string): Appointment | undefined => {
+        const slotMinutes = timeToMinutes(slotTime)
         return appointments.find(a => {
             const d = new Date(a.start_time)
-            return d.toDateString() === date.toDateString() && d.getHours() === hour && a.resource_id === resourceId
+            if (d.toDateString() !== date.toDateString()) return false
+            if (a.resource_id !== resourceId) return false
+            const apptMinutes = d.getHours() * 60 + d.getMinutes()
+            return apptMinutes === slotMinutes
         })
+    }
+
+    /** Check if a slot is occupied by a multi-slot appointment that started earlier */
+    const isSlotOccupiedBySpan = (date: Date, slotTime: string, resourceId: string): boolean => {
+        const slotMinutes = timeToMinutes(slotTime)
+        return appointments.some(a => {
+            const d = new Date(a.start_time)
+            if (d.toDateString() !== date.toDateString()) return false
+            if (a.resource_id !== resourceId) return false
+            const apptStart = d.getHours() * 60 + d.getMinutes()
+            const apptEnd = apptStart + (a.duration_minutes || 30)
+            // Occupied if this slot falls WITHIN the appointment (but not at its start)
+            return slotMinutes > apptStart && slotMinutes < apptEnd
+        })
+    }
+
+    /** Calculate how many slots an appointment spans */
+    const getSlotSpan = (app: Appointment): number => {
+        return Math.max(1, Math.ceil((app.duration_minutes || 30) / slotInterval))
     }
 
     // ─── Closed day indicator ────────────────────────────────────
@@ -419,7 +453,7 @@ export default function AgendaView() {
                         <Button variant="outline" className="bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 shadow-sm gap-1.5 text-xs h-9" onClick={fetchAll}>
                             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Sincronizar
                         </Button>
-                        <Button onClick={() => handleSlotClick(new Date().toISOString().split('T')[0], hours[0] || "09:00")}
+                        <Button onClick={() => handleSlotClick(new Date().toISOString().split('T')[0], timeSlots[0] || "09:00")}
                             className="bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 gap-1.5 text-xs h-9 font-black">
                             <CalendarCheck size={14} /> Nueva Cita
                         </Button>
@@ -444,7 +478,7 @@ export default function AgendaView() {
                             <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Hoy</div>
                             <div className="text-3xl font-black leading-none mt-1">{todaysAppointments.length}</div>
                             <p className="text-[10px] text-slate-500 mt-1">
-                                {todayHours ? `${todayHours.start}:00 - ${todayHours.end}:00` : 'Día cerrado'}
+                                {todayHours ? `${String(Math.floor(todayHours.startMin/60)).padStart(2,'0')}:${String(todayHours.startMin%60).padStart(2,'0')} - ${String(Math.floor(todayHours.endMin/60)).padStart(2,'0')}:${String(todayHours.endMin%60).padStart(2,'0')}` : 'Día cerrado'}
                             </p>
                         </div>
 
@@ -456,7 +490,7 @@ export default function AgendaView() {
                                     <div key={rs.id} className="space-y-1">
                                         <div className="flex justify-between text-[11px] font-bold">
                                             <span className="text-slate-400 truncate mr-2">{rs.label || rs.name}</span>
-                                            <span style={{ color: rs.color }}>{rs.count}/{rs.total} · {rs.pct}%</span>
+                                            <span style={{ color: rs.color }}>{rs.bookedMin}m/{rs.totalMin}m · {rs.pct}%</span>
                                         </div>
                                         <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
                                             <div className="h-full rounded-full transition-all duration-500"
@@ -537,35 +571,62 @@ export default function AgendaView() {
                                             ))}
                                         </div>
                                     </div>
-                                    {/* Time slots */}
-                                    {hours.map((hour, idx) => {
-                                        const hourNum = parseInt(hour.split(':')[0])
+                                    {/* Time slots — 30-min intervals */}
+                                    {timeSlots.map((slot, idx) => {
+                                        const isHourBoundary = slot.endsWith(':00')
                                         return (
-                                            <div key={idx} className="flex border-b border-white/[0.04] min-h-[48px] md:min-h-[64px] group">
-                                                <div className="w-12 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-white/[0.04] text-[10px] font-black text-slate-600">
-                                                    {hour}
+                                            <div key={idx} className={`flex min-h-[36px] md:min-h-[44px] group ${
+                                                isHourBoundary ? 'border-b border-white/[0.08]' : 'border-b border-white/[0.03]'
+                                            }`}>
+                                                <div className={`w-12 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-white/[0.04] text-[10px] font-black ${
+                                                    isHourBoundary ? 'text-slate-500' : 'text-slate-700'
+                                                }`}>
+                                                    {slot}
                                                 </div>
                                                 <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${resources.length}, 1fr)` }}>
                                                     {resources.map((r, rIdx) => {
-                                                        const app = findAppointmentAt(currentDate, hourNum, r.id)
+                                                        const app = getAppointmentStartingAt(currentDate, slot, r.id)
+                                                        const occupied = !app && isSlotOccupiedBySpan(currentDate, slot, r.id)
+                                                        
+                                                        if (occupied) {
+                                                            // Slot is part of a multi-slot appointment — render nothing (the span covers it)
+                                                            return (
+                                                                <div key={r.id} className={`relative h-full ${rIdx < resources.length - 1 ? 'border-r border-white/[0.04]' : ''}`} />
+                                                            )
+                                                        }
+                                                        
                                                         return (
-                                                            <div key={r.id} className={`p-0.5 md:p-1 relative h-full ${rIdx < resources.length - 1 ? 'border-r border-white/[0.04]' : ''}`}>
+                                                            <div key={r.id} className={`p-0.5 md:p-1 relative ${rIdx < resources.length - 1 ? 'border-r border-white/[0.04]' : ''}`}
+                                                                style={app ? { height: `${getSlotSpan(app) * 100}%`, position: 'relative', zIndex: 5 } : {}}>
                                                                 {app ? (
-                                                                    <div className="h-full rounded-lg md:rounded-xl p-2 md:p-3 border-l-3 md:border-l-4 shadow-sm"
-                                                                        style={{ backgroundColor: `${r.color}15`, borderLeftColor: r.color }}>
-                                                                        <p className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter line-clamp-2"
+                                                                    <div className="rounded-lg md:rounded-xl p-1.5 md:p-2 border-l-3 md:border-l-4 shadow-sm overflow-hidden"
+                                                                        style={{ 
+                                                                            backgroundColor: `${r.color}15`, 
+                                                                            borderLeftColor: r.color,
+                                                                            height: `calc(${getSlotSpan(app)} * (36px + 1px))`,
+                                                                            minHeight: '32px',
+                                                                            position: 'absolute',
+                                                                            top: 0,
+                                                                            left: '2px',
+                                                                            right: rIdx < resources.length - 1 ? '3px' : '2px',
+                                                                            zIndex: 5,
+                                                                        }}>
+                                                                        <p className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter line-clamp-1"
                                                                             style={{ color: r.color }}>
                                                                             {app.client_name}
                                                                         </p>
                                                                         {app.service_name && (
                                                                             <p className="text-[8px] text-slate-500 mt-0.5 truncate">{app.service_name}</p>
                                                                         )}
+                                                                        <p className="text-[7px] md:text-[8px] text-slate-600 mt-0.5">
+                                                                            {new Date(app.start_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} - {new Date(app.end_time).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · {app.duration_minutes}min
+                                                                        </p>
                                                                     </div>
                                                                 ) : (
-                                                                    <div onClick={() => handleSlotClick(currentDate.toISOString().split('T')[0], hour)}
+                                                                    <div onClick={() => handleSlotClick(currentDate.toISOString().split('T')[0], slot)}
                                                                         className="h-full w-full opacity-0 group-hover:opacity-100 flex items-center justify-center border border-dashed rounded-xl transition-all cursor-pointer hover:bg-white/[0.03]"
                                                                         style={{ borderColor: `${r.color}40` }}>
-                                                                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: `${r.color}80` }}>+ Agendar</span>
+                                                                        <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: `${r.color}80` }}>+</span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -598,40 +659,49 @@ export default function AgendaView() {
                                             })}
                                         </div>
                                     </div>
-                                    {hours.map((hour, idx) => (
-                                        <div key={idx} className="flex border-b border-white/[0.04] min-h-[50px] group text-[10px]">
-                                            <div className="w-10 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-white/[0.04] font-black text-slate-600 text-[9px] md:text-[10px]">
-                                                {hour}
-                                            </div>
-                                            <div className="flex-1 grid grid-cols-7">
-                                                {[...Array(7)].map((_, i) => {
-                                                    const d = new Date(currentDate)
-                                                    d.setDate(d.getDate() - d.getDay() + 1 + i)
-                                                    const hourNum = parseInt(hour.split(':')[0])
+                                    {timeSlots.map((slot, idx) => {
+                                        const isHourBoundary = slot.endsWith(':00')
+                                        return (
+                                            <div key={idx} className={`flex min-h-[32px] group text-[10px] ${
+                                                isHourBoundary ? 'border-b border-white/[0.06]' : 'border-b border-white/[0.03]'
+                                            }`}>
+                                                <div className={`w-10 md:w-16 flex-shrink-0 flex items-center justify-center border-r border-white/[0.04] font-black text-[9px] md:text-[10px] ${
+                                                    isHourBoundary ? 'text-slate-500' : 'text-slate-700'
+                                                }`}>
+                                                    {slot}
+                                                </div>
+                                                <div className="flex-1 grid grid-cols-7">
+                                                    {[...Array(7)].map((_, i) => {
+                                                        const d = new Date(currentDate)
+                                                        d.setDate(d.getDate() - d.getDay() + 1 + i)
+                                                        const slotMin = timeToMinutes(slot)
 
-                                                    const slotApps = appointments.filter(a => {
-                                                        const ad = new Date(a.start_time)
-                                                        return ad.toDateString() === d.toDateString() && ad.getHours() === hourNum
-                                                    })
+                                                        const slotApps = appointments.filter(a => {
+                                                            const ad = new Date(a.start_time)
+                                                            if (ad.toDateString() !== d.toDateString()) return false
+                                                            const apptMin = ad.getHours() * 60 + ad.getMinutes()
+                                                            return apptMin === slotMin
+                                                        })
 
-                                                    return (
-                                                        <div key={i} className="border-r border-white/[0.04] p-0.5 relative cursor-pointer hover:bg-white/[0.02]"
-                                                            onClick={() => slotApps.length < resources.length && handleSlotClick(d.toISOString().split('T')[0], hour)}>
-                                                            {slotApps.map((se) => {
-                                                                const resource = resources.find(r => r.id === se.resource_id)
-                                                                return (
-                                                                    <div key={se.id} className="rounded p-1 text-[8px] font-bold truncate mb-0.5 text-white"
-                                                                        style={{ backgroundColor: resource?.color || '#6366f1' }}>
-                                                                        {se.client_name}
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                        </div>
-                                                    )
-                                                })}
+                                                        return (
+                                                            <div key={i} className="border-r border-white/[0.04] p-0.5 relative cursor-pointer hover:bg-white/[0.02]"
+                                                                onClick={() => slotApps.length < resources.length && handleSlotClick(d.toISOString().split('T')[0], slot)}>
+                                                                {slotApps.map((se) => {
+                                                                    const resource = resources.find(r => r.id === se.resource_id)
+                                                                    return (
+                                                                        <div key={se.id} className="rounded p-0.5 px-1 text-[7px] font-bold truncate mb-0.5 text-white"
+                                                                            style={{ backgroundColor: resource?.color || '#6366f1' }}>
+                                                                            {se.client_name}
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             )}
 

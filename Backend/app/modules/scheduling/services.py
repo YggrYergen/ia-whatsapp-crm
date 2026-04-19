@@ -25,9 +25,9 @@ class SchedulingService:
         return await NativeSchedulingService.check_availability(tenant, date_str, duration_minutes)
 
     @staticmethod
-    async def book_appointment(tenant: TenantContext, date_str: str, time_str: str, duration_minutes: int, user_name: str, patient_phone: str) -> dict:
-        logger.info(f"Booking {patient_phone} at {date_str} {time_str}")
-        res = await NativeSchedulingService.book_appointment(tenant, date_str, time_str, duration_minutes, user_name, patient_phone)
+    async def book_appointment(tenant: TenantContext, date_str: str, time_str: str, duration_minutes: int, user_name: str, patient_phone: str, service_name: str | None = None) -> dict:
+        logger.info(f"Booking {patient_phone} at {date_str} {time_str} | service={service_name}")
+        res = await NativeSchedulingService.book_appointment(tenant, date_str, time_str, duration_minutes, user_name, patient_phone, service_name=service_name)
         if res.get("status") == "success":
             try:
                 payload = {

@@ -89,7 +89,11 @@ class CheckMyAppointmentsTool(AITool):
 
 class BookAppointmentTool(AITool):
     name = "book_round_robin"
-    description = "Agenda una cita rotando entre boxes. Requiere fecha, hora, duración, nombre y teléfono."
+    description = (
+        "Agenda una cita rotando entre boxes. Requiere fecha, hora, nombre del servicio, nombre y teléfono. "
+        "La duración se resuelve automáticamente según el servicio. Si no se especifica servicio, "
+        "se usa la duración por defecto del negocio."
+    )
     def get_schema(self, provider: str) -> Dict[str, Any]:
         return {
             "type": "function",
@@ -102,11 +106,12 @@ class BookAppointmentTool(AITool):
                     "properties": {
                         "date_str": {"type": "string", "description": "YYYY-MM-DD"},
                         "time_str": {"type": "string", "description": "HH:MM"},
-                        "duration_minutes": {"type": "integer", "description": "30 o 60"},
+                        "service_name": {"type": ["string", "null"], "description": "Nombre del servicio (ej: 'Sesión de Diagnóstico', 'Tratamiento CelluDetox Pack'). Null si el cliente no especifica."},
+                        "duration_minutes": {"type": ["integer", "null"], "description": "Duración en minutos. Null = se resuelve automáticamente del servicio o configuración."},
                         "user_name": {"type": "string", "description": "Nombre del paciente"},
                         "phone": {"type": "string", "description": "Teléfono del paciente"}
                     },
-                    "required": ["date_str", "time_str", "duration_minutes", "user_name", "phone"],
+                    "required": ["date_str", "time_str", "service_name", "duration_minutes", "user_name", "phone"],
                     "additionalProperties": False
                 }
             }
@@ -117,18 +122,68 @@ class BookAppointmentTool(AITool):
         time_str = kwargs.get("time_str")
         user_name = kwargs.get("user_name", "Desconocido")
         phone = kwargs.get("phone", "unknown")
-        duration = kwargs.get("duration_minutes", 30)
+        service_name = kwargs.get("service_name")
+        duration = kwargs.get("duration_minutes")
+        
+        tenant_id = tenant.id if tenant else "unknown"
+        
+        # Auto-resolve duration from service_name if not explicitly provided
+        # This ensures appointments always get the correct duration for their service
+        if service_name and not duration:
+            try:
+                from app.infrastructure.database.supabase_client import SupabasePooler
+                db = await SupabasePooler.get_client()
+                svc_res = await (
+                    db.table("tenant_services")
+                    .select("duration_minutes, name")
+                    .eq("tenant_id", tenant_id)
+                    .ilike("name", f"%{service_name}%")
+                    .eq("is_active", True)
+                    .limit(1)
+                    .execute()
+                )
+                if svc_res.data:
+                    duration = svc_res.data[0].get("duration_minutes", 30)
+                    # Use the canonical service name from DB
+                    service_name = svc_res.data[0].get("name", service_name)
+                    logger.info(
+                        f"[BookAppointmentTool] Auto-resolved service='{service_name}' → "
+                        f"duration={duration}min | tenant={tenant_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"[BookAppointmentTool] Service '{service_name}' not found for "
+                        f"tenant={tenant_id}, using default duration"
+                    )
+                    sentry_sdk.add_breadcrumb(
+                        category="scheduling",
+                        message=f"Service '{service_name}' not found, using default",
+                        level="warning",
+                    )
+            except Exception as svc_err:
+                logger.warning(f"[BookAppointmentTool] Service lookup failed: {svc_err}")
+                sentry_sdk.add_breadcrumb(
+                    category="scheduling", message=f"Service lookup failed: {svc_err}",
+                    level="warning",
+                )
+        
+        # Final fallback: use default from scheduling_config or 30
+        if not duration:
+            duration = 30
+        
         try:
-            res = await SchedulingService.book_appointment(tenant, date_str, time_str, duration, user_name, phone)
+            res = await SchedulingService.book_appointment(
+                tenant, date_str, time_str, duration, user_name, phone,
+                service_name=service_name
+            )
             return json.dumps(res)
         except Exception as e:
-            tenant_id = tenant.id if tenant else "unknown"
             logger.error(f"[BookAppointmentTool] Failed for tenant={tenant_id}, {date_str} {time_str}, patient={user_name}: {e}")
-            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "time_str": time_str, "user_name": user_name, "phone": phone})
+            sentry_sdk.set_context("tool_execution", {"tool": self.name, "tenant_id": tenant_id, "date_str": date_str, "time_str": time_str, "user_name": user_name, "phone": phone, "service_name": service_name, "duration": duration})
             sentry_sdk.capture_exception(e)
             await send_discord_alert(
                 title=f"❌ BookAppointmentTool Failed | Tenant {tenant_id}",
-                description=f"date={date_str} {time_str}, patient={user_name}, phone={phone}\nError: {str(e)[:300]}",
+                description=f"date={date_str} {time_str}, patient={user_name}, phone={phone}, service={service_name}\nError: {str(e)[:300]}",
                 severity="error", error=e
             )
             return json.dumps({"status": "error", "message": f"Error booking appointment: {str(e)}"})
