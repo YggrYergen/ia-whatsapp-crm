@@ -13,6 +13,9 @@ from app.infrastructure.telemetry.logger_service import logger
 from app.modules.intelligence.tool_registry import tool_registry
 from app.infrastructure.telemetry.discord_notifier import send_discord_alert
 import sentry_sdk
+import httpx
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 
 # ============================================================
 # BUG-1 Layer 1: Internal System Prompt — Tool-Use Contract
@@ -1129,30 +1132,54 @@ class ProcessMessageUseCase:
             # PARALLEL: Persist assistant reply + send via Meta API + unset processing
             # ============================================================
             # Error points #17-20: Post-loop parallel operations
+            # ============================================================
+            # TENACITY RETRY POLICY (INC-7, April 18 2026)
+            # Transient httpx.ConnectError / ConnectTimeout caused cascading
+            # failures — appointment modified but user never received reply.
+            # Fix: 3 attempts, exponential backoff 1s→2s→4s, only on
+            # transient network errors. Non-network errors fail immediately.
+            # Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages
+            #      → "Implement Exponential Backoff"
+            # Ref: https://www.python-httpx.org/ → retry on ConnectError
+            # ============================================================
+            _RETRY_POLICY = dict(
+                retry=retry_if_exception_type((httpx.ConnectError, httpx.ConnectTimeout)),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=1, max=8),
+                before_sleep=before_sleep_log(logger, logging.WARNING),
+                reraise=True,
+            )
+
             async def _persist_reply():
                 if contact_id:
                     try:
-                        await db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                        @retry(**_RETRY_POLICY)
+                        async def _do_persist():
+                            await db.table("messages").insert({"contact_id": contact_id, "tenant_id": tenant.id, "sender_role": "assistant", "content": reply_text}).execute()
+                        await _do_persist()
                     except Exception as persist_err:
-                        logger.error(f"❌ [ORCH] Failed to persist reply: {persist_err}")
+                        logger.error(f"❌ [ORCH] Failed to persist reply after retries: {repr(persist_err)}")
                         sentry_sdk.capture_exception(persist_err)
                         await send_discord_alert(
                             title=f"❌ Reply Persistence Failed | Tenant {tenant.id}",
-                            description=f"Contact: {contact_id}\nReply: {reply_text[:200]}\nError: {str(persist_err)[:200]}",
+                            description=f"Contact: {contact_id}\nReply: {reply_text[:200]}\nError: {repr(persist_err)[:200]}",
                             severity="error", error=persist_err
                         )
 
             async def _send_meta():
                 if not is_simulation:
                     try:
-                        logger.info("📲 [ORCH] Sending via Meta API...")
-                        await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+                        @retry(**_RETRY_POLICY)
+                        async def _do_send():
+                            logger.info("📲 [ORCH] Sending via Meta API...")
+                            await MetaGraphAPIClient.send_text_message(phone_number_id=tenant.ws_phone_id, to=patient_phone, text=reply_text, token=tenant.ws_token or "mock")
+                        await _do_send()
                     except Exception as meta_err:
-                        logger.error(f"❌ [ORCH] Meta API send failed: {meta_err}")
+                        logger.error(f"❌ [ORCH] Meta API send failed after retries: {repr(meta_err)}")
                         sentry_sdk.capture_exception(meta_err)
                         await send_discord_alert(
                             title=f"💥 Meta API Send Failed | Tenant {tenant.id}",
-                            description=f"Phone: {patient_phone}\nReply: {reply_text[:200]}\nError: {str(meta_err)[:200]}",
+                            description=f"Phone: {patient_phone}\nReply: {reply_text[:200]}\nError: {repr(meta_err)[:200]}",
                             severity="error", error=meta_err
                         )
 
@@ -1195,19 +1222,31 @@ class ProcessMessageUseCase:
                     logger.debug(f"📨 [ORCH] Shadow-forwarded to admin {shadow_phone}")
                 except Exception as fwd_err:
                     # Non-fatal: shadow forwarding failure must not affect the user
-                    logger.error(f"❌ [ORCH] Shadow forward failed: {fwd_err}")
+                    logger.error(f"❌ [ORCH] Shadow forward failed: {repr(fwd_err)}")
                     sentry_sdk.capture_exception(fwd_err)
                     await send_discord_alert(
                         title=f"❌ Shadow Forward Failed | Tenant {tenant.id}",
-                        description=f"Admin: {shadow_phone}\nError: {str(fwd_err)[:300]}",
+                        description=f"Admin: {shadow_phone}\nError: {repr(fwd_err)[:300]}",
                         severity="error", error=fwd_err
                     )
 
-            await asyncio.gather(
+            # return_exceptions=True: prevents one failing task from cancelling
+            # the others. Each task has its own try/except (Rule 9), but gather
+            # itself can still propagate if a task's except block raises.
+            _gather_results = await asyncio.gather(
                 _persist_reply(),
                 _send_meta(),
-                _shadow_forward()
+                _shadow_forward(),
+                return_exceptions=True
             )
+            # Log any unexpected exceptions that leaked past the internal try/except
+            _task_names = ["_persist_reply", "_send_meta", "_shadow_forward"]
+            for _i, _result in enumerate(_gather_results):
+                if isinstance(_result, BaseException):
+                    logger.error(
+                        f"💥 [ORCH] Gather task '{_task_names[_i]}' leaked exception: {repr(_result)}"
+                    )
+                    sentry_sdk.capture_exception(_result)
             logger.info("✨ [ORCH] Done.")
 
         except Exception as e:

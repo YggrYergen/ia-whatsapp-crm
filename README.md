@@ -550,6 +550,7 @@ openai>=1.14.0             google-generativeai>=0.4.1  pydantic>=2.6.4
 pydantic-settings>=2.2.1   httpx>=0.27.0              python-dotenv>=1.0.1
 orjson>=3.9.15             pytz>=2024.1               google-api-python-client>=2.122.0
 google-auth-oauthlib>=1.2.0 sentry-sdk[fastapi]>=2.0.0 cryptography>=42.0.0
+cachetools>=5.3.0          asgi-correlation-id>=4.3.0  tenacity>=8.2.0
 
 Dev: pytest>=8.0.0, pytest-asyncio>=0.23.5, coverage>=7.4.0
 ```

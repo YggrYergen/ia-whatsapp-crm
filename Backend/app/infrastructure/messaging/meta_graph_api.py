@@ -17,7 +17,14 @@ class MetaGraphAPIClient:
         if cls._http_client is None:
             # Aggressive connection limits tailored for socket resilience under scale.
             limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
-            cls._http_client = httpx.AsyncClient(limits=limits, timeout=10.0)
+            cls._http_client = httpx.AsyncClient(
+                limits=limits,
+                # Granular timeout: connect=10s catches genuine unreachability,
+                # read=30s gives headroom for transient Meta API slowness.
+                # Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages
+                # Meta recommends client-side timeout management, 10-30s range.
+                timeout=httpx.Timeout(30.0, connect=10.0)
+            )
         return cls._http_client
 
     @staticmethod

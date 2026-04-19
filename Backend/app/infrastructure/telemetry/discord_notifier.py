@@ -18,6 +18,25 @@ _IS_PRODUCTION = (getattr(settings, "ENVIRONMENT", "development") == "production
 _ENV_PREFIX = "" if _IS_PRODUCTION else "[🔧 DESARROLLO] "
 _ENV_LABEL = "production" if _IS_PRODUCTION else "desarrollo"
 
+# ============================================================
+# Singleton httpx client for Discord webhook calls.
+# Creating a NEW AsyncClient per send_discord_alert() call
+# requires a fresh TCP handshake — which is GUARANTEED to fail
+# during network instability (the exact time Discord alerts
+# are most needed). Reusing a pooled client allows keepalive
+# connections to recover.
+# Ref: README §8 Design Patterns → Singleton pattern
+# ============================================================
+_discord_http_client: httpx.AsyncClient | None = None
+
+def _get_discord_client() -> httpx.AsyncClient:
+    global _discord_http_client
+    if _discord_http_client is None:
+        _discord_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0)
+        )
+    return _discord_http_client
+
 async def send_discord_alert(title: str, description: str, error: Exception = None, severity: str = "error"):
     """
     Sends an alert to Discord using Webhooks.
@@ -72,10 +91,8 @@ async def send_discord_alert(title: str, description: str, error: Exception = No
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            # 15s timeout: Cloud Run cold-starts + Meta API can cause cascading
-            # ConnectErrors that also slow down Discord sends
-            await client.post(webhook_url, json=payload, timeout=15.0)
+        client = _get_discord_client()
+        await client.post(webhook_url, json=payload)
     except Exception as e:
         # Discord itself failed — capture repr() because ConnectError has empty str()
         logger.error(f"Failed to send Discord alert: {repr(e)}")
