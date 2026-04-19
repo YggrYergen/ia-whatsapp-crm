@@ -777,11 +777,101 @@ class NativeSchedulingService:
         """
         Reschedule an appointment: cancel the old one, book a new one.
 
+        PRESERVES original appointment metadata (duration, service, notes).
         This is atomically safe because each step has its own EXCLUDE constraint protection.
         """
         _WHERE = "NativeSchedulingService.update_appointment"
         tenant_id = tenant.id if tenant else "unknown"
         try:
+            # ── Step 0: Look up original appointment to preserve metadata ──
+            # Without this, duration/service/notes would be silently lost on reschedule.
+            original_duration = 30  # Safe fallback
+            original_service = None
+            original_notes = None
+            try:
+                db = await SupabasePooler.get_client()
+                # Build time range: exact minute match for the original slot
+                start_lower = f"{date_str}T{time_str}:00"
+                start_upper = f"{date_str}T{time_str}:59"
+                original_res = await (
+                    db.table("appointments")
+                    .select("duration_minutes, service_name, notes")
+                    .eq("tenant_id", str(tenant_id))
+                    .eq("patient_phone", patient_phone)
+                    .gte("start_time", start_lower)
+                    .lte("start_time", start_upper)
+                    .limit(1)
+                    .execute()
+                )
+                if original_res.data:
+                    original_duration = original_res.data[0].get("duration_minutes", 30) or 30
+                    original_service = original_res.data[0].get("service_name")
+                    original_notes = original_res.data[0].get("notes")
+                    logger.info(
+                        f"📋 [{_WHERE}] Original appointment found: duration={original_duration}min, "
+                        f"service={original_service}, notes={'yes' if original_notes else 'none'} | "
+                        f"tenant={tenant_id}"
+                    )
+                else:
+                    _msg = (
+                        f"[{_WHERE}] Original appointment NOT found for metadata preservation | "
+                        f"tenant={tenant_id} | phone={patient_phone} | "
+                        f"slot={date_str} {time_str} | env={settings.ENVIRONMENT} | "
+                        f"Falling back to duration=30"
+                    )
+                    logger.warning(_msg)
+                    sentry_sdk.set_context("update_appt_lookup_miss", {
+                        "tenant_id": str(tenant_id),
+                        "patient_phone": patient_phone,
+                        "date_str": date_str,
+                        "time_str": time_str,
+                        "environment": settings.ENVIRONMENT,
+                    })
+                    sentry_sdk.capture_message(_msg, level="warning")
+                    await send_discord_alert(
+                        title=f"⚠️ Reschedule: Original Not Found | Tenant {tenant_id}",
+                        description=(
+                            f"**Where:** `{_WHERE}`\n"
+                            f"**What:** Could not find original appointment to preserve metadata\n"
+                            f"**Slot:** {date_str} {time_str}\n"
+                            f"**Phone:** {patient_phone}\n"
+                            f"**Fallback:** duration=30min, no service/notes\n"
+                            f"**Env:** {settings.ENVIRONMENT}"
+                        ),
+                        severity="warning",
+                    )
+            except Exception as lookup_err:
+                # Non-fatal: proceed with defaults if lookup fails
+                _msg = (
+                    f"[{_WHERE}] Original appointment lookup FAILED (non-blocking) | "
+                    f"tenant={tenant_id} | phone={patient_phone} | "
+                    f"slot={date_str} {time_str} | env={settings.ENVIRONMENT} | "
+                    f"error={repr(lookup_err)}"
+                )
+                logger.error(_msg, exc_info=True)
+                sentry_sdk.set_context("update_appt_lookup_fail", {
+                    "tenant_id": str(tenant_id),
+                    "patient_phone": patient_phone,
+                    "date_str": date_str,
+                    "time_str": time_str,
+                    "environment": settings.ENVIRONMENT,
+                })
+                sentry_sdk.capture_exception(lookup_err)
+                await send_discord_alert(
+                    title=f"⚠️ Reschedule Lookup Failed | Tenant {tenant_id}",
+                    description=(
+                        f"**Where:** `{_WHERE}`\n"
+                        f"**What:** DB lookup for original appointment failed\n"
+                        f"**Slot:** {date_str} {time_str}\n"
+                        f"**Phone:** {patient_phone}\n"
+                        f"**Fallback:** duration=30min\n"
+                        f"**Env:** {settings.ENVIRONMENT}\n"
+                        f"**Error:** ```{repr(lookup_err)[:300]}```"
+                    ),
+                    severity="warning",
+                    error=lookup_err,
+                )
+
             # Step 1: Cancel the existing appointment
             cancel_res = await NativeSchedulingService.cancel_appointment(
                 tenant, date_str, time_str, patient_phone
@@ -792,9 +882,10 @@ class NativeSchedulingService:
                     "message": f"No se pudo reagendar. Falló cancelación previa: {cancel_res.get('message')}",
                 }
 
-            # Step 2: Book the new slot
+            # Step 2: Book the new slot — preserving original duration/service/notes
             book_res = await NativeSchedulingService.book_appointment(
-                tenant, new_date, new_time, 30, user_name, patient_phone
+                tenant, new_date, new_time, original_duration, user_name, patient_phone,
+                service_name=original_service, notes=original_notes
             )
             if book_res.get("status") == "success":
                 logger.info(

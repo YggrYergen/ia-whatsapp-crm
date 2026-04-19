@@ -30,6 +30,7 @@ INTERNAL_TOOL_RULES = """
 - Para agendar SIEMPRE usa 'book_round_robin'.
 - Para evaluar scoring SIEMPRE usa 'update_patient_scoring'.
 - Si un resultado de herramienta indica ERROR, informa al paciente honestamente que la acción NO se completó.
+- Cuando el paciente SOLICITA una acción (agendar, cancelar, mover, reagendar cita), EJECÚTALA INMEDIATAMENTE con la herramienta. NO pidas confirmación secundaria como "¿Quieres que proceda?", "¿Confirmas?", o "¿Deseas que lo haga?". El paciente ya confirmó su intención al solicitarla. Solo pide confirmación si FALTA información obligatoria (fecha, hora, servicio).
 """.strip()
 
 # ============================================================
@@ -686,6 +687,7 @@ class ProcessMessageUseCase:
             total_completion_tokens = 0
             rounds_executed = 0
             ack_sent = False  # Pre-tool ACK: send exactly one acknowledgment per pipeline run
+            ack_text_for_shadow = ""  # Captured ACK text for shadow forward
 
             # ── ACK Templates ──
             # Tool-specific acknowledgment messages sent BEFORE tool execution
@@ -868,6 +870,7 @@ class ProcessMessageUseCase:
                                 token=tenant.ws_token or "mock"
                             )
                             ack_sent = True
+                            ack_text_for_shadow = ack_text  # Capture for shadow forward
                             logger.info(f"✅ [ORCH] ACK delivered to {patient_phone}")
 
                             # Persist ACK to messages table for CRM audit trail
@@ -1172,9 +1175,12 @@ class ProcessMessageUseCase:
                     return
                 try:
                     tenant_name = tenant.name or str(tenant.id)[:8]
+                    # Include ACK text in shadow if it was sent
+                    ack_line = f"\n⏳ ACK: {ack_text_for_shadow}" if ack_text_for_shadow else ""
                     forward_text = (
                         f"[{tenant_name}]\n"
-                        f"👤 {patient_phone}: {text_body}\n"
+                        f"👤 {patient_phone}: {text_body}"
+                        f"{ack_line}\n"
                         f"🤖 Bot: {reply_text}"
                     )
                     # Truncate to WhatsApp's 4096 char limit
