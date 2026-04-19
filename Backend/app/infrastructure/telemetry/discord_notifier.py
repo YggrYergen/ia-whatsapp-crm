@@ -73,10 +73,12 @@ async def send_discord_alert(title: str, description: str, error: Exception = No
 
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(webhook_url, json=payload, timeout=5.0)
+            # 15s timeout: Cloud Run cold-starts + Meta API can cause cascading
+            # ConnectErrors that also slow down Discord sends
+            await client.post(webhook_url, json=payload, timeout=15.0)
     except Exception as e:
-        # Discord itself failed — at least capture in Sentry so we know
-        logger.error(f"Failed to send Discord alert: {e}")
+        # Discord itself failed — capture repr() because ConnectError has empty str()
+        logger.error(f"Failed to send Discord alert: {repr(e)}")
         sentry_sdk.capture_exception(e)
 
 

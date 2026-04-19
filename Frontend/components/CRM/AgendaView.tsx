@@ -39,6 +39,13 @@ interface Appointment {
     notes: string | null
 }
 
+interface TenantService {
+    id: string
+    name: string
+    duration_minutes: number
+    is_active: boolean
+}
+
 interface SchedulingConfig {
     business_hours: Record<string, { start: string; end: string } | null>
     default_duration_minutes: number
@@ -115,9 +122,12 @@ export default function AgendaView() {
     const [bookingTime, setBookingTime] = useState("")
     const [bookingEndTime, setBookingEndTime] = useState("")
     const [bookingResourceId, setBookingResourceId] = useState("")
+    const [bookingServiceName, setBookingServiceName] = useState("")
+    const [bookingNotes, setBookingNotes] = useState("")
     const [patientName, setPatientName] = useState("")
     const [patientPhone, setPatientPhone] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [tenantServices, setTenantServices] = useState<TenantService[]>([])
 
     // ─── Data Fetching ───────────────────────────────────────────
 
@@ -175,6 +185,29 @@ export default function AgendaView() {
         }
     }, [currentTenantId])
 
+    const fetchTenantServices = useCallback(async () => {
+        if (!currentTenantId) return
+        const _where = `${_WHERE}.fetchTenantServices`
+        try {
+            const { data, error: fetchErr } = await supabase
+                .from('tenant_services')
+                .select('id, name, duration_minutes, is_active')
+                .eq('tenant_id', currentTenantId)
+                .eq('is_active', true)
+                .order('sort_order')
+
+            if (fetchErr) {
+                console.error(`[${_where}]`, fetchErr)
+                Sentry.captureException(fetchErr, { tags: { where: _where, tenant_id: currentTenantId } })
+                return
+            }
+            setTenantServices(data || [])
+        } catch (err) {
+            console.error(`[${_where}] Unexpected:`, err)
+            Sentry.captureException(err, { tags: { where: _where, tenant_id: currentTenantId } })
+        }
+    }, [currentTenantId])
+
     const fetchAppointments = useCallback(async () => {
         if (!currentTenantId) return
         const _where = `${_WHERE}.fetchAppointments`
@@ -211,9 +244,9 @@ export default function AgendaView() {
     const fetchAll = useCallback(async () => {
         setLoading(true)
         setError(null)
-        await Promise.all([fetchSchedulingConfig(), fetchResources(), fetchAppointments()])
+        await Promise.all([fetchSchedulingConfig(), fetchResources(), fetchAppointments(), fetchTenantServices()])
         setLoading(false)
-    }, [fetchSchedulingConfig, fetchResources, fetchAppointments])
+    }, [fetchSchedulingConfig, fetchResources, fetchAppointments, fetchTenantServices])
 
     useEffect(() => { fetchAll() }, [fetchAll])
 
@@ -300,7 +333,20 @@ export default function AgendaView() {
         const endMin = slotMin + defaultDur
         setBookingEndTime(`${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`)
         setBookingResourceId(resources[0]?.id || '')
+        setBookingServiceName('')
+        setBookingNotes('')
         setIsBookingOpen(true)
+    }
+
+    /** When a service is selected, auto-adjust end time to match its duration */
+    const handleServiceSelect = (serviceName: string) => {
+        setBookingServiceName(serviceName)
+        const svc = tenantServices.find(s => s.name === serviceName)
+        if (svc && bookingTime) {
+            const startMin = timeToMinutes(bookingTime)
+            const endMin = startMin + svc.duration_minutes
+            setBookingEndTime(`${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`)
+        }
     }
 
     // Compute duration in minutes from bookingTime → bookingEndTime
@@ -317,19 +363,15 @@ export default function AgendaView() {
         const _where = `${_WHERE}.handleBook`
         setIsSubmitting(true)
         try {
-            // Build ISO timestamps from date + time strings
-            const startISO = new Date(`${bookingDate}T${bookingTime}:00`).toISOString()
-            const endISO   = new Date(`${bookingDate}T${bookingEndTime}:00`).toISOString()
-
             const payload = {
                 tenant_id: currentTenantId,
                 resource_id: bookingResourceId || undefined,
-                start_time: startISO,
-                end_time: endISO,
                 duration_minutes: bookingDurationMin,
                 patient_name: patientName,
                 phone: patientPhone,
-                // Legacy fields kept for backward-compat with backend
+                service_name: bookingServiceName || undefined,
+                notes: bookingNotes.trim() || undefined,
+                // Backend expects these specific field names
                 date_str: bookingDate,
                 time_str: bookingTime,
                 duration: bookingDurationMin,
@@ -343,6 +385,8 @@ export default function AgendaView() {
             if (data.status === 'success') {
                 setPatientName('')
                 setPatientPhone('')
+                setBookingServiceName('')
+                setBookingNotes('')
                 setIsBookingOpen(false)
                 fetchAppointments()
             } else {
@@ -833,6 +877,28 @@ export default function AgendaView() {
                                 </div>
                             </div>
 
+                            {/* Service selector — pill buttons */}
+                            {tenantServices.length > 0 && (
+                                <div className="grid gap-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Servicio</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {tenantServices.map(svc => (
+                                            <button
+                                                key={svc.id}
+                                                onClick={() => handleServiceSelect(svc.name)}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                                    bookingServiceName === svc.name
+                                                        ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                                                        : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:bg-white/[0.08]'
+                                                }`}
+                                            >
+                                                {svc.name} <span className="text-[9px] opacity-60 ml-1">({svc.duration_minutes}m)</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Resource selector — only if more than 1 */}
                             {resources.length > 1 && (
                                 <div className="grid gap-1.5">
@@ -878,6 +944,18 @@ export default function AgendaView() {
                                     value={patientPhone}
                                     onChange={e => setPatientPhone(e.target.value)}
                                     className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 focus-visible:ring-indigo-500/30 focus-visible:border-indigo-500/50"
+                                />
+                            </div>
+
+                            {/* Notes */}
+                            <div className="grid gap-1.5">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Notas (Opcional)</label>
+                                <textarea
+                                    placeholder="Observaciones o indicaciones especiales..."
+                                    value={bookingNotes}
+                                    onChange={e => setBookingNotes(e.target.value)}
+                                    rows={2}
+                                    className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all resize-none"
                                 />
                             </div>
                         </div>
