@@ -451,6 +451,8 @@ def create_app() -> FastAPI:
                 patient_phone=payload.get("phone", "+5600000000"),
                 booked_by="manual_ui",
                 resource_id=payload.get("resource_id"),
+                service_name=payload.get("service_name"),
+                notes=payload.get("notes"),
             )
             return result
         except Exception as e:

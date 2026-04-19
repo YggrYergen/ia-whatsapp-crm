@@ -46,6 +46,7 @@ class MetaGraphAPIClient:
             sentry_sdk.capture_exception(e)
             raise
         except Exception as e:
-            logger.error(f"Hardware/Network HTTP layer error: {str(e)}")
+            # repr() because ConnectError and similar httpx exceptions return empty str()
+            logger.error(f"Hardware/Network HTTP layer error: {repr(e)}")
             sentry_sdk.capture_exception(e)
             raise

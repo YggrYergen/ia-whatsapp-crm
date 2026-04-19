@@ -344,6 +344,7 @@ class NativeSchedulingService:
         booked_by: str = "ai_assistant",
         resource_id: str | None = None,
         service_name: str | None = None,
+        notes: str | None = None,
     ) -> dict:
         """
         Book an appointment using round-robin resource selection.
@@ -507,7 +508,7 @@ class NativeSchedulingService:
                     "client_phone": patient_phone,
                     "status": "confirmed",
                     "booked_by": booked_by,
-                    "notes": f"Agendado por {booked_by}" + (f" | Servicio: {service_name}" if service_name else ""),
+                    "notes": notes or (f"Agendado por {booked_by}" + (f" | Servicio: {service_name}" if service_name else "")),
                 }
                 insert_res = await db.table("appointments").insert(appt_data).execute()
 
