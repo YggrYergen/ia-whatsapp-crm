@@ -105,6 +105,19 @@ function timeToMinutes(time: string): number {
     return h * 60 + (m || 0)
 }
 
+/**
+ * Locale-safe YYYY-MM-DD string from a Date object.
+ * CRITICAL: Do NOT use d.toISOString().split('T')[0] — it converts to UTC first,
+ * which shifts the date +1 day at night in Chile (UTC-4).
+ * Example: Sat Apr 19 21:00 CLT → .toISOString() → "2026-04-20T01:00:00Z" → "2026-04-20" (WRONG!)
+ */
+function toLocalDateStr(d: Date): string {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+}
+
 export default function AgendaView() {
     const { currentTenant, currentTenantId } = useTenant()
 
@@ -497,7 +510,7 @@ export default function AgendaView() {
                         <Button variant="outline" className="bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 shadow-sm gap-1.5 text-xs h-9" onClick={fetchAll}>
                             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Sincronizar
                         </Button>
-                        <Button onClick={() => handleSlotClick(new Date().toISOString().split('T')[0], timeSlots[0] || "09:00")}
+                        <Button onClick={() => handleSlotClick(toLocalDateStr(new Date()), timeSlots[0] || "09:00")}
                             className="bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 gap-1.5 text-xs h-9 font-black">
                             <CalendarCheck size={14} /> Nueva Cita
                         </Button>
@@ -667,7 +680,7 @@ export default function AgendaView() {
                                                                         </p>
                                                                     </div>
                                                                 ) : (
-                                                                    <div onClick={() => handleSlotClick(currentDate.toISOString().split('T')[0], slot)}
+                                                                    <div onClick={() => handleSlotClick(toLocalDateStr(currentDate), slot)}
                                                                         className="h-full w-full opacity-0 group-hover:opacity-100 flex items-center justify-center border border-dashed rounded-xl transition-all cursor-pointer hover:bg-white/[0.03]"
                                                                         style={{ borderColor: `${r.color}40` }}>
                                                                         <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: `${r.color}80` }}>+</span>
@@ -729,7 +742,7 @@ export default function AgendaView() {
 
                                                         return (
                                                             <div key={i} className="border-r border-white/[0.04] p-0.5 relative cursor-pointer hover:bg-white/[0.02]"
-                                                                onClick={() => slotApps.length < resources.length && handleSlotClick(d.toISOString().split('T')[0], slot)}>
+                                                                onClick={() => slotApps.length < resources.length && handleSlotClick(toLocalDateStr(d), slot)}>
                                                                 {slotApps.map((se) => {
                                                                     const resource = resources.find(r => r.id === se.resource_id)
                                                                     return (
