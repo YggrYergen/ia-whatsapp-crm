@@ -43,6 +43,9 @@ from app.api.services_api import router as services_router
 from app.api.resources_api import router as resources_router
 from app.api.scheduling_config_api import router as scheduling_config_router
 
+# Staff messaging API — outbound WhatsApp from CRM chat
+from app.api.staff_messaging import router as staff_messaging_router
+
 from app.modules.intelligence.router import LLMFactory
 from app.infrastructure.llm_providers.openai_adapter import OpenAIStrategy  # Keep for rollback
 from app.infrastructure.llm_providers.openai_responses_adapter import OpenAIResponsesStrategy
@@ -293,6 +296,9 @@ def create_app() -> FastAPI:
     app.include_router(services_router)
     app.include_router(resources_router)
     app.include_router(scheduling_config_router)
+
+    # Staff messaging — outbound WhatsApp from CRM
+    app.include_router(staff_messaging_router)
 
     @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():
