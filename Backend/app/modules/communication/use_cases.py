@@ -685,6 +685,22 @@ class ProcessMessageUseCase:
             total_prompt_tokens = 0
             total_completion_tokens = 0
             rounds_executed = 0
+            ack_sent = False  # Pre-tool ACK: send exactly one acknowledgment per pipeline run
+
+            # ── ACK Templates ──
+            # Tool-specific acknowledgment messages sent BEFORE tool execution
+            # to eliminate perceived dead-air for the customer.
+            # Tools that execute in <2s (escalation, scoring) are excluded.
+            _ACK_TEMPLATES = {
+                "book_round_robin": "Perfecto, estoy verificando disponibilidad para agendar tu cita 📅...",
+                "get_merged_availability": "Dame un momento, estoy revisando los horarios disponibles 📋...",
+                "delete_appointment": "Un momento, estoy procesando la cancelación ❌...",
+                "modify_appointment": "Un momento, estoy modificando tu cita 📝...",
+                "move_appointment": "Un momento, estoy buscando el mejor horario para reagendar 🔄...",
+            }
+            _ACK_DEFAULT = "Dame un momento, estoy procesando tu solicitud ⏳..."
+            # Tools that are fast enough to NOT need an ACK
+            _ACK_SKIP_TOOLS = {"request_human_escalation", "update_patient_scoring"}
 
             for round_num in range(MAX_TOOL_ROUNDS + 1):  # +1 allows a final text-only response
                 # Determine tools availability — strip tools on final safety round
@@ -804,6 +820,129 @@ class ProcessMessageUseCase:
                 if response_dto.content:
                     assistant_tool_msg["content"] = response_dto.content
                 history.append(assistant_tool_msg)
+
+                # ============================================================
+                # PRE-TOOL ACK: Send immediate acknowledgment to customer
+                # 
+                # Why: Tool execution + LLM follow-up takes 15-130s.
+                #      Customer sees silence → frustration → repeat messages.
+                #      ACK gives instant feedback: "your request was understood."
+                #
+                # Rules:
+                #   1. Sent ONCE per pipeline (ack_sent flag)
+                #   2. LLM content (if any) takes priority over template
+                #   3. Fast tools (escalation, scoring) are skipped
+                #   4. Non-blocking: failure never stops tool execution
+                #   5. Persisted to messages table for CRM audit trail
+                #
+                # Ref: Meta API pair-rate-limit is per-user behavioral;
+                #      2 msgs per turn (ACK + final) is well within safe range.
+                # ============================================================
+                if not ack_sent and not is_simulation:
+                    first_tool_name = response_dto.tool_calls[0]["name"] if response_dto.tool_calls else "unknown"
+                    # Skip ACK for fast tools that don't need it
+                    if first_tool_name not in _ACK_SKIP_TOOLS:
+                        # Priority: LLM's own content > tool-specific template > default
+                        ack_text = (
+                            response_dto.content.strip()
+                            if response_dto.content and response_dto.content.strip()
+                            else _ACK_TEMPLATES.get(first_tool_name, _ACK_DEFAULT)
+                        )
+                        try:
+                            logger.info(
+                                f"📨 [ORCH] Sending pre-tool ACK | tool={first_tool_name} | "
+                                f"source={'llm_content' if response_dto.content and response_dto.content.strip() else 'template'} | "
+                                f"len={len(ack_text)} | tenant={tenant.id}"
+                            )
+                            sentry_sdk.add_breadcrumb(
+                                category="ack",
+                                message=f"Pre-tool ACK for {first_tool_name}",
+                                data={"tool": first_tool_name, "ack_len": len(ack_text), "source": "llm" if response_dto.content else "template"},
+                                level="info",
+                            )
+                            # Send ACK to customer via Meta API
+                            await MetaGraphAPIClient.send_text_message(
+                                phone_number_id=tenant.ws_phone_id,
+                                to=patient_phone,
+                                text=ack_text,
+                                token=tenant.ws_token or "mock"
+                            )
+                            ack_sent = True
+                            logger.info(f"✅ [ORCH] ACK delivered to {patient_phone}")
+
+                            # Persist ACK to messages table for CRM audit trail
+                            if contact_id:
+                                try:
+                                    await db.table("messages").insert({
+                                        "contact_id": contact_id,
+                                        "tenant_id": tenant.id,
+                                        "sender_role": "assistant",
+                                        "content": ack_text,
+                                    }).execute()
+                                    logger.debug(f"💾 [ORCH] ACK persisted for contact {contact_id}")
+                                except Exception as ack_persist_err:
+                                    # Non-blocking: ACK was sent to customer, persistence is best-effort
+                                    _persist_msg = (
+                                        f"[ORCH] ACK persistence failed (non-blocking) | "
+                                        f"tenant={tenant.id} | contact={contact_id} | "
+                                        f"phone={patient_phone} | tool={first_tool_name} | "
+                                        f"env={settings.ENVIRONMENT} | error={repr(ack_persist_err)}"
+                                    )
+                                    logger.error(_persist_msg, exc_info=True)
+                                    sentry_sdk.set_context("ack_persist_failure", {
+                                        "tenant_id": str(tenant.id),
+                                        "contact_id": str(contact_id),
+                                        "patient_phone": patient_phone,
+                                        "tool_name": first_tool_name,
+                                        "ack_text_preview": ack_text[:100],
+                                        "environment": settings.ENVIRONMENT,
+                                    })
+                                    sentry_sdk.capture_exception(ack_persist_err)
+                                    await send_discord_alert(
+                                        title=f"⚠️ ACK Persist Failed | Tenant {tenant.id}",
+                                        description=(
+                                            f"**Where:** `ProcessMsgUC.ack_persist`\n"
+                                            f"**What:** ACK sent to customer but DB persist failed\n"
+                                            f"**Contact:** `{contact_id}`\n"
+                                            f"**Phone:** {patient_phone}\n"
+                                            f"**Tool:** {first_tool_name}\n"
+                                            f"**Env:** {settings.ENVIRONMENT}\n"
+                                            f"**Error:** ```{repr(ack_persist_err)[:300]}```"
+                                        ),
+                                        severity="warning", error=ack_persist_err
+                                    )
+                        except Exception as ack_send_err:
+                            # NON-BLOCKING: ACK failure must NEVER prevent tool execution
+                            _ack_err_msg = (
+                                f"[ORCH] ACK send FAILED (non-blocking) | "
+                                f"tenant={tenant.id} | contact={contact_id} | "
+                                f"phone={patient_phone} | tool={first_tool_name} | "
+                                f"env={settings.ENVIRONMENT} | error={repr(ack_send_err)}"
+                            )
+                            logger.error(_ack_err_msg, exc_info=True)
+                            sentry_sdk.set_context("ack_send_failure", {
+                                "tenant_id": str(tenant.id),
+                                "contact_id": str(contact_id),
+                                "patient_phone": patient_phone,
+                                "tool_name": first_tool_name,
+                                "ack_text_preview": ack_text[:100],
+                                "environment": settings.ENVIRONMENT,
+                            })
+                            sentry_sdk.capture_exception(ack_send_err)
+                            await send_discord_alert(
+                                title=f"⚠️ ACK Send Failed | Tenant {tenant.id}",
+                                description=(
+                                    f"**Where:** `ProcessMsgUC.ack_send`\n"
+                                    f"**What:** Pre-tool acknowledgment failed (non-blocking)\n"
+                                    f"**Contact:** `{contact_id}`\n"
+                                    f"**Phone:** {patient_phone}\n"
+                                    f"**Tool:** {first_tool_name}\n"
+                                    f"**Env:** {settings.ENVIRONMENT}\n"
+                                    f"**Error:** ```{repr(ack_send_err)[:300]}```"
+                                ),
+                                severity="warning", error=ack_send_err
+                            )
+                            # ack_sent remains False — no state corruption
 
                 # STEP 2: Execute each tool and append role:"tool" response
                 has_crash = False
