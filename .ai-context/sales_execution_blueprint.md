@@ -1,32 +1,50 @@
-# Sales Execution Blueprint v1.0 — Full Response to Strategic Discussion
+# Sales Execution Blueprint v2.0 — Flash CRM Edition
 
-**Date:** 2026-04-18  
-**Status:** 🟡 FINAL DISCUSSION — pending your approval to execute  
+**Date:** 2026-04-20 (Updated from v1.0 2026-04-18)  
+**Status:** 🟢 ACTIVE — Prep work in progress  
 **Goal:** 10 sales × 130-200K CLP setup fee within sprint period  
-**Re-contact play:** May 1-10, cheaper offer for warm "not yet" prospects
+**Re-contact play:** May 1-10, cheaper offer for warm "not yet" prospects  
+**Primary Execution Tool:** Flash CRM v2 (replaces Google Sheets from v1.0)
+
+---
+
+## CHANGELOG v1.0 → v2.0
+
+| Area | v1.0 | v2.0 |
+|:-----|:-----|:-----|
+| Call tracking | Google Sheet (to build) | ✅ Flash CRM DialerView + callAttempts[] |
+| Lead management | Google Sheet columns | ✅ Flash CRM LeadDetail + scoring |
+| CSV import + scoring | Manual sheet | ✅ Flash CRM auto-scoring (Pain/Reach/Market/Urgency) |
+| Secret Shopper tracking | Google Sheet tab | ✅ Flash CRM ShopperBatchView + ShopperResultModal |
+| Demo pipeline | Google Sheet columns | ✅ Flash CRM PostCallModal (date picker + link field) |
+| ACA templates | Copy-paste from doc | ✅ Flash CRM TemplateDrawer |
+| Daily metrics | Manual sheet formulas | ✅ Flash CRM TrackingDashboard |
+| Tier/Category filters | Not built | ✅ Flash CRM LeadList filters |
+| Data sourcing tools | Outscraper only | 8+ platforms analyzed (see Section 8) |
+| CasaVitaCure SLA | Pending | ✅ Done (data wiped, clinical knowledge injected, dash fixed) |
 
 ---
 
 ## TABLE OF CONTENTS
 
-1. [Strategy 1 Revised: IG Ad Spy + Phone Extraction](#strategy-1-revised)
-2. [Strategy 2 Revised: Secret Shopper at Scale](#strategy-2-revised)
-3. [Strategy 3 Revised: Google Maps Intelligence Engine](#strategy-3-revised)
-4. [Strategy 5 Revised: Walk-In + Where to Live](#strategy-5-revised)
-5. [Strategy 6 Revised: Content & Programmatic Ads](#strategy-6-revised)
-6. [Strategy 7 Revised: Warm Network ACA Templates](#strategy-7-revised)
-7. [Part 2 Revised: 60 Calls/Day Telephone Engine](#part-2-revised)
-8. [Part 3 Revised: Google Maps API vs Free — Cost Analysis](#part-3-revised)
-9. [Part 4 Revised: The 6-Layer Parallel Execution Engine](#part-4-revised)
-10. [Part 5 Revised: All Answers + City Recommendation](#part-5-revised)
+1. [Strategy 1: IG Ad Spy + Phone Extraction](#strategy-1)
+2. [Strategy 2: Secret Shopper at Scale](#strategy-2)
+3. [Strategy 3: Google Maps Intelligence Engine](#strategy-3)
+4. [Strategy 5: Walk-In + Where to Live](#strategy-5)
+5. [Strategy 6: Content & Programmatic Ads](#strategy-6)
+6. [Strategy 7: Warm Network ACA Templates](#strategy-7)
+7. [60 Calls/Day Telephone Engine](#telephone-engine)
+8. [DATA SOURCING — Complete Tool Arsenal (NEW v2.0)](#data-sourcing)
+9. [GEOGRAPHIC QUERY OPTIMIZATION — Chile Comuna Grid (NEW v2.0)](#geo-optimization)
+10. [The 6-Layer Parallel Execution Engine](#parallel-engine)
 11. [The Daily Operating System — Hour by Hour](#daily-os)
-12. [Flash-CRM Integration Vision](#flash-crm)
-13. [Next Steps — Immediate Execution Queue](#next-steps)
+12. [Flash-CRM Integration (UPDATED v2.0)](#flash-crm)
+13. [Next Steps — Immediate Execution Queue (UPDATED v2.0)](#next-steps)
 
 ---
 
-<a name="strategy-1-revised"></a>
-## 1. STRATEGY 1 REVISED: IG Ad Spy + Phone Extraction
+<a name="strategy-1"></a>
+## 1. STRATEGY 1: IG Ad Spy + Phone Extraction
 
 ### The Problem You Identified
 Many Chilean businesses on IG have phone numbers in their bio — some properly configured as WhatsApp links, many misconfigured (just a number). You want to extract this at scale + run a filter in parallel.
@@ -73,8 +91,8 @@ For each prospect extracted, score on 3 binary signals:
 
 ---
 
-<a name="strategy-2-revised"></a>
-## 2. STRATEGY 2 REVISED: Secret Shopper at Scale
+<a name="strategy-2"></a>
+## 2. STRATEGY 2: Secret Shopper at Scale
 
 ### Your Constraint
 Limited hours. Need maximum efficiency per test. Must stay within ALL terms of service.
@@ -86,7 +104,7 @@ Limited hours. Need maximum efficiency per test. Must stay within ALL terms of s
 ### Optimized Process (3 minutes per test vs. 10)
 
 **Pre-work (batch, 30 min/week):**
-1. From your Google Sheet of Tier A prospects, extract all WhatsApp numbers
+1. From your Flash CRM Tier A prospects, extract all WhatsApp numbers
 2. Pre-write 5 industry-specific test messages (see below)
 3. Open all numbers in WhatsApp Web tabs (or use separate phone)
 
@@ -96,7 +114,7 @@ Limited hours. Need maximum efficiency per test. Must stay within ALL terms of s
 | 1 | 10 sec | Send pre-written test message via WhatsApp |
 | 2 | — | Set timer (move to next task while waiting) |
 | 3 | 10 sec | After 30-60 min, screenshot the response time |
-| 4 | 30 sec | Log result in Google Sheet: response time, quality, score |
+| 4 | 30 sec | Log result in Flash CRM ShopperResultModal |
 
 **Key efficiency unlock:** You DON'T wait for them. You send 10-15 tests in a batch (10 minutes total), then go do calls/other work. Come back 1-2 hours later to collect screenshots. **Parallel with everything else.**
 
@@ -137,8 +155,8 @@ Limited hours. Need maximum efficiency per test. Must stay within ALL terms of s
 
 ---
 
-<a name="strategy-3-revised"></a>
-## 3. STRATEGY 3 REVISED: Google Maps Intelligence Engine
+<a name="strategy-3"></a>
+## 3. STRATEGY 3: Google Maps Intelligence Engine
 
 ### Your Requirements
 - Most effective and efficient execution
@@ -177,38 +195,10 @@ Based on research from ICVU (Índice de Calidad de Vida Urbana), SII business da
 
 > **Critical insight:** You can call businesses in ANY of these cities from Papudo or wherever you are. Phone outreach is location-independent. Walk-ins require relocation.
 
-### Scraping Execution Plan
-
-**Tool choice: Outscraper (free tier) + manual Google Maps**
-
-| Approach | Records/mo | Cost | Best For |
-|:---------|:----------:|:----:|:---------|
-| **Outscraper free tier** | 500 listings + 500 reviews | $0 | Automated bulk extraction |
-| **Manual Google Maps** | Unlimited (your time) | $0 | Targeted, deep research |
-| **Outscraper paid** | 1K-10K listings | $3-30 | Scale when validated |
-
-**Week 1 execution:**
-1. Outscraper: Scrape "clínica dental Viña del Mar" → ~120 results
-2. Outscraper: Scrape "clínica estética Viña del Mar" → ~80 results
-3. Outscraper: Scrape "veterinaria Viña del Mar" → ~60 results
-4. Outscraper: Scrape same for Valparaíso, Concepción, La Serena
-5. Total: ~400-500 records (within free tier)
-6. Cross-reference with Meta Ad Library for ad activity
-
-**Output:** A Google Sheet with 500 businesses, sorted by Tier (A/B/C), ready for phone calls.
-
-### Parallel Execution Design
-This strategy runs as a **background batch job**:
-- You set up an Outscraper query (5 min)
-- It runs in the cloud while you make calls
-- You download CSV when done
-- Import to Google Sheet
-- **Zero active supervision needed**
-
 ---
 
-<a name="strategy-5-revised"></a>
-## 4. STRATEGY 5 REVISED: Walk-In + Where to Live
+<a name="strategy-5"></a>
+## 4. STRATEGY 5: Walk-In + Where to Live
 
 ### Where Should You Move? (Business + Life Optimization)
 
@@ -258,8 +248,8 @@ Your requirements:
 
 ---
 
-<a name="strategy-6-revised"></a>
-## 5. STRATEGY 6 REVISED: Content & Programmatic Ads
+<a name="strategy-6"></a>
+## 5. STRATEGY 6: Content & Programmatic Ads
 
 ### The IG Problem: Empty Profile = Dead DMs
 You're right — no IG presence means your outreach loses power. Prospects will check and see nothing.
@@ -279,25 +269,6 @@ You asked about "After Effects but code" — this exists and it's called **Remot
 | **CapCut** | Final assembly + captions + platform formatting | Free |
 | **Canva** | Static posts, carousels, stories | Free tier |
 
-#### How Remotion Works (This Is Your Superpower as a Dev)
-
-```tsx
-// Your ad IS a React component
-const WhatsAppAdTemplate: React.FC<{
-  businessName: string;
-  responseTime: string;
-  savingsPercent: number;
-}> = ({ businessName, responseTime, savingsPercent }) => {
-  const frame = useCurrentFrame();
-  // Animate text, images, data — all programmatically
-  // Render 100 variations with different data = 100 unique ads
-};
-```
-
-**Why this is world-class:** You can create ONE template and generate 50 variations with different business names, statistics, and hooks. Each video is unique but production-quality. **No competitor in Chile is doing this.**
-
-This becomes a tool your clients use too — exactly as you described.
-
 #### Immediate IG Content Plan (Week 1, 15 min/day)
 
 | Day | Content Type | Topic |
@@ -310,18 +281,10 @@ This becomes a tool your clients use too — exactly as you described.
 | Sat | Story | Behind the scenes — building the AI |
 | Sun | Rest | — |
 
-#### AI Video Ad Pipeline (For When We Build It)
-This is an H2 project but the architecture is:
-1. **Script generation** → Claude writes the ad script based on a template + data
-2. **Visual generation** → Kling/Runway creates the b-roll clips
-3. **Assembly** → Remotion combines script + visuals + animations + captions programmatically
-4. **Output** → Multiple sizes (9:16 Reels, 1:1 Feed, 16:9 YouTube)
-5. **Batch** → Generate 10-50 ad variations in one run
-
 ---
 
-<a name="strategy-7-revised"></a>
-## 6. STRATEGY 7 REVISED: Warm Network ACA Templates
+<a name="strategy-7"></a>
+## 6. STRATEGY 7: Warm Network ACA Templates
 
 ### 5 Ready-to-Copy-Paste Versions
 
@@ -369,8 +332,8 @@ All follow the **ACA Framework** (L07): Acknowledge → Compliment → Ask
 
 ---
 
-<a name="part-2-revised"></a>
-## 7. PART 2 REVISED: 60 Calls/Day Telephone Engine
+<a name="telephone-engine"></a>
+## 7. 60 CALLS/DAY TELEPHONE ENGINE
 
 ### The Math
 
@@ -388,83 +351,180 @@ All follow the **ACA Framework** (L07): Acknowledge → Compliment → Ask
 
 > **The math works.** 60 calls/day for 20 days → 8-16 sales. Your target of 10 is right in the middle. But ONLY IF the list quality is high (Tier A/B prospects) and you have proper tooling.
 
-### The Tooling You Need
+### The Tooling: Flash CRM v2 (UPDATED)
 
-#### Call Tracking Dashboard (Google Sheet)
-I will build this for you. Columns:
+Flash CRM now provides the complete call operations stack:
 
-| Column | Purpose |
-|:-------|:--------|
-| # | Row number |
-| Business Name | From scrape |
-| Category | Dental, Aesthetic, Vet, etc. |
-| City | Viña, Concepción, etc. |
-| Phone | From scrape |
-| Tier | A/B/C |
-| Call Date | When you called |
-| Call Result | Picked up / No answer / Wrong number / Interested / Not interested / Gatekeeper |
-| Notes | Quick notes from conversation |
-| Follow-up Date | When to call back |
-| Demo Booked? | Y/N + Date/time |
-| Demo Result | Showed / No-show / Closed / Objection |
-| Objection | Price / Not now / Need to think / Has solution |
-| Close Date | When they said yes |
-| Setup Fee | 130K / 150K / 200K |
+| Feature | Flash CRM Component | Status |
+|:--------|:-------------------|:------:|
+| Lead list with scoring | LeadList + calculateCompositeScore | ✅ |
+| Tier A/B/C filtering | LeadList tier/category filters | ✅ |
+| Dialer mode (sequential) | DialerView with progress bar | ✅ |
+| Call attempt logging | LeadDetail.handleCall → callAttempts[] | ✅ |
+| Post-call disposition | PostCallModal (1-click status) | ✅ |
+| Quick notes on contact | PostCallModal → inline note | ✅ |
+| Demo booking with date | PostCallModal → mini date-picker + link | ✅ |
+| Secret Shopper batch | ShopperBatchView | ✅ |
+| Shopper result logging | ShopperResultModal | ✅ |
+| ACA templates | TemplateDrawer (5 versions) | ✅ |
+| Daily metrics | TrackingDashboard (calls/shoppers/ACA/demos) | ✅ |
+| CSV import + auto-scoring | App.jsx handleFileUpload | ✅ |
+| Duplicate phone detection | LeadForm phone validation | ✅ |
 
-### Google Calendar Integration
+### Demo Booking Integration
 
-> **Yes, this is possible.** There are MCP servers for Google Calendar. However, setting it up requires creating a Google Cloud project and configuring OAuth. It's a ~30min setup task.
-
-**For NOW:** I recommend **Cal.com** (free tier) or **Calendly** (free tier) as your demo booking link. You send it to prospects during calls: "Le envío un link para que elija la hora que le acomode." When they book, it auto-adds to your Google Calendar.
-
-This is faster to deploy and more professional than manual calendar management.
+For now, use **Cal.com** (free tier) or **Calendly** (free tier) as your demo booking link. When prospects confirm interest:
+1. Flash CRM PostCallModal captures the date/time + meeting link
+2. You paste your Cal.com link in the field
+3. Cal.com auto-syncs to Google Calendar
 
 ---
 
-<a name="part-3-revised"></a>
-## 8. PART 3 REVISED: Google Maps Data — Cost Analysis
+<a name="data-sourcing"></a>
+## 8. DATA SOURCING — Complete Tool Arsenal (v2.0)
 
-### You Asked About Review Mining Costs
+### ⚠️ Critical Constraint: The 120-Result Limit
+Google Maps caps visible results at **~120 per search query**. This means searching "clínica dental Viña del Mar" returns max 120 even if 500 exist. **You MUST use granular comuna-level queries** (see Section 9) to get complete coverage.
 
-You're right to ask — there ARE different tiers. Here's the breakdown:
+### Tool Comparison (All Verified April 2026)
 
-| Data Type | Outscraper Free Tier | Outscraper Paid | What You Get |
-|:----------|:-------------------:|:---------------:|:-------------|
-| **Business listings** (name, phone, address, rating) | 500/month FREE | $3/1,000 records | The basics — enough to build call lists |
-| **Reviews extraction** (full review text + rating) | 500 reviews FREE | $3/1,000 reviews | The text you need for "communication complaint" filtering |
-| **Email enrichment** (find email from website) | Separate service | ~$14/1,000 | NOT needed for our strategy (we use phone) |
-| **Contact enrichment** (deep phone/social) | Separate service | Higher cost | NOT needed (Maps already gives phone) |
+#### Tier 1: Best Free Tiers (Use ALL of These)
 
-### The Efficiency Calculation
+| Tool | Free Tier | Records/mo Free | Best For | Sign Up |
+|:-----|:----------|:---------------:|:---------|:--------|
+| **Outscraper** | 500 listings + 500 reviews FREE | ~500 | Most reliable, no-code, includes reviews | outscraper.com |
+| **Apify** | $5/mo free credits (renews monthly) | ~500-800 | Developer-friendly, flexible actors, export to CSV/JSON | apify.com |
+| **ScrapeTable** | 150 credits/mo FREE (50 per search) | ~3 searches | API-first, good for automation | scrapetable.com |
+| **Lobstr.io** | 100 credits/mo or 15 min exec/day | ~100-200 | Budget alternative, visual "Squids" | lobstr.io |
+| **PhantomBuster** | 14-day free trial + limited exec time | ~200-400 | No-code "Phantoms", contact enrichment | phantombuster.com |
+| **Bright Data** | Free trial credits | ~300-500 | Enterprise-grade proxies, SERP API | brightdata.com |
 
-| Approach | Cost | Records | ROI |
-|:---------|:----:|:-------:|:----|
-| **Free tier listings + free tier reviews** | $0 | 500 businesses + 500 reviews | Enough for Week 1-2 |
-| **Manual Google Maps** (your time) | Your time (~2hrs) | ~200-300 manually | Good for deep-dive per comuna |
-| **Outscraper paid** (if you need more) | $3-10 | 1000-3000 | Only after you validate the approach |
+#### Tier 2: Chrome Extensions (Supplement — Quick & Free)
 
-### Recommendation
+| Extension | Cost | Limitations | Best For |
+|:----------|:----:|:------------|:---------|
+| **Instant Data Scraper** | 100% Free | Manual, one page at a time | Quick one-off extractions |
+| **Map Lead Scraper** | Free (1000/mo limit) | Basic fields only | Fast "click and export" |
+| **G Maps Extractor** | Free | Basic CSV export | Supplementing cloud scrapers |
 
-> **Start 100% free.** 500 free listings + 500 free reviews per month is MORE than enough to build your initial 1,200-number call list. Supplement with manual Google Maps research for specific areas. Only pay when the free tier runs out AND you've validated that the quality is good enough.
+#### Tier 3: Google Places API (Official — For Custom Scripts)
 
-### The Review Mining Tool (Legal & Free)
+Since March 2025, Google replaced the $200/mo credit with per-SKU free caps:
 
-Building a custom Python script that:
-1. Takes your scraped data (from Outscraper CSV or manual export)
-2. Scans review text for keywords: `"no contestan"`, `"tardaron"`, `"difícil contactar"`, `"nunca respondieron"`, `"mala atención telefónica"`, `"no me devolvieron"`
-3. Scores each business by number of communication-related complaints
-4. Outputs a ranked list of your best prospects
+| SKU | Free Monthly Cap | What You Get | Cost After Free |
+|:----|:----------------:|:-------------|:---------------|
+| Text Search (Essentials) | 10,000 requests | Business name, address, rating | $0.032/request |
+| Text Search (Pro) | 5,000 requests | + phone, website, hours | $0.035/request |
+| Place Details (Essentials) | 10,000 requests | Basic detail for a place_id | $0.025/request |
+| Place Details (Pro) | 5,000 requests | + reviews, photos | $0.030/request |
+| Nearby Search (Essentials) | 10,000 requests | Geospatial search | $0.032/request |
 
-**This is 100% legal.** You're analyzing publicly visible Google Maps reviews. No scraping of private data, no API ToS violation. The data is public by definition.
+> **The play:** Create a GCP project, enable Places API, set budget alert at $0. You get **10,000 Text Search requests for free** — enough for ~80 comuna-level queries with pagination. This returns structured data (name, phone, rating, address) that you can pipe directly into Flash CRM's CSV import.
 
-I can build this in ~1 hour as a Python CLI tool.
+#### Tier 4: Open Source (If You Want Full Control)
+
+| Tool | Language | What It Does |
+|:-----|:---------|:-------------|
+| `gosom/google-maps-scraper` | Go | Full Maps scraper, requires proxies |
+| Custom Playwright script | Python/JS | Use `playwright` to automate Maps UI |
+
+> ⚠️ Open source requires managing proxies and anti-bot detection yourself. Only use if cloud tools hit their limits.
+
+### Maximum Free Records Strategy
+
+By using ALL Tier 1 tools in parallel, here's your theoretical monthly free capacity:
+
+| Tool | Free Records |
+|:-----|:------------:|
+| Outscraper | 500 |
+| Apify ($5 credits) | ~600 |
+| ScrapeTable (3 searches) | ~360 |
+| PhantomBuster (trial) | ~300 |
+| Bright Data (trial) | ~400 |
+| Chrome extensions (manual) | ~500 |
+| Google Places API (10K reqs) | ~2,000 |
+| **TOTAL** | **~4,660** |
+
+That's nearly **5x** what you need for the 1,200-number call list. Even after deduplication (~30%), you'll have ~3,200 unique business records — more than enough for the full sprint.
 
 ---
 
-<a name="part-4-revised"></a>
-## 9. PART 4 REVISED: The 6-Layer Parallel Execution Engine
+<a name="geo-optimization"></a>
+## 9. GEOGRAPHIC QUERY OPTIMIZATION — Chile Comuna Grid
 
-Based on your feedback, here's the redesigned architecture with 6 strategies running in parallel:
+### The Problem
+Google Maps returns max ~120 results per search. Searching "clínica dental Viña del Mar" misses hundreds of real businesses.
+
+### The Solution: Comuna-Level Grid Queries
+Chile's administrative structure gives us natural geographic subdivisions: **comunas**. Each city is divided into comunas that are small enough to stay under the 120-result limit.
+
+### Priority City #1: Viña del Mar + Valparaíso Metro
+
+| Comuna | Pop. | Business Density | Query Priority |
+|:-------|:----:|:----------------:|:-------------:|
+| Viña del Mar | 335K | ⭐⭐⭐⭐⭐ | 🔴 First |
+| Valparaíso | 296K | ⭐⭐⭐⭐⭐ | 🔴 First |
+| Con Con | 46K | ⭐⭐⭐ | 🟡 Second |
+| Quilpué | 180K | ⭐⭐⭐⭐ | 🟡 Second |
+| Villa Alemana | 130K | ⭐⭐⭐ | 🟡 Second |
+| Limache | 45K | ⭐⭐ | ⚪ Third |
+| Quillota | 90K | ⭐⭐⭐ | ⚪ Third |
+
+### Priority City #2: Concepción Metro
+
+| Comuna | Pop. | Business Density | Query Priority |
+|:-------|:----:|:----------------:|:-------------:|
+| Concepción | 230K | ⭐⭐⭐⭐⭐ | 🔴 First |
+| Talcahuano | 160K | ⭐⭐⭐⭐ | 🔴 First |
+| San Pedro de la Paz | 130K | ⭐⭐⭐ | 🟡 Second |
+| Chiguayante | 90K | ⭐⭐⭐ | 🟡 Second |
+| Hualpén | 95K | ⭐⭐⭐ | 🟡 Second |
+
+### Priority City #3: La Serena + Coquimbo
+
+| Comuna | Pop. | Business Density | Query Priority |
+|:-------|:----:|:----------------:|:-------------:|
+| La Serena | 220K | ⭐⭐⭐⭐ | 🔴 First |
+| Coquimbo | 230K | ⭐⭐⭐⭐ | 🔴 First |
+
+### Query Template Formula
+
+For each tool, construct queries like:
+```
+[VERTICAL] en [COMUNA], Chile
+```
+
+**Example query set for Outscraper (first 500 free records):**
+```
+clínica dental en Viña del Mar, Chile
+centro estético en Viña del Mar, Chile
+veterinaria en Viña del Mar, Chile
+clínica dental en Valparaíso, Chile
+centro estético en Valparaíso, Chile
+veterinaria en Valparaíso, Chile
+clínica dental en Concepción, Chile
+centro estético en Concepción, Chile
+```
+
+**Verticals to query (in priority order):**
+1. `clínica dental` — Highest volume, clear pain point
+2. `clínica estética` / `centro de estética` — CasaVitaCure proof case
+3. `veterinaria` / `clínica veterinaria` — Emotional urgency = fast decisions
+4. `inmobiliaria` — High transaction value
+5. `peluquería` / `barbería` — Volume play, lower ticket
+6. `fumigación` / `control de plagas` — Urgency-driven
+
+### Deduplication Strategy
+When merging data from multiple scrapers:
+1. Normalize phone numbers: strip +56, spaces, dashes → pure digits
+2. Deduplicate on phone number (primary key)
+3. If no phone, deduplicate on `place_id` or exact name + address match
+4. Flash CRM's CSV import already has phone deduplication built in
+
+---
+
+<a name="parallel-engine"></a>
+## 10. THE 6-LAYER PARALLEL EXECUTION ENGINE
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -473,22 +533,22 @@ Based on your feedback, here's the redesigned architecture with 6 strategies run
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  LAYER 1 (BACKGROUND - 0 active time)                   │
-│  ├── Outscraper queries running in cloud                │
+│  ├── Outscraper/Apify queries running in cloud          │
 │  ├── Secret Shopper tests marinating (sent earlier)     │
 │  └── Cal.com auto-booking demos from yesterday's calls  │
 │                                                         │
 │  LAYER 2 (SEMI-ACTIVE - 15 min/day)                    │
 │  ├── IG content post (pre-made, schedule with Canva)    │
-│  └── Check & log Secret Shopper results                 │
+│  └── Check & log Secret Shopper results in Flash CRM   │
 │                                                         │
 │  LAYER 3 (ACTIVE MORNING - 30 min, 7:30-8:00)          │
 │  ├── ACA warm outreach messages (Strategy 7)            │
 │  ├── Send batch of 10-15 Secret Shopper tests           │
-│  └── Review yesterday's call results, prep today's list │
+│  └── Review yesterday's Flash CRM metrics, prep list    │
 │                                                         │
 │  LAYER 4 (PRIMARY - 4.5 hrs, 10:30-12:00 + 14:00-17:00)│
-│  ├── 60 phone calls from pre-built list                 │
-│  ├── Real-time logging in Google Sheet                  │
+│  ├── 60 phone calls via Flash CRM DialerView           │
+│  ├── Real-time logging via PostCallModal                │
 │  └── Send Cal.com links to interested prospects         │
 │                                                         │
 │  LAYER 5 (ACTIVE AFTERNOON - 2 hrs, 17:00-19:00)       │
@@ -497,78 +557,14 @@ Based on your feedback, here's the redesigned architecture with 6 strategies run
 │  └── Secret Shopper follow-up messages (with screenshot)│
 │                                                         │
 │  LAYER 6 (WEEKLY BATCH - 2 hrs, Sunday)                 │
-│  ├── Refresh Outscraper lists for next week              │
-│  ├── Review mining on downloaded data                   │
-│  ├── Score & tier new prospects                          │
+│  ├── Refresh scraper queries for next week              │
+│  ├── Download + import CSVs to Flash CRM                │
+│  ├── Run Review Mining script on new data               │
 │  ├── Update tracking metrics                            │
 │  └── Content batch-create for next week                 │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
-
-### The Parallel Math
-
-| Layer | Active Time/Day | Strategy | Supervision Level |
-|:------|:---------------:|:---------|:----------------:|
-| 1 | 0 min | Scraping + marination | None |
-| 2 | 15 min | Content + logging | Minimal |
-| 3 | 30 min | Warm outreach + Secret Shopper send | Low |
-| 4 | 4.5 hrs | **PHONE CALLS (primary)** | Full attention |
-| 5 | 2 hrs | Demos + follow-ups | Full attention |
-| 6 | 2 hrs/week | Weekly refresh | Focused batch |
-| **TOTAL** | **~7.5 hrs/day** | 6 strategies parallel | 3 need attention, 3 don't |
-
----
-
-<a name="part-5-revised"></a>
-## 10. PART 5 REVISED: ALL ANSWERS
-
-### Q1: Mixed Strategy — What Mix?
-**Answer:** The 6-Layer Engine above. Phone calls are the PRIMARY revenue driver (Layer 4). Everything else feeds the phone calls or runs in background. The mix maximizes daily volume (60 calls + 15 tests + 20 warm messages + 1 post = ~96 touchpoints/day).
-
-### Q2: Verticals
-**Answer:** Start with Medical/Aesthetic (CasaVitaCure proof), then Dental (highest volume on Maps), then Veterinary (emotional urgency = fast decisions).
-
-### Q3: Review Mining Tool
-**Answer:** YES. I'll build it. Python CLI, reads Outscraper CSV, scans reviews for communication keywords, outputs scored prospects. 100% legal — public data analysis only.
-
-### Q4: IG Presence / Programmatic Ads
-**Answer:** Two-phase approach:
-- **Phase 1 (THIS WEEK):** Manual content with Canva (15 min/day). 5-7 posts to populate the profile so it doesn't look empty when prospects check.
-- **Phase 2 (Week 2-3):** Set up Remotion for programmatic video ads. This becomes both your marketing engine AND a future client tool.
-- **AI Video tools:** Use Kling (free tier, realistic, up to 60s) for b-roll, Pika for quick experiments, and Remotion for final assembly. NOT After Effects — this is code-native, scalable, and you can automate it.
-
-### Q5: Geographic Focus + Where to Live
-
-**For phone outreach (immediate):**
-1. Viña del Mar / Valparaíso (highest business density)
-2. Concepción / Talcahuano (second pole, less saturated)
-3. La Serena / Coquimbo (tourism services, WhatsApp-heavy)
-
-**For living (longer term):**
-> **🏔️ Puerto Varas** — Green, stunning, volcanos + lake, safe, growing remote work scene, affordable, Puerto Montt 20 min away for walk-ins and business density. It's not Pucón (much calmer, more organized, less "party town"). It's genuine Chilean south beauty.
-
-**Runner up:** Valdivia — rivers, universities, very green, very safe, affordable. Slightly less commercial activity but charming and inspiring.
-
-### Q6: CasaVitaCure
-**Noted. We finish this discussion first, then add that to the task list.** The task will be:
-1. Give her access to her CRM panel
-2. Clean her data
-3. Get permission to use as case study (anonymized or not)
-
-### Q7: Schedule + Existing Tenants First
-
-**Daily schedule:**
-- Wake: 7:30
-- Prep/warm outreach: 7:30-8:30
-- Product/SLA work for existing tenants: 8:30-10:30
-- **CALLS START:** 10:30
-- Lunch: 12:00-14:00
-- **CALLS RESUME:** 14:00-17:00
-- Demos + follow-ups: 17:00-19:00
-- **NO CALLS AFTER 19:00** (Chilean compliance: phone outreach typically restricted to business hours, Ley 19.496 suggests 8AM-8PM weekdays)
-
-**Existing tenant SLA priority:** You're right — if CasaVitaCure and tenant #2 have issues, that kills your credibility. First 2-3 days should include dedicated time (8:30-10:30 block) to ensure full SLA compliance. Once stable, that block becomes lighter.
 
 ---
 
@@ -583,10 +579,10 @@ Based on your feedback, here's the redesigned architecture with 6 strategies run
 | 7:45-8:00 | 📱 Batch Send | Send 10-15 Secret Shopper tests (Strategy 2) | 3 | 15 min |
 | 8:00-8:30 | 💬 Warm | Send 15-20 ACA messages (Strategy 7) | 3 | 30 min |
 | 8:30-10:00 | 🔧 SLA | Existing tenants: bugs, config, monitoring | — | 90 min |
-| 10:00-10:30 | 📋 Prep | Review call list, prep notes, log Secret Shopper results | 2 | 30 min |
-| 10:30-12:00 | 📞 **CALLS** | **30 phone calls** (Block 1) | 4 | 90 min |
+| 10:00-10:30 | 📋 Prep | Review Flash CRM dashboard, log Shopper results | 2 | 30 min |
+| 10:30-12:00 | 📞 **CALLS** | **30 phone calls** via Flash CRM DialerView (Block 1) | 4 | 90 min |
 | 12:00-14:00 | 🍽️ Break | Lunch + IG post (pre-made, 5 min to publish) | 2 | 120 min |
-| 14:00-17:00 | 📞 **CALLS** | **30 phone calls** (Block 2) | 4 | 180 min |
+| 14:00-17:00 | 📞 **CALLS** | **30 phone calls** via Flash CRM DialerView (Block 2) | 4 | 180 min |
 | 17:00-18:00 | 🎯 Demos | Scheduled demo calls (from Cal.com) | 5 | 60 min |
 | 18:00-19:00 | ✉️ Follow-up | Send Secret Shopper screenshots + follow-up messages | 5 | 60 min |
 | 19:00 | 🛑 STOP | No more outbound. Review metrics. Plan tomorrow. | — | — |
@@ -595,52 +591,72 @@ Based on your feedback, here's the redesigned architecture with 6 strategies run
 
 | Task | Duration |
 |:-----|:--------:|
-| Download Outscraper data + import to Sheet | 15 min |
+| Download Outscraper/Apify data + import to Flash CRM | 15 min |
 | Run Review Mining script on new data | 15 min |
-| Score & tier new prospects for next week | 30 min |
+| Score & tier new prospects (auto in Flash CRM) | 10 min |
 | Prep 5 IG posts for next week (Canva) | 30 min |
-| Review weekly metrics: calls → demos → closes | 15 min |
+| Review weekly metrics on Flash CRM TrackingDashboard | 15 min |
 | Adjust strategy based on data | 15 min |
 
 ---
 
 <a name="flash-crm"></a>
-## 12. FLASH-CRM INTEGRATION VISION
+## 12. FLASH-CRM INTEGRATION (UPDATED v2.0)
 
-Found the Flash-CRM context in your brain. It was referenced in conversation `9b4dc222` as a Firestore-based CRM that needed diagnosis and reactivation, originally from AgenciaRM.
+### Status: ✅ READY — Replaces Google Sheets
 
-### What Flash-CRM Could Become
+Flash CRM v2 has been built and covers the entire call operations workflow. All 8 phases of the original development plan were executed. Remaining: E2E testing (Phases 7-8, manual).
 
-Given your current needs, Flash-CRM could be upgraded to serve as your **Sales Operations Dashboard** — the single-pane-of-glass for the 6-layer engine:
+### What Flash CRM Covers
 
-**Core Features Needed:**
-1. **Prospect List Manager** — Import from Outscraper CSV, score/tier automatically
-2. **Call Tracker** — Log call results with one-click buttons (No answer / Interested / Not interested / Demo booked)
-3. **Secret Shopper Tracker** — Log test results, attach screenshots
-4. **Demo Pipeline** — Visual kanban: Lead → Test Sent → Test Result → Call → Demo → Proposal → Closed
-5. **Daily Metrics Dashboard** — Calls made, pick-up rate, demos booked, close rate
-6. **Cal.com Integration** — Auto-sync demo bookings
+| Blueprint Layer | Component | Status |
+|:----------------|:----------|:------:|
+| Lead import + scoring | CSV import → auto Pain/Reach/Market/Urgency | ✅ |
+| Lead management | LeadList with tier/category/city badges | ✅ |
+| Lead filtering | Tier A/B/C + Category filters | ✅ |
+| Call tracking | DialerView (progress bar, X/60 counter) | ✅ |
+| Call logging | callAttempts[] with timestamps | ✅ |
+| Post-call workflow | PostCallModal (1-click disposition) | ✅ |
+| Demo booking | Date picker + meeting link field | ✅ |
+| Secret Shopper send | ShopperBatchView (batch send UI) | ✅ |
+| Shopper result logging | ShopperResultModal (time + quality scores) | ✅ |
+| ACA templates | TemplateDrawer (5 versions A-E) | ✅ |
+| Daily metrics | TrackingDashboard (calls, shoppers, ACA, demos) | ✅ |
+| Weekly funnel | Funnel visualization | ✅ |
+| Duplicate prevention | Phone deduplication on manual add | ✅ |
 
-### Status
-This is an **H2 project** — we need to validate the sales process manually first (Google Sheets), then automate what works into Flash-CRM. Week 1-2 = Google Sheets. Week 3+ = migrate to Flash-CRM if the process is validated.
+### What Flash CRM Does NOT Cover (External Tools Needed)
+
+| Need | External Tool | Status |
+|:-----|:-------------|:------:|
+| Data sourcing/scraping | Outscraper, Apify, etc (Section 8) | 🔴 Set up accounts |
+| Demo scheduling link | Cal.com or Calendly | 🔴 Set up |
+| IG content | Canva → IG manual post | 🟡 Create content |
+| Review mining/analysis | Python CLI script | 🔴 Build |
+| CRM ↔ Cal.com sync | Not automated (manual paste) | — H2 |
 
 ---
 
 <a name="next-steps"></a>
-## 13. NEXT STEPS — IMMEDIATE EXECUTION QUEUE
+## 13. NEXT STEPS — IMMEDIATE EXECUTION QUEUE (UPDATED v2.0)
 
-### Pre-Execution Tasks (Before first call)
+### Pre-Sprint Prep Tasks
 
-| # | Task | Time | Priority |
-|:-:|:-----|:----:|:--------:|
-| 1 | Build the Google Sheet call tracker with all columns | 30 min | 🔴 |
-| 2 | Build the Review Mining Python script | 60 min | 🔴 |
-| 3 | Set up Outscraper account + run first 5 queries | 30 min | 🔴 |
-| 4 | Cross-reference with Meta Ad Library for first 100 prospects | 45 min | 🔴 |
-| 5 | Set up Cal.com (free) for demo booking | 15 min | 🟡 |
-| 6 | Create 5 IG posts in Canva to populate profile | 45 min | 🟡 |
-| 7 | Ensure CasaVitaCure + tenant #2 have full SLA | 2 hrs | 🔴 |
-| 8 | Get CasaVitaCure case study permission | 10 min | 🟡 |
+| # | Task | Time | Priority | Status |
+|:-:|:-----|:----:|:--------:|:------:|
+| 1 | ~~Build Google Sheet call tracker~~ | — | — | ✅ Replaced by Flash CRM |
+| 2 | Build Review Mining Python script | 60 min | 🔴 | TODO |
+| 3 | Sign up Outscraper (free) + run first queries | 30 min | 🔴 | TODO |
+| 4 | Sign up Apify (free $5) + run first actor | 30 min | 🔴 | TODO |
+| 5 | Sign up ScrapeTable (free 150 credits) | 15 min | 🔴 | TODO |
+| 6 | Set up Google Cloud project + enable Places API | 30 min | 🟡 | TODO |
+| 7 | Cross-reference first 100 prospects with Meta Ad Library | 45 min | 🟡 | TODO |
+| 8 | Set up Cal.com (free) for demo booking | 15 min | 🟡 | TODO |
+| 9 | Create 5 IG posts in Canva to populate profile | 45 min | 🟡 | TODO |
+| 10 | ~~Ensure CasaVitaCure SLA~~ | — | — | ✅ Done |
+| 11 | Get CasaVitaCure case study permission | 10 min | 🟡 | TODO |
+| 12 | Run Flash CRM E2E tests (Phases 7-8) | 60 min | 🔴 | TODO |
+| 13 | Import first CSV batch into Flash CRM | 15 min | 🔴 | After #3-5 |
 
 ### Day 1 Execution
 
@@ -649,35 +665,31 @@ This is an **H2 project** — we need to validate the sales process manually fir
 | 7:30 | Send ACA messages (Version A to 30 close contacts) |
 | 7:45 | Send first batch of 10 Secret Shopper tests (top-tier dental/aesthetic Viña) |
 | 8:30 | SLA check on existing tenants |
-| 10:30 | **START CALLING** — first 30 from pre-built list |
-| 14:00 | **RESUME CALLING** — next 30 |
+| 10:30 | **START CALLING** — first 30 from Flash CRM DialerView |
+| 14:00 | **RESUME CALLING** — next 30 in DialerView |
 | 17:00 | Demo calls (if any booked from ACA/warm) |
-| 18:00 | Collect Secret Shopper results, send follow-up messages |
+| 18:00 | Collect Secret Shopper results, log in Flash CRM, send follow-ups |
 | 19:00 | Log everything, prep tomorrow's list |
 
 ### May 1-10 Re-Contact Play
 All prospects tagged as "Interested but price objection" get re-contacted with:
 > "Hola [nombre], ¿cómo está? Hace unas semanas conversamos sobre el asistente IA para su [negocio]. Le cuento que este mes tenemos una oferta especial de onboarding: [cheaper price]. ¿Le gustaría retomar la conversación?"
 
-Track these separately in the Sheet with a "RECONTACT" tag.
+Track these separately in Flash CRM with a "RECONTACT" tag.
 
 ---
 
-## THE 30-SECOND SUMMARY FOR YOUR APPROVAL
+## THE 30-SECOND SUMMARY
 
-| Decision | My Recommendation |
-|:---------|:-------------------|
+| Decision | Recommendation |
+|:---------|:---------------|
 | **Primary strategy** | 60 phone calls/day to pre-qualified Tier A/B prospects |
+| **Execution tool** | Flash CRM v2 (replaces Google Sheets) |
 | **Support strategies** | Secret Shopper (15/day), ACA warm (20/day), IG content (1/day) |
 | **Target cities** | Viña del Mar → Concepción → La Serena (phone, from anywhere) |
 | **Target verticals** | Medical/Aesthetic → Dental → Veterinary |
-| **Tools** | Outscraper (free) + Google Sheets + Cal.com + Review Mining script |
+| **Data sourcing** | 6+ free tools = ~4,600 leads/month for $0 |
 | **Where to live** | Puerto Varas (green, safe, stunning, business-viable) |
 | **IG/Ads** | Phase 1: Canva manual (now). Phase 2: Remotion programmatic (week 2-3) |
 | **Call hours** | 10:30-12:00 + 14:00-17:00 (Chilean legal compliance) |
-| **Flash-CRM** | H2 — validate with Sheets first, then automate |
 | **Expected result** | 8-16 closes in 20 business days at 130-200K setup |
-
----
-
-> **Your move.** Approve this blueprint and I start building the tools (Google Sheet tracker, Review Mining script, Outscraper setup guide). Or tell me what needs adjusting.

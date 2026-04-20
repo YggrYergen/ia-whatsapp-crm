@@ -38,6 +38,61 @@
 | S2-5 | 🟡 | Gemini adapter real (google-genai SDK) | Replace mock |
 | S2-6 | 🟡 | Credits/billing system | Revenue gate |
 | S2-7 | 🟡 | SuperAdmin panel | Ops tooling |
+| S2-8 | 🟡 | Multi-tenant Knowledge Base (tenant_knowledge) | See details below |
+
+### S2-8: Multi-Tenant Knowledge Base Architecture
+
+**Problem:** Currently, tenant-specific domain knowledge (clinical details, service protocols, contraindications, pricing logic) can only live in the `system_prompt` field or the `tenant_services.description` column (truncated to 80 chars). This doesn't scale across industries.
+
+**Current workaround:** Append knowledge directly to `tenants.system_prompt`. Works but makes the prompt harder to maintain and mixes identity/tone instructions with factual domain knowledge.
+
+**Target solution:** New `tenant_knowledge` table with structured knowledge blocks.
+
+```sql
+CREATE TABLE tenant_knowledge (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id),
+  category TEXT NOT NULL,        -- e.g., 'services', 'protocols', 'faq', 'policies'
+  title TEXT NOT NULL,           -- e.g., 'CelluDetox Protocol'
+  content TEXT NOT NULL,         -- The actual knowledge (up to 4000 chars)
+  sort_order INT DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+-- RLS: same pattern as tenant_services
+```
+
+**Prompt assembly change** (`use_cases.py`):
+```python
+# After service catalog injection, inject knowledge blocks:
+knowledge_res = await db.table("tenant_knowledge") \
+    .select("category, title, content") \
+    .eq("tenant_id", str(tenant.id)) \
+    .eq("is_active", True) \
+    .order("sort_order") \
+    .execute()
+
+if knowledge_res.data:
+    kb_lines = ["[BASE DE CONOCIMIENTO]"]
+    for kb in knowledge_res.data:
+        kb_lines.append(f"\n{kb['title'].upper()}:")
+        kb_lines.append(kb['content'])
+    knowledge_block = "\n".join(kb_lines)
+    # Inject between INTERNAL_TOOL_RULES and service catalog
+```
+
+**Frontend:** Add a "Base de Conocimiento" section to the Config view where tenant owners can add/edit knowledge blocks (similar to how services are managed). The onboarding agent could also provision initial knowledge blocks during setup.
+
+**Why this matters for multi-tenancy:**
+- Separates identity/tone (system_prompt) from factual knowledge (tenant_knowledge)
+- Each industry can have different knowledge categories
+- UI-editable by tenant owners without touching the system prompt
+- Onboarding agent can auto-provision from business description
+- Knowledge blocks can be toggled on/off without prompt editing
+- Prompt caching benefits: static knowledge at consistent position = higher cache hit rate
+
+**Also fix:** Raise `tenant_services.description` truncation from 80 chars to 300 chars (line 597 in `use_cases.py`).
 
 ---
 
