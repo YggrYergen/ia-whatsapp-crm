@@ -162,11 +162,17 @@ def create_app() -> FastAPI:
     )
 
     # ============================================================
-    # Block E1: Webhook Signature Verification Middleware
+    # Block E1: Multi-Tenant Webhook Signature Verification Middleware
     #
     # Intercepts POST /webhook and verifies X-Hub-Signature-256
     # BEFORE FastAPI processes the request body.
-    # All other routes are unaffected.
+    #
+    # Multi-tenant flow:
+    #   1. Read raw body bytes
+    #   2. Parse JSON to extract phone_number_id (identifies which tenant)
+    #   3. Look up tenant's meta_app_secret from cache → DB
+    #   4. Verify HMAC using tenant-specific secret
+    #   5. If no secret configured for tenant → soft mode (pass through)
     #
     # Ref: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#event-notifications
     # ============================================================
@@ -174,6 +180,44 @@ def create_app() -> FastAPI:
     from starlette.requests import Request as StarletteRequest
     from starlette.responses import JSONResponse as StarletteJSONResponse
     from app.core.security import verify_webhook_signature
+    import json as _json_mod
+
+    # Lightweight TTL cache for app secrets only — avoids DB query per webhook.
+    # Separate from the full TenantContext cache in dependencies.py to keep
+    # the middleware self-contained and avoid circular import issues.
+    from cachetools import TTLCache
+    _app_secret_cache: TTLCache = TTLCache(maxsize=50, ttl=180)
+
+    async def _get_tenant_app_secret(phone_number_id: str) -> str | None:
+        """Look up a tenant's meta_app_secret by phone_number_id.
+        Uses a lightweight TTL cache (3min) to avoid DB queries on every webhook.
+        Returns None if tenant not found or has no secret configured (soft mode).
+        """
+        cached = _app_secret_cache.get(phone_number_id)
+        if cached is not None:
+            # Sentinel: empty string "" means "tenant exists but no secret"
+            return cached if cached != "" else None
+
+        try:
+            from app.infrastructure.database.supabase_client import SupabasePooler
+            db = await SupabasePooler.get_client()
+            result = await db.table("tenants") \
+                .select("meta_app_secret") \
+                .eq("ws_phone_id", phone_number_id) \
+                .execute()
+
+            if result.data and result.data[0].get("meta_app_secret"):
+                secret = result.data[0]["meta_app_secret"]
+                _app_secret_cache[phone_number_id] = secret
+                return secret
+            else:
+                # Cache "no secret" to avoid repeated DB lookups
+                _app_secret_cache[phone_number_id] = ""
+                return None
+        except Exception as db_err:
+            logger.error(f"❌ [SECURITY] App secret lookup failed for {phone_number_id}: {db_err}")
+            sentry_sdk.capture_exception(db_err)
+            return None  # Fail soft — can't verify without secret
 
     class WebhookSignatureMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: StarletteRequest, call_next):
@@ -182,7 +226,20 @@ def create_app() -> FastAPI:
                 try:
                     raw_body = await request.body()
                     signature = request.headers.get("X-Hub-Signature-256")
-                    is_valid = await verify_webhook_signature(raw_body, signature)
+
+                    # Multi-tenant: parse phone_number_id to find tenant-specific app secret
+                    app_secret = None
+                    try:
+                        payload = _json_mod.loads(raw_body)
+                        phone_id = payload["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
+                        app_secret = await _get_tenant_app_secret(phone_id)
+                    except (_json_mod.JSONDecodeError, KeyError, IndexError, TypeError) as parse_err:
+                        # Can't extract phone_number_id from body — could be a status-only
+                        # webhook or malformed payload. Fall through to handler which will
+                        # deal with it properly.
+                        logger.debug(f"[SECURITY] Could not extract phone_number_id for HMAC: {parse_err}")
+
+                    is_valid = await verify_webhook_signature(raw_body, signature, app_secret)
                     if not is_valid:
                         return StarletteJSONResponse(
                             status_code=401,

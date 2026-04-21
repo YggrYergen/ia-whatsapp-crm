@@ -55,18 +55,25 @@ async def verify_whatsapp_webhook(
 # Ref: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#event-notifications
 # CRITICAL: Must use hmac.compare_digest() for timing-safe comparison
 # ============================================================
-async def verify_webhook_signature(raw_body: bytes, signature_header: str | None) -> bool:
+async def verify_webhook_signature(raw_body: bytes, signature_header: str | None, app_secret: str | None = None) -> bool:
     """
     Verify the X-Hub-Signature-256 header from Meta webhooks.
+    
+    Args:
+        raw_body: The raw request body bytes
+        signature_header: The X-Hub-Signature-256 header value
+        app_secret: The Meta App Secret for this specific tenant.
+                    If None, verification is skipped (soft mode).
     
     Returns True if signature is valid.
     Returns False if invalid (caller should reject with 401).
     
-    If META_APP_SECRET is not configured, logs a warning and returns True (soft mode).
+    If app_secret is not provided, logs a warning and returns True (soft mode).
     """
-    app_secret = (settings.META_APP_SECRET or "").strip()
+    # Normalize: treat empty string as None
+    app_secret = (app_secret or "").strip() or None
     
-    # Soft mode: if secret not configured, skip verification with a warning
+    # Soft mode: if secret not configured for this tenant, skip verification
     if not app_secret:
         logger.warning(
             "⚠️ [SECURITY] META_APP_SECRET not configured — webhook signature verification SKIPPED. "

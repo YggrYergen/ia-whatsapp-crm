@@ -10,6 +10,10 @@ class TenantContext(BaseModel):
     # CRM dashboard) works without them.
     ws_phone_id: Optional[str] = None
     ws_token: Optional[str] = None
+    # Per-tenant Meta App Secret for HMAC-SHA256 webhook signature verification.
+    # Each business has its own Meta app → unique App Secret.
+    # Found in: Meta App Dashboard → Settings → Basic → App Secret.
+    meta_app_secret: Optional[str] = None
     llm_provider: str = "openai"
     llm_model: str = "gpt-5.4-mini"
     system_prompt: str = ""
