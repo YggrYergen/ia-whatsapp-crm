@@ -9,7 +9,7 @@ from app.modules.scheduling.services import SchedulingService
 
 class CheckAvailabilityTool(AITool):
     name = "get_merged_availability"
-    description = "Busca disponibilidad en Google Calendar (Round-Robin Boxes) para una fecha (YYYY-MM-DD)."
+    description = "Busca disponibilidad en la agenda de citas para una fecha específica (YYYY-MM-DD). Devuelve los horarios libres."
     def get_schema(self, provider: str) -> Dict[str, Any]:
         return {
             "type": "function",

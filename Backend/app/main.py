@@ -29,7 +29,7 @@ from app.core.event_bus import event_bus
 import sentry_sdk
 
 from app.modules.communication.routers import router as webhook_router
-from app.modules.integrations.google_oauth_router import router as google_oauth_router
+
 
 # Block R: Onboarding API routes (newcomer auto-provisioning + config agent chat)
 from app.api.onboarding.provision import router as onboarding_provision_router
@@ -283,7 +283,7 @@ def create_app() -> FastAPI:
     tool_registry.register(UpdatePatientScoringTool())
 
     app.include_router(webhook_router)
-    app.include_router(google_oauth_router)
+
     
     # Block R: Onboarding routes
     app.include_router(onboarding_provision_router)

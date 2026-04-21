@@ -42,10 +42,6 @@ class Settings(BaseSettings):
     # Ref: https://cloud.google.com/run/docs/configuring/environment-variables
     SUPERADMIN_EMAILS: str | None = None
     
-    GOOGLE_SERVICE_ACCOUNT_JSON: str | None = None
-    GOOGLE_OAUTH_CLIENT_ID: str | None = None
-    GOOGLE_OAUTH_CLIENT_SECRET: str | None = None
-    GOOGLE_OAUTH_REDIRECT_URI: str | None = None
     
     PROACTIVE_INTERVAL: int = 3600
 
