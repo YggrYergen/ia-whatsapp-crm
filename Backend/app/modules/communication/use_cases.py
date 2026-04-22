@@ -156,7 +156,7 @@ async def _download_and_store_media(
 
         # Using service_role key — bypasses Storage RLS
         # Ref: https://supabase.com/docs/reference/python/storage-from-upload
-        db.storage.from_("whatsapp-media").upload(
+        await db.storage.from_("whatsapp-media").upload(
             path=storage_path,
             file=file_bytes,
             file_options={"content-type": mime_clean},
