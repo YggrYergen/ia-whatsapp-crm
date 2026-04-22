@@ -98,6 +98,9 @@ async def _download_and_store_media(
 
     This runs in the background via asyncio.create_task() — does NOT block the LLM pipeline.
 
+    Retry strategy: 3 attempts with exponential backoff (2s, 4s, 8s) for transient errors.
+    Permanent errors (401, 403) fail immediately without retry.
+
     Two-step Meta media download (per docs):
     1. GET /v25.0/<MEDIA_ID> → returns {url, mime_type, sha256, file_size}
     2. GET <url> with Bearer token → returns binary content
@@ -109,32 +112,83 @@ async def _download_and_store_media(
         logger.warning(f"⚠️ [MEDIA] No media_id in metadata, skipping download | msg={message_id}")
         return
 
+    MAX_RETRIES = 3
+
     try:
-        client = MetaGraphAPIClient.get_client()
+        file_bytes = None
+        media_url = None
+        file_size = None
+        last_err = None
 
-        # Step 1: Get ephemeral download URL from Meta (expires in ~5 min)
-        url_response = await client.get(
-            f"{MetaGraphAPIClient.BASE_URL}/{media_id}",
-            headers={"Authorization": f"Bearer {tenant.ws_token}"},
-            params={"phone_number_id": tenant.ws_phone_id},
-        )
-        url_response.raise_for_status()
-        url_data = url_response.json()
-        media_url = url_data.get("url")
-        file_size = url_data.get("file_size")
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                client = MetaGraphAPIClient.get_client()
 
-        if not media_url:
-            raise ValueError(f"Meta returned no URL for media_id={media_id}")
+                # Step 1: Get ephemeral download URL from Meta (expires in ~5 min)
+                url_response = await client.get(
+                    f"{MetaGraphAPIClient.BASE_URL}/{media_id}",
+                    headers={"Authorization": f"Bearer {tenant.ws_token}"},
+                    params={"phone_number_id": tenant.ws_phone_id},
+                )
+                # 401/403 = permanent auth error → don't retry
+                if url_response.status_code in (401, 403):
+                    url_response.raise_for_status()
+                url_response.raise_for_status()
 
-        logger.info(f"📥 [MEDIA] Downloading from Meta | size={file_size} | msg={message_id}")
+                url_data = url_response.json()
+                media_url = url_data.get("url")
+                file_size = url_data.get("file_size")
 
-        # Step 2: Download the binary content
-        download_response = await client.get(
-            media_url,
-            headers={"Authorization": f"Bearer {tenant.ws_token}"},
-        )
-        download_response.raise_for_status()
-        file_bytes = download_response.content
+                if not media_url:
+                    raise ValueError(f"Meta returned no URL for media_id={media_id}")
+
+                logger.info(
+                    f"📥 [MEDIA] Downloading from Meta | size={file_size} | "
+                    f"msg={message_id} | attempt={attempt}/{MAX_RETRIES}"
+                )
+
+                # Step 2: Download the binary content
+                download_response = await client.get(
+                    media_url,
+                    headers={"Authorization": f"Bearer {tenant.ws_token}"},
+                )
+                # 401/403 = permanent → don't retry
+                if download_response.status_code in (401, 403):
+                    download_response.raise_for_status()
+                download_response.raise_for_status()
+                file_bytes = download_response.content
+
+                # Download successful — break retry loop
+                break
+
+            except httpx.HTTPStatusError as e:
+                last_err = e
+                # Permanent errors (4xx except 429) → don't retry
+                if e.response.status_code < 500 and e.response.status_code != 429:
+                    raise
+                if attempt < MAX_RETRIES:
+                    wait = 2 ** attempt  # 2s, 4s, 8s
+                    logger.warning(
+                        f"⚠️ [MEDIA] Attempt {attempt}/{MAX_RETRIES} failed "
+                        f"(HTTP {e.response.status_code}), retrying in {wait}s | msg={message_id}"
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+            except (httpx.TransportError, httpx.RemoteProtocolError) as e:
+                last_err = e
+                if attempt < MAX_RETRIES:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"⚠️ [MEDIA] Attempt {attempt}/{MAX_RETRIES} failed "
+                        f"({type(e).__name__}), retrying in {wait}s | msg={message_id}"
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+
+        if not file_bytes:
+            raise RuntimeError(f"Download failed after {MAX_RETRIES} attempts: {repr(last_err)}")
 
         # Step 3: Determine file extension from MIME type
         MIME_TO_EXT = {
@@ -181,7 +235,7 @@ async def _download_and_store_media(
     except Exception as media_err:
         # 3-CHANNEL OBSERVABILITY (Rule #5)
         logger.error(
-            f"❌ [MEDIA] Download/upload failed: {repr(media_err)} | "
+            f"❌ [MEDIA] Download/upload failed after {MAX_RETRIES} attempts: {repr(media_err)} | "
             f"media_id={media_id} | msg={message_id} | tenant={tenant.id}"
         )
         sentry_sdk.set_context("media_failure", {
@@ -200,6 +254,7 @@ async def _download_and_store_media(
                 f"**Media ID:** {media_id[:20]}...\n"
                 f"**Message ID:** {message_id}\n"
                 f"**Contact:** {contact_id}\n"
+                f"**Retries:** {MAX_RETRIES} exhausted\n"
                 f"**Error:** {str(media_err)[:300]}"
             ),
             severity="error", error=media_err,
