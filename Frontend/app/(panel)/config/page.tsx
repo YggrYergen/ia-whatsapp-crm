@@ -3,8 +3,10 @@
 /**
  * ConfigPanel — Global tenant config page (LLM provider, model, system prompt).
  *
- * ⚠️ TENANT ISOLATION: Resolves the user's tenant via auth.getUser() → tenant_users.
- *    Does NOT use TenantContext (this page is outside the (panel) layout group).
+ * ⚠️ TENANT ISOLATION: Uses TenantContext from the (panel) layout group.
+ *    Superadmin tenant switching is respected — navigating to /config after
+ *    switching tenants in the sidebar loads THAT tenant's config.
+ *    RLS on `tenants` table ensures non-superadmins can only see/update their own.
  *
  * ⚠️ OBSERVABILITY: Every failure → console.error + Sentry + Discord.
  *    (Rule 5: three-channel error reporting)
@@ -14,6 +16,7 @@ import React, { useState, useEffect } from 'react'
 import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase'
 import { notifyDiscord } from '@/lib/notifyDiscord'
+import { useTenant } from '@/contexts/TenantContext'
 import { Save, Bot, Info, Sparkles, Zap, ChevronLeft, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,68 +28,52 @@ import Link from 'next/link'
 export default function ConfigPanel() {
     const _where = 'ConfigPanel'
     const supabase = createClient()
+    const { currentTenantId, isLoadingTenant } = useTenant()
     const [tenantId, setTenantId] = useState<string | null>(null)
     const [tenant, setTenant] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [saveSuccess, setSaveSuccess] = useState(false)
 
-    // Resolve the user's tenant via auth → tenant_users (no TenantContext needed)
+    // Fetch tenant config when currentTenantId changes (respects superadmin switching)
     useEffect(() => {
-        const resolveTenant = async () => {
-            const fn = `${_where}.resolveTenant`
+        if (isLoadingTenant) return
+        if (!currentTenantId) {
+            setLoading(false)
+            return
+        }
+
+        const fetchTenantConfig = async () => {
+            const fn = `${_where}.fetchTenantConfig`
+            setLoading(true)
             try {
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) {
-                    setLoading(false)
-                    return
-                }
+                setTenantId(currentTenantId)
 
-                // Get user's first tenant
-                const { data: tuData, error: tuError } = await supabase
-                    .from('tenant_users')
-                    .select('tenant_id')
-                    .eq('user_id', user.id)
-                    .limit(1)
-                    .single()
-
-                if (tuError || !tuData) {
-                    const errMsg = `[${fn}] No tenant found for user ${user.id} | error=${tuError?.message}`
-                    console.error(errMsg)
-                    Sentry.captureMessage(errMsg, 'error')
-                    notifyDiscord('🔴 Config: No tenant for user', `**User:** \`${user.id}\`\n**Error:** ${tuError?.message}`, 'error')
-                    setLoading(false)
-                    return
-                }
-
-                setTenantId(tuData.tenant_id)
-
-                // Fetch the tenant config
                 const { data, error } = await supabase
                     .from('tenants')
                     .select('*')
-                    .eq('id', tuData.tenant_id)
+                    .eq('id', currentTenantId)
                     .single()
 
                 if (error) {
-                    const errMsg = `[${fn}] Tenant fetch failed | tenant=${tuData.tenant_id} | error=${error.message}`
+                    const errMsg = `[${fn}] Tenant fetch failed | tenant=${currentTenantId} | error=${error.message}`
                     console.error(errMsg)
                     Sentry.captureMessage(errMsg, 'error')
-                    notifyDiscord('🔴 Config Fetch Failed', `**Tenant:** \`${tuData.tenant_id}\`\n**Error:** ${error.message}`, 'error')
+                    notifyDiscord('🔴 Config Fetch Failed', `**Tenant:** \`${currentTenantId}\`\n**Error:** ${error.message}`, 'error')
                 } else if (data) {
                     setTenant(data)
                 }
             } catch (err: any) {
-                const errMsg = `[${fn}] CRASH resolving tenant | error=${String(err).slice(0, 300)}`
+                const errMsg = `[${fn}] CRASH fetching tenant config | error=${String(err).slice(0, 300)}`
                 console.error(errMsg, err)
                 Sentry.captureException(err, { extra: { where: fn } })
-                notifyDiscord('🔴 Config Resolve CRASH', `**Error:** ${String(err).slice(0, 500)}`, 'error')
+                notifyDiscord('🔴 Config Fetch CRASH', `**Error:** ${String(err).slice(0, 500)}`, 'error')
             } finally {
                 setLoading(false)
             }
         }
-        resolveTenant()
-    }, [])
+        fetchTenantConfig()
+    }, [currentTenantId, isLoadingTenant])
 
 
 
@@ -202,7 +189,7 @@ export default function ConfigPanel() {
                             </Button>
                         </Link>
                         <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 px-4 py-1 font-black uppercase tracking-widest text-[10px]">
-                            {tenant?.business_name || 'Configuración'}
+                            {tenant?.name || tenant?.business_name || 'Configuración'}
                         </Badge>
                     </div>
 
