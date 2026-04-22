@@ -357,6 +357,58 @@ def create_app() -> FastAPI:
     # Staff messaging — outbound WhatsApp from CRM
     app.include_router(staff_messaging_router)
 
+    # ============================================================
+    # MEDIA HANDLING: Signed URL endpoint for frontend media access
+    # Frontend calls this to get time-limited URLs for private media
+    # Ref: https://supabase.com/docs/reference/python/storage-from-createsignedurl
+    # ============================================================
+    @app.get("/api/media/signed-url")
+    async def get_media_signed_url(path: str, tenant_id: str):
+        """Generate a 1-hour signed URL for a media file in Supabase Storage.
+
+        Security: Validates that the requested path starts with the provided tenant_id
+        to prevent cross-tenant media access.
+        """
+        # Validate tenant isolation: path must start with tenant_id
+        if not path.startswith(tenant_id):
+            logger.warning(
+                f"⚠️ [MEDIA] Cross-tenant signed URL attempt: "
+                f"path={path[:50]}, claimed_tenant={tenant_id}"
+            )
+            sentry_sdk.capture_message(
+                f"Cross-tenant media access attempt | path={path[:50]} | tenant={tenant_id}",
+                level="warning"
+            )
+            return ORJSONResponse(status_code=403, content={"status": "error", "message": "Access denied"})
+
+        try:
+            db = await SupabasePooler.get_client()
+            signed = db.storage.from_("whatsapp-media").create_signed_url(
+                path=path,
+                expires_in=3600,  # 1 hour
+            )
+            # SDK returns different key names depending on version
+            signed_url = None
+            if isinstance(signed, dict):
+                signed_url = signed.get("signedURL") or signed.get("signedUrl")
+            elif hasattr(signed, "signed_url"):
+                signed_url = signed.signed_url
+            
+            if not signed_url:
+                logger.error(f"❌ [MEDIA] Signed URL returned empty: raw={str(signed)[:200]}")
+                return ORJSONResponse(status_code=500, content={"status": "error", "message": "Failed to generate signed URL"})
+
+            return {"signed_url": signed_url}
+        except Exception as err:
+            logger.error(f"❌ [MEDIA] Signed URL generation failed: {repr(err)}")
+            sentry_sdk.capture_exception(err)
+            await send_discord_alert(
+                title=f"❌ Signed URL Failed",
+                description=f"Path: {path[:50]}\nError: {repr(err)[:300]}",
+                severity="error", error=err,
+            )
+            return ORJSONResponse(status_code=500, content={"status": "error", "message": "Failed to generate signed URL"})
+
     @app.api_route("/api/debug-ping", methods=["GET", "HEAD"])
     async def debug_ping():
         return {"status": "ok", "message": "Backend is alive!"}

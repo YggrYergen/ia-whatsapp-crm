@@ -7,6 +7,7 @@ import { useCrm } from '@/contexts/CrmContext'
 import { createClient } from '@/lib/supabase'
 import * as Sentry from '@sentry/nextjs'
 import { formatWhatsAppMessage, messageBubbleStyles } from '@/lib/whatsappFormatter'
+import MediaBubble from './MediaBubble'
 
 const supabase = createClient()
 
@@ -346,8 +347,18 @@ export default function ChatArea() {
                                         {isAI ? '🤖 Asistente' : isHumanAgent ? '👨‍💻 Staff' : isSystemAlert ? '🚨 Alerta del Sistema' : '👤 ' + (selectedContact.name || 'Paciente')}
                                     </div>
                                     <div className={bubbleClasses}>
+                                        {/* MEDIA HANDLING: Render media bubble for non-text messages */}
+                                        {m.message_type && m.message_type !== 'text' && (
+                                            <MediaBubble
+                                                messageType={m.message_type}
+                                                mediaMetadata={m.media_metadata}
+                                                tenantId={selectedContact.tenant_id}
+                                            />
+                                        )}
                                         <div className={`${messageBubbleStyles} leading-relaxed`}>
-                                            {formatWhatsAppMessage(m.content)}
+                                            {m.content ? formatWhatsAppMessage(m.content) : (
+                                                m.message_type === 'text' ? <span className="text-xs italic opacity-40">Mensaje vacío</span> : null
+                                            )}
                                         </div>
                                         <span className={`text-[10px] block mt-1.5 opacity-60 text-right ${alignments === 'justify-end' ? 'text-emerald-900' : 'text-slate-500'}`}>
                                             {m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}

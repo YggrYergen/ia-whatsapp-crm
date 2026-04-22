@@ -49,6 +49,175 @@ TOOL_ACTION_PATTERNS = [
     ("get_merged_availability", ["verificar disponibilidad", "horarios disponibles"]),
 ]
 
+
+# ============================================================
+# MEDIA HANDLING: Helper functions for WhatsApp media pipeline
+# Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components#messages-object
+# Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
+# ============================================================
+
+def _build_llm_content_for_media(
+    text_body: str, message_type: str, media_metadata: dict | None
+) -> str:
+    """Build descriptive text for LLM when user sends media.
+    The LLM cannot see images/files, so we describe what was sent.
+    This replaces the raw empty string with meaningful context.
+    """
+    if message_type == "text" or not media_metadata:
+        return text_body
+
+    TYPE_LABELS = {
+        "image": "una imagen/foto",
+        "document": "un documento",
+        "audio": "un audio/nota de voz",
+        "video": "un video",
+        "sticker": "un sticker",
+    }
+
+    label = TYPE_LABELS.get(message_type, f"un archivo de tipo {message_type}")
+    parts = [f"[El usuario envió {label}"]
+
+    if media_metadata.get("filename"):
+        parts.append(f" llamado '{media_metadata['filename']}'")
+    if media_metadata.get("mime_type"):
+        parts.append(f" ({media_metadata['mime_type'].split(';')[0].strip()})")
+    parts.append("]")
+
+    if text_body:  # caption
+        parts.append(f"\nMensaje adjunto: {text_body}")
+
+    return "".join(parts)
+
+
+async def _download_and_store_media(
+    db: AsyncClient, tenant: TenantContext, contact_id: str,
+    message_id: str, message_type: str, media_metadata: dict
+):
+    """Fire-and-forget: downloads media from Meta Cloud API, uploads to Supabase Storage.
+    Updates the message record with storage_path on completion.
+
+    This runs in the background via asyncio.create_task() — does NOT block the LLM pipeline.
+
+    Two-step Meta media download (per docs):
+    1. GET /v25.0/<MEDIA_ID> → returns {url, mime_type, sha256, file_size}
+    2. GET <url> with Bearer token → returns binary content
+
+    Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media
+    """
+    media_id = media_metadata.get("media_id")
+    if not media_id:
+        logger.warning(f"⚠️ [MEDIA] No media_id in metadata, skipping download | msg={message_id}")
+        return
+
+    try:
+        client = MetaGraphAPIClient.get_client()
+
+        # Step 1: Get ephemeral download URL from Meta (expires in ~5 min)
+        url_response = await client.get(
+            f"{MetaGraphAPIClient.BASE_URL}/{media_id}",
+            headers={"Authorization": f"Bearer {tenant.ws_token}"},
+            params={"phone_number_id": tenant.ws_phone_id},
+        )
+        url_response.raise_for_status()
+        url_data = url_response.json()
+        media_url = url_data.get("url")
+        file_size = url_data.get("file_size")
+
+        if not media_url:
+            raise ValueError(f"Meta returned no URL for media_id={media_id}")
+
+        logger.info(f"📥 [MEDIA] Downloading from Meta | size={file_size} | msg={message_id}")
+
+        # Step 2: Download the binary content
+        download_response = await client.get(
+            media_url,
+            headers={"Authorization": f"Bearer {tenant.ws_token}"},
+        )
+        download_response.raise_for_status()
+        file_bytes = download_response.content
+
+        # Step 3: Determine file extension from MIME type
+        MIME_TO_EXT = {
+            "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+            "application/pdf": "pdf",
+            "application/vnd.ms-excel": "xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+            "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/amr": "amr", "audio/aac": "aac",
+            "video/mp4": "mp4", "video/3gpp": "3gp",
+        }
+        mime_raw = media_metadata.get("mime_type", "")
+        mime_clean = mime_raw.split(";")[0].strip()  # "audio/ogg; codecs=opus" → "audio/ogg"
+        ext = MIME_TO_EXT.get(mime_clean, "bin")
+
+        # Step 4: Upload to Supabase Storage
+        # Path convention: <tenant_id>/<contact_id>/<timestamp>_<media_id_prefix>.<ext>
+        timestamp = datetime.now(pytz.utc).strftime("%Y%m%d_%H%M%S")
+        storage_path = f"{tenant.id}/{contact_id}/{timestamp}_{media_id[:12]}.{ext}"
+
+        # Using service_role key — bypasses Storage RLS
+        # Ref: https://supabase.com/docs/reference/python/storage-from-upload
+        db.storage.from_("whatsapp-media").upload(
+            path=storage_path,
+            file=file_bytes,
+            file_options={"content-type": mime_clean},
+        )
+
+        # Step 5: Update the message record with storage info
+        updated_metadata = {
+            **media_metadata,
+            "storage_path": storage_path,
+            "file_size": file_size or len(file_bytes),
+            "download_status": "completed",
+        }
+        await db.table("messages").update({
+            "media_metadata": updated_metadata
+        }).eq("id", message_id).execute()
+
+        logger.info(
+            f"✅ [MEDIA] Stored: {storage_path} "
+            f"({len(file_bytes)} bytes, {mime_clean}) | msg={message_id}"
+        )
+
+    except Exception as media_err:
+        # 3-CHANNEL OBSERVABILITY (Rule #5)
+        logger.error(
+            f"❌ [MEDIA] Download/upload failed: {repr(media_err)} | "
+            f"media_id={media_id} | msg={message_id} | tenant={tenant.id}"
+        )
+        sentry_sdk.set_context("media_failure", {
+            "media_id": media_id,
+            "message_id": message_id,
+            "message_type": message_type,
+            "tenant_id": str(tenant.id),
+            "contact_id": str(contact_id),
+            "environment": settings.ENVIRONMENT,
+        })
+        sentry_sdk.capture_exception(media_err)
+        await send_discord_alert(
+            title=f"❌ Media Download Failed | Tenant {tenant.id}",
+            description=(
+                f"**Type:** {message_type}\n"
+                f"**Media ID:** {media_id[:20]}...\n"
+                f"**Message ID:** {message_id}\n"
+                f"**Contact:** {contact_id}\n"
+                f"**Error:** {str(media_err)[:300]}"
+            ),
+            severity="error", error=media_err,
+        )
+        # Mark as failed in DB (best-effort)
+        try:
+            await db.table("messages").update({
+                "media_metadata": {
+                    **media_metadata,
+                    "download_status": "failed",
+                    "error": str(media_err)[:200],
+                }
+            }).eq("id", message_id).execute()
+        except Exception as update_err:
+            logger.error(f"❌ [MEDIA] Failed to mark download as failed: {repr(update_err)}")
+            sentry_sdk.capture_exception(update_err)
+
+
 class ProcessMessageUseCase:
     
     @staticmethod
@@ -93,7 +262,62 @@ class ProcessMessageUseCase:
                 
             message = changes["messages"][0]
             patient_phone = message.get("from")
-            text_body = message.get("text", {}).get("body", "")
+
+            # ============================================================
+            # MEDIA HANDLING: Type detection + metadata extraction
+            # Zero-latency: pure JSON parsing of the webhook payload.
+            # No network calls. No disk I/O. No blocking.
+            # Ref: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components#messages-object
+            # ============================================================
+            message_type = message.get("type", "text")
+            text_body = ""
+            media_metadata = None
+
+            if message_type == "text":
+                text_body = message.get("text", {}).get("body", "")
+            elif message_type in ("image", "document", "audio", "video", "sticker"):
+                media_obj = message.get(message_type, {})
+                media_metadata = {
+                    "media_id": media_obj.get("id"),
+                    "mime_type": media_obj.get("mime_type"),
+                    "sha256": media_obj.get("sha256"),
+                    "caption": media_obj.get("caption"),
+                    "filename": media_obj.get("filename"),  # documents only
+                    "animated": media_obj.get("animated"),  # stickers only
+                    "download_status": "pending",
+                    "storage_path": None,
+                }
+                text_body = media_obj.get("caption", "")
+                logger.info(
+                    f"📎 [ORCH] Media message: type={message_type}, "
+                    f"mime={media_obj.get('mime_type')}, "
+                    f"media_id={media_obj.get('id', 'N/A')[:20]}..."
+                )
+            elif message_type == "location":
+                loc = message.get("location", {})
+                media_metadata = {
+                    "latitude": loc.get("latitude"),
+                    "longitude": loc.get("longitude"),
+                    "name": loc.get("name"),
+                    "address": loc.get("address"),
+                }
+                text_body = f"📍 Ubicación: {loc.get('name', '')} {loc.get('address', '')}".strip()
+            elif message_type == "reaction":
+                reaction = message.get("reaction", {})
+                media_metadata = {
+                    "reacted_message_id": reaction.get("message_id"),
+                    "emoji": reaction.get("emoji"),
+                }
+                text_body = ""  # Reactions don't generate LLM text
+                logger.info(f"😊 [ORCH] Reaction: {reaction.get('emoji')}")
+            else:
+                message_type = "unsupported"
+                text_body = ""
+                logger.warning(f"⚠️ [ORCH] Unsupported message type: {message.get('type')}")
+                sentry_sdk.capture_message(
+                    f"Unsupported WhatsApp message type: {message.get('type')} | Tenant {tenant.id}",
+                    level="warning"
+                )
             
             # ============================================================
             # Step 4: Extract wamid for webhook deduplication
@@ -211,13 +435,18 @@ class ProcessMessageUseCase:
                 try:
                     insert_data = {
                         "contact_id": contact_id, "tenant_id": tenant.id,
-                        "sender_role": "user", "content": text_body
+                        "sender_role": "user", "content": text_body,
+                        "message_type": message_type,
+                        "media_metadata": media_metadata,  # NULL for text messages
                     }
                     # Step 4: Include wamid for dedup — partial UNIQUE index
                     # catches duplicate webhook deliveries at the DB level.
                     if wamid:
                         insert_data["wamid"] = wamid
-                    await db.table("messages").insert(insert_data).execute()
+                    inserted_msg_res = await db.table("messages").insert(insert_data).execute()
+                    inserted_msg_id = None
+                    if inserted_msg_res.data:
+                        inserted_msg_id = inserted_msg_res.data[0].get("id")
                 except Exception as e:
                     err_str = str(e)
                     # Step 4: Check if this is a UNIQUE violation on wamid
@@ -236,6 +465,31 @@ class ProcessMessageUseCase:
                     logger.error(f"❌ [ORCH] Msg persistence err: {e}")
                     sentry_sdk.capture_exception(e)
                     await send_discord_alert(title=f"❌ Msg Persistence Error | Tenant {tenant.id}", description=f"Failed to persist inbound message for contact {contact_id}: {str(e)[:300]}", severity="error", error=e)
+
+            # ============================================================
+            # MEDIA HANDLING: Fire-and-forget background download + upload
+            # This MUST be after persist and before LLM pipeline.
+            # Runs as asyncio.create_task — does NOT block LLM response.
+            # Stickers excluded (cosmetic, no business value in downloading).
+            # ============================================================
+            if (contact_id and not is_simulation
+                and message_type in ("image", "document", "audio", "video")
+                and media_metadata and 'inserted_msg_id' in dir() and inserted_msg_id):
+                asyncio.create_task(
+                    _download_and_store_media(
+                        db, tenant, contact_id, inserted_msg_id, message_type, media_metadata
+                    )
+                )
+                logger.info(f"🚀 [MEDIA] Background download task launched for msg={inserted_msg_id}")
+
+            # ============================================================
+            # MEDIA HANDLING: Reactions skip entire LLM pipeline
+            # Reactions are emoji responses to existing messages — no customer intent
+            # to interpret. We persisted the message above; now return.
+            # ============================================================
+            if message_type == "reaction":
+                logger.info(f"😊 [ORCH] Reaction persisted, skipping LLM pipeline")
+                return
 
             # ============================================================
             # INC-4: Update last_message_at on every processed message
@@ -424,7 +678,7 @@ class ProcessMessageUseCase:
                 if contact_id:
                     logger.info("📚 [ORCH] Fetching history...")
                     try:
-                        hist_res = await db.table("messages").select("sender_role, content").eq("contact_id", contact_id).order("timestamp", desc=True).limit(30).execute()
+                        hist_res = await db.table("messages").select("sender_role, content, message_type, media_metadata").eq("contact_id", contact_id).order("timestamp", desc=True).limit(30).execute()
                         if hist_res.data:
                             for m in reversed(hist_res.data):
                                 sr = m["sender_role"]
@@ -448,7 +702,14 @@ class ProcessMessageUseCase:
                                     rol = "assistant"
                                 else:
                                     rol = "user"
-                                history.append({"role": rol, "content": m["content"]})
+                                # MEDIA HANDLING: Rebuild descriptive text for past media messages
+                                # so the LLM sees "[El usuario envió una imagen]" instead of empty string
+                                msg_content = m["content"]
+                                if rol == "user" and m.get("message_type") and m["message_type"] != "text":
+                                    msg_content = _build_llm_content_for_media(
+                                        m["content"], m["message_type"], m.get("media_metadata")
+                                    )
+                                history.append({"role": rol, "content": msg_content})
                     except Exception as hist_err:
                         logger.error(f"❌ [ORCH] Failed to fetch history: {hist_err}")
                         sentry_sdk.capture_exception(hist_err)
@@ -529,8 +790,10 @@ class ProcessMessageUseCase:
                 # Non-fatal: continue with the original (stale) history
 
             # Append current message only if not already in re-fetched history
-            if not history or history[-1].get("content", "").lower() != text_body.lower():
-                history.append({"role": "user", "content": text_body})
+            # MEDIA HANDLING: Use descriptive text for LLM instead of raw empty string
+            llm_content = _build_llm_content_for_media(text_body, message_type, media_metadata)
+            if not history or history[-1].get("content", "").lower() != (llm_content or "").lower():
+                history.append({"role": "user", "content": llm_content})
 
             # Error points #9-10: LLM strategy creation + schema fetch
             import time as _time_mod
