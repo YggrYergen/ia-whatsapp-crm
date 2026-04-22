@@ -139,6 +139,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                     }
                 }
             )
+            .on(
+                'postgres_changes' as any,
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `tenant_id=eq.${currentTenantId}`,
+                },
+                (payload: any) => {
+                    const updatedMsg = payload.new as any
+                    // Merge updated fields into existing message in state
+                    // Primary use case: media_metadata updates when background download completes
+                    setMessages(prev =>
+                        prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+                    )
+                }
+            )
             .subscribe()
 
         return () => {
