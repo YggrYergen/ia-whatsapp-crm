@@ -383,7 +383,7 @@ def create_app() -> FastAPI:
 
         try:
             db = await SupabasePooler.get_client()
-            signed = db.storage.from_("whatsapp-media").create_signed_url(
+            signed = await db.storage.from_("whatsapp-media").create_signed_url(
                 path=path,
                 expires_in=3600,  # 1 hour
             )
