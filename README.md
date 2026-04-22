@@ -39,7 +39,7 @@ npm install
 npm run dev                                        # localhost:3000
 ```
 
-**Current status:** Sprint 1 (Emergency Stabilization) Blocks A-L **COMPLETE ✅**. Production live with first client (CasaVitaCure). Second tenant onboarding Tue Apr 15.
+**Current status:** Sprint 2 (Product Expansion) **IN PROGRESS**. Production live with 2 tenants: **CasaVitaCure** (wellness) + **Control Pest** (fumigation). WhatsApp pipeline migrated to Responses API. Per-tenant HMAC webhook verification deployed. Media handling pipeline in design phase.
 
 > For detailed sprint status, see [task_v2.md](file:///d:/WebDev/IA/.ai-context/task_v2.md). For execution log, see [execution_tracker.md](file:///d:/WebDev/IA/.ai-context/execution_tracker.md).
 
@@ -67,11 +67,12 @@ WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)
                         │ 1. Persist inbound msg    │
                         │ 2. Atomic lock check      │
                         │ 3. Deduplicate (wamid)    │
-                        │ 4. Fetch history (20 msgs)│
+                        │ 4. Fetch history (30 msgs)│
                         │ 5. Inject patient context │
-                        │ 6. LLM inference          │
-                        │ 7. Multi-round tool loop  │──► Native Calendar (Supabase)
-                        │ 8. Synthesis pass         │      or GCal API (legacy)
+                        │ 6. Media type detection   │──► Supabase Storage (async)
+                        │ 7. LLM inference          │
+                        │ 8. Multi-round tool loop  │──► Native Calendar (Supabase)
+                        │ 9. Synthesis pass         │
                         │ 9. Persist + Send         │──► Meta Graph API v25.0
                         └──────────────────────────┘
                                        │
@@ -81,14 +82,14 @@ WhatsApp User ──► Meta Webhook ──► FastAPI (Cloud Run)
                          Dashboard / Chats / Agenda / CRM
 ```
 
-> **Calendar architecture:** New tenants use the **native calendar** (Supabase tables: `resources`, `appointments`, `scheduling_config`). Legacy tenant CasaVitaCure retains Google Calendar integration. Both systems share the same AI tool interface.
+> **Calendar architecture:** All tenants use the **native calendar** (Supabase tables: `resources`, `appointments`, `scheduling_config`). Legacy Google Calendar code was removed (commit `88c06d4`, Apr 21).
 
 ### External APIs
 
 | Service | Version | Module |
 |:---|:---|:---|
 | Meta WhatsApp Cloud API | **v25.0** | `infrastructure/messaging/meta_graph_api.py` |
-| Google Calendar API | v3 | `infrastructure/calendar/google_client.py` |
+| Google Calendar API | v3 | `infrastructure/calendar/google_client.py` (**LEGACY — dead code removed Apr 21**) |
 | OpenAI Chat Completions | `/v1/chat/completions` | `infrastructure/llm_providers/openai_adapter.py` |
 | OpenAI Responses API | `/v1/responses` | `infrastructure/llm_providers/openai_responses_adapter.py` |
 | Google Generative AI | — | `infrastructure/llm_providers/gemini_adapter.py` (**MOCK — Sprint 2**) |
@@ -154,7 +155,7 @@ Frontend/
 │   ├── layout.tsx, global-error.tsx       # Root layout + Sentry render error capture
 │   ├── login/page.tsx                     # Cinematic login: Vortex bg + CLI text + glassmorphic card
 │   ├── auth/callback/, auth/confirm/      # OAuth PKCE flow (see deep_dives_&_misc/)
-│   ├── config/page.tsx                    # LLM provider/model, system prompt, GCal OAuth
+│   ├── (panel)/config/page.tsx            # LLM provider/model, system prompt (inside panel layout for TenantContext)
 │   ├── api/                               # Proxy routes → Cloud Run backend
 │   │   └── sandbox/chat/                  # Dedicated sandbox chat endpoint (OpenAI Responses API)
 │   └── (panel)/                           # Auth-guarded route group (Sidebar + CrmProvider)
@@ -191,6 +192,7 @@ tenants (
     name TEXT NOT NULL,
     ws_phone_id TEXT UNIQUE,                  -- Meta Phone Number ID (webhook routing)
     ws_token TEXT,                            -- WhatsApp permanent access token
+    meta_app_secret TEXT,                     -- Per-tenant Meta App Secret for HMAC webhook verification
     llm_provider TEXT CHECK IN ('openai','gemini'),
     llm_model TEXT,                           -- 'gpt-5.4-mini' (default)
     system_prompt TEXT,
@@ -228,6 +230,8 @@ messages (
     tenant_id UUID FK → tenants,              -- Denormalized for RLS
     sender_role TEXT CHECK IN ('user','assistant','human_agent','system_alert'),
     content TEXT,
+    message_type TEXT DEFAULT 'text',         -- PENDING: text/image/document/audio/video/sticker/location/reaction
+    media_metadata JSONB DEFAULT NULL,        -- PENDING: {media_id, mime_type, sha256, storage_path, download_status}
     wamid TEXT,                               -- WhatsApp Message ID (deduplication)
     note TEXT,                                -- Inline QA notes from sandbox
     timestamp TIMESTAMPTZ
@@ -363,7 +367,9 @@ tenant_services (
 
 ### Row Level Security (RLS)
 
-All tables use `get_user_tenant_ids()` (queries `tenant_users` by `auth.uid()`). Backend bypasses RLS via `SUPABASE_SERVICE_ROLE_KEY`.
+All tables use `get_user_tenant_ids()` (queries `tenant_users` by `auth.uid()`). Superadmin users additionally matched via `is_superadmin()` function (queries `profiles.is_superadmin`). Backend bypasses RLS via `SUPABASE_SERVICE_ROLE_KEY`.
+
+**Superadmin policies (Apr 21):** INSERT/UPDATE on `messages`, `contacts`, `tenants` for `is_superadmin()` users — enables cross-tenant staff messaging and config management.
 
 ### Supabase Realtime
 
@@ -477,7 +483,7 @@ Enabled on `contacts`, `messages`, `alerts`. Frontend channels: `chat_contacts_c
 | 10 | **DO NOT upload base64-encoded secrets** to Secret Manager | Backend expects raw JSON for `GOOGLE_CALENDAR_CREDENTIALS` |
 | 11 | **DO NOT change `gpt-5.4-mini`** model default without testing | Validated model. `gpt-4o-mini` is DEPRECATED. |
 | 12 | **DO NOT remove `strict: true`** from tool schemas | Prevents LLM parameter hallucination |
-| 13 | **DO NOT remove webhook HMAC-SHA256 verification** | Security: validates requests come from Meta |
+| 13 | **DO NOT remove webhook HMAC-SHA256 verification** | Security: per-tenant `meta_app_secret` validates requests from Meta. Dynamic lookup in `main.py`. |
 | 14 | **DO NOT connect GCal dev credentials to prod calendar** | Risk of test operations corrupting live calendar |
 
 ### Deployment — MUST
@@ -587,7 +593,7 @@ Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0, eslint-config-next@1
 | L | ✅ Complete | Dashboard + mobile frontend overhaul (glassmorphic, live alerts, patient profiles) |
 | M-Q | ✅ Complete | CasaVitaCure live, fumigation tenant provisioned |
 
-### Sprint 1.5: Onboarding + Native Calendar (Apr 13-16) — IN PROGRESS
+### Sprint 1.5: Onboarding + Native Calendar (Apr 13-16) — ✅ COMPLETE
 
 | Block | Status | Summary |
 |:---|:---|:---|
@@ -596,20 +602,27 @@ Dev: typescript@^5.4.3, tailwindcss@^3.4.3, eslint@^8.57.0, eslint-config-next@1
 | T | ✅ Complete | Agenda UI: real business hours, progress bars per resource, native calendar read/write |
 | U | ✅ Complete | Sandbox chat: dedicated `/api/sandbox/chat` endpoint, OpenAI Responses API, session persistence |
 | V | ✅ Complete | Login overhaul: Vortex particle simulation, dark matter dust, CLI pre-suasion text, glassmorphic card |
-| W | ⏳ In Progress | README update, observability audit, mobile polish, E2E testing, PROD migration gate |
+| W | ✅ Complete | README update, observability audit, mobile polish, E2E testing, PROD migration gate |
 
 ### Sprint 2: Product Expansion (Apr 16-25)
 
-| Priority | Feature |
-|:---|:---|
-| 🟢 | Responses API adapter (`openai_responses_adapter.py`) — `reasoning.effort` + tools + streaming. Built for onboarding agent (Block R). |
-| 🔴 | WhatsApp pipeline → Responses API migration — swap `openai_adapter.py` after onboarding adapter proven |
-| 🔴 | Instagram DM integration — SELLING POINT |
-| 🔴 | Multi-squad booking engine — SELLING POINT |
-| 🔴 | Dashboard MVP (charts, KPIs, real metrics) |
-| 🟡 | Gemini adapter real (`google-genai` SDK) |
-| 🟡 | Credits/billing system (`tenant_plans`, `consume_credits()`) |
-| 🟡 | SuperAdmin panel (all tenants overview) |
+| Priority | Feature | Status |
+|:---|:---|:---|
+| ✅ | Responses API adapter + WhatsApp pipeline migration (`ec5f27e`) | **DONE** Apr 18 |
+| ✅ | Adaptive reasoning (`25e1213`), pre-tool-call ACK (`f1ca4fe`) | **DONE** Apr 18 |
+| ✅ | Staff WhatsApp send + 24h window handling (`0b907da`) | **DONE** Apr 18 |
+| ✅ | Service-aware booking + appointment UI (`f16dced`, `23b0834`) | **DONE** Apr 18 |
+| ✅ | Mobile polish: viewport, bottom bar, dead buttons (6 commits) | **DONE** Apr 19 |
+| ✅ | Per-tenant HMAC + superadmin RLS + /config TenantContext | **DONE** Apr 21 |
+| 🔴 | **WhatsApp media handling** (image/document/audio) — Supabase Storage | **IN PROGRESS** |
+| 🔴 | Credits/billing system (`tenant_plans`, `consume_credits()`) | Pending |
+| 🔴 | Instagram DM integration — SELLING POINT | Pending |
+| 🔴 | Multi-squad booking engine — SELLING POINT | Pending |
+| 🔴 | Dashboard MVP (charts, KPIs, real metrics) | Pending |
+| 🟡 | Gemini adapter real (`google-genai` SDK) | Pending |
+| 🟡 | SuperAdmin panel (all tenants overview) | Pending |
+
+
 
 ### Sprint 3: Scale (Apr 26 - May 4)
 

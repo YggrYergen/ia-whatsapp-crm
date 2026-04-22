@@ -10,7 +10,9 @@
 > - [Deep Dive C v3 — Dashboard + Observability](file:///d:/WebDev/IA/.ai-context/deep_dive_c_dashboard_ux.md) — 15+ Infrastructure doc URLs
 > - [Master Plan v5](file:///C:/Users/tomas/.gemini/antigravity/brain/2ae8123c-0df3-4743-86ba-b85da6306f81/master_plan.md) — Corrected financials, model decision
 
-## Status: Phase 0-5D COMPLETE ✅ | Sprint 1 Blocks A-L COMPLETE ✅ | Blocks M-Q PENDING ⏳
+## Status: Phase 0-5D COMPLETE ✅ | Sprint 1 Blocks A-Q COMPLETE ✅ | Sprint 1.5 (R-W) COMPLETE ✅ | Sprint 2 IN PROGRESS 🔧
+
+> **Sprint 2 Progress (Apr 17-21):** Responses API migration ✅, adaptive reasoning ✅, staff WhatsApp send ✅, service-aware booking ✅, mobile polish ✅, per-tenant HMAC ✅, superadmin RLS ✅, /config TenantContext ✅, dead GCal code removed ✅. **Next:** WhatsApp media handling pipeline.
 
 > [!CAUTION]
 > **CRITICAL CORRECTIONS (2026-04-11 v5 Research):**
@@ -871,7 +873,6 @@ If that doesn't work: Go to [console.cloud.google.com](https://console.cloud.goo
 
 | Item | Sprint 2 Priority |
 |:---|:---|
-| Responses API migration (`/v1/responses`) | 🔴 Enables reasoning + tools |
 | Instagram DM | 🔴 SELLING POINT |
 | Multi-squad booking | 🔴 SELLING POINT |
 | Dashboard MVP (Charts, KPIs) | 🔴 First thing Sprint 2 |

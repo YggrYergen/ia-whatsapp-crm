@@ -1,5 +1,5 @@
 # BACKLOG.md — Recall Memory (Active Pending Work)
-> **Tier 2 | Updated:** 2026-04-16 19:36 CLT
+> **Tier 2 | Updated:** 2026-04-21 22:30 CLT
 > Single source of truth for ALL pending work. No history — completed items go to execution_tracker.md.
 
 ---
@@ -10,28 +10,40 @@
 |:---|:---|:---|:---|
 | BUG-8 | P2 | Desktop cursor tracking on deployed site (CF Workers) — mouse not tracked by Vortex after deploy | Investigate CSP/pointer-events |
 | BUG-9 | P2 | Sandbox chat "Enviar Prueba" — `test_feedback` may need `tenant_id` column check on DEV | Verify schema |
-| ~~BUG-10~~ | ~~P1~~ | ~~Sandbox "Reiniciar" button not working — `confirm()` blocked by Edge runtime~~ | ~~✅ FIXED `3915990`~~ |
+| ~~BUG-10~~ | ~~P1~~ | ~~Sandbox "Reiniciar" button not working~~ | ~~FIXED `3915990`~~ |
+| MEDIA-1 | P1 | WhatsApp media messages (images, docs, audio) silently dropped — `text_body=""` | Implementation plan ready, awaiting approval |
 
 ---
 
-## §2 — Active Sprint (Block X — Stabilization Close-Out)
+## §2 — Active Sprint (WhatsApp Media Handling + E2E Tests)
 
 | ID | Priority | Task | Status |
 |:---|:---|:---|:---|
-| X-1 | 🔴 | Verify Reiniciar button works after deploy (React inline confirmation) | ✅ User verified |
-| X-2 | 🔴 | Configure `SENTRY_AUTH_TOKEN` as **Build Secret** in CF Workers Builds dashboard | ✅ User configured |
-| X-3 | 🟡 | 3-way isolation re-test (Superadmin vs Jose Mancilla vs CasaVitaCure) | ✅ Passed |
-| X-4 | 🟡 | PROD migration gate — present schema diff, await approval | ✅ Applied 6 groups |
-| X-5 | 🟡 | `NEXT_PUBLIC_*` vars as **Build Secrets** in CF dashboard (for build-time inlining) | ✅ User configured (dev+prod) |
+| MEDIA-DB | 🔴 | `message_type` + `media_metadata` columns on `messages` table | Awaiting plan approval |
+| MEDIA-STORAGE | 🔴 | Supabase `whatsapp-media` bucket + RLS policies | Awaiting plan approval |
+| MEDIA-BACKEND | 🔴 | Media extraction in `ProcessMessageUseCase` + background download | Awaiting plan approval |
+| MEDIA-FRONTEND | 🟡 | `MediaBubble` component for ChatArea | After backend |
+| E2E-FULL | 🔴 | 14-step E2E test suite (7 tools + cross-tenant) | Planned in `Plan de Pruebas E2E.md` |
+
+### Block X — Stabilization Close-Out ✅ ALL COMPLETE
+
+| ID | Priority | Task | Status |
+|:---|:---|:---|:---|
+| X-1 | 🔴 | Verify Reiniciar button works after deploy | ✅ User verified |
+| X-2 | 🔴 | Configure `SENTRY_AUTH_TOKEN` as Build Secret | ✅ User configured |
+| X-3 | 🟡 | 3-way isolation re-test | ✅ Passed |
+| X-4 | 🟡 | PROD migration gate | ✅ Applied 6 groups |
+| X-5 | 🟡 | `NEXT_PUBLIC_*` vars as Build Secrets | ✅ User configured |
 | X-6 | 🟢 | Append session results to execution_tracker.md | ✅ Done |
 
 ---
 
-## §3 — Next Sprint (Sprint 2 — Product Expansion)
+## §3 — Sprint 2 Remaining (Product Expansion)
 
-| ID | Priority | Feature | Notes |
+| ID | Priority | Feature | Status |
 |:---|:---|:---|:---|
-| S2-1 | 🔴 | WhatsApp pipeline → Responses API migration | Proven via onboarding agent |
+| ~~S2-1~~ | ~~🔴~~ | ~~WhatsApp pipeline Responses API migration~~ | ✅ DONE (`ec5f27e` Apr 18) |
+| S2-MEDIA | 🔴 | WhatsApp media handling (image/document/audio) | IN PROGRESS |
 | S2-2 | 🔴 | Instagram DM integration | Major selling point |
 | S2-3 | 🔴 | Multi-squad booking engine | Major selling point |
 | S2-4 | 🔴 | Dashboard MVP (real charts, KPIs) | Replace mock data |
@@ -162,20 +174,34 @@ for Next.js to inline them into the client bundle at build time.
 
 ---
 
-## §5 — PROD Migration Gate (✅ ALL APPLIED — 2026-04-16 20:00 CLT)
+## §5 — PROD Migration Gate
+
+### Wave 1 (Apr 16) ✅ ALL APPLIED
 
 | Migration | Tables Affected | DEV | PROD |
 |:---|:---|:---|:---|
 | Onboarding schema | tenant_onboarding, onboarding_messages | ✅ | ✅ |
 | Native calendar schema | resources, appointments, scheduling_config, tenant_services | ✅ | ✅ |
 | Profiles table | profiles | ✅ | ✅ |
-| tenants ALTER | ws_phone_id, ws_token, system_prompt → nullable | ✅ | ✅ |
+| tenants ALTER | ws_phone_id, ws_token, system_prompt nullable | ✅ | ✅ |
 | tenant_users ALTER | role, created_at columns added | ✅ | ✅ |
 | Functions | is_superadmin, get_my_tenant_id, handle_new_user | ✅ | ✅ |
 | Superadmin RLS | All 13 tables | ✅ | ✅ |
 | Profile backfill | tomasgemes=superadmin, instagramelectrimax=admin | ✅ | ✅ |
 
-> `is_setup_complete` on tenants: ✅ PROD already applied (emergency fix earlier today).
+### Wave 2 (Apr 21) ✅ ALL APPLIED
+
+| Migration | Tables Affected | DEV | PROD |
+|:---|:---|:---|:---|
+| meta_app_secret | tenants | ✅ | ✅ |
+| Superadmin INSERT/UPDATE | messages, contacts, tenants | ✅ | ✅ |
+
+### Wave 3 (Pending) — Media Handling
+
+| Migration | Tables Affected | DEV | PROD |
+|:---|:---|:---|:---|
+| message_type + media_metadata | messages | Pending | Pending |
+| whatsapp-media bucket | storage.objects | Pending | Pending |
 
 > **Data preservation verified:** 1 tenant, 7 contacts, 122 messages, 12 alerts, 41 test_feedback — all intact.
 

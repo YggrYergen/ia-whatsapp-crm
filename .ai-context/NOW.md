@@ -1,53 +1,32 @@
 # NOW.md — Working Memory
-> **Tier 1 | Updated:** 2026-04-16 19:36 CLT
-> **Session:** 6550aa28-99cc-4157-9055-8be1a1ecce4b
-> **Branch:** `desarrollo` | **Last commit:** `132602d`
+> **Tier 1 | Updated:** 2026-04-21 22:26 CLT
+> **Session:** 62eed18b-c412-4ec7-abe7-60e6462eb334
+> **Branch:** `main` | **Last commit:** `ca93ddb`
 
 ---
 
 ## §0 — Current Focus
 
-**Multi-Tenant CRM Stabilization — Sandbox Reset + Sentry + Env Vars**
-Sandbox "Reiniciar" button fixed (native `confirm()` blocked by edge runtime → replaced with React inline confirmation). Sentry frontend configuration corrected (`instrumentation.ts` + hardcoded org/project + auth token). Wrangler.toml now version-controls all runtime env vars.
+**WhatsApp Media Handling Pipeline + Documentation Sync**
+Implementing zero-latency media processing for incoming WhatsApp attachments (images, documents, audio, video). Control Pest will receive payment receipts from clients. Pipeline design: synchronous type detection → fire-and-forget background download/upload to Supabase Storage → descriptive text injection for LLM context.
+
+Also: updating 7 stale `.ai-context/` documents (last updated Apr 16, 6 days behind).
 
 ---
 
-## §1 — Session Work Log (2026-04-16 — Full Day)
+## §1 — Session Work Log (2026-04-21 — Multi-Tenant Stabilization + Media Analysis)
 
-| # | What | Commit |
-|---|------|--------|
-| 1 | Agenda real hours + progress bars | `3b28116` |
-| 2 | Cinematic login: Vortex (920 particles) | `3b28116` |
-| 3 | CLI animated text (Tektur, 15 phrases) | `3b28116` |
-| 4 | Glassmorphic login card | `3b28116` |
-| 5 | README §2/§3/§4/§10 updated | `3b28116` |
-| 6 | Observability audit — 0 silent blocks | manual |
-| 7 | DB reset → fresh newcomer (instagramelectrimax) | DEV SQL |
-| 8 | **BUG FIX** PGRST116 → `.maybe_single()` | `c5d4573` |
-| 9 | **BUG FIX** Welcome step bypass → always 'welcome' when !isSetupComplete | `c5d4573` |
-| 10 | **BUG FIX** "Contacto" check blob missing in ConfigProgress | `c5d4573` |
-| 11 | **BUG FIX** Login mobile white border → `h-[100dvh]` | `c5d4573` |
-| 12 | **BUG FIX** NoneType on provision → `if onb_res is None` | `d7f2a76` |
-| 13 | **NEW** `_provision_generic_fallback()` — 1 service + 1 resource + scheduling | `d7f2a76` |
-| 14 | **BUG FIX** WelcomeStep mobile overflow → `overflow-y-auto` + smaller sizes | `d7f2a76` |
-| 15 | **BUG FIX** Provision circle → full green ring on final step | `d7f2a76` |
-| 16 | **NEW** Sandbox `Enviar Prueba` button + per-bubble annotations → `test_feedback` | `83ae0f3` |
-| 17 | **PROD FIX** `is_setup_complete` column missing on PROD → applied migration | direct SQL |
-| 18 | **BUG FIX** Vortex black bars mobile → canvas uses container dims not `window.innerHeight` | `66b4f16` |
-| 19 | **BUG FIX** `tenant_onboarding` UPDATE → upsert (survives reset users) | `007ad79` |
-| 20 | **BUG FIX** Wrong columns in fallback (`resource_type`, `advance_booking_days`) → fixed to real schema | `007ad79` |
-| 21 | **BUG FIX** Duplicate key on double-submit → upsert `on_conflict` | `007ad79` |
-| 22 | DB reset (Round 5) | DEV SQL |
-| 23 | **SECURITY** Tenant-scoped DashboardView, PacientesView, AgendaView | `9ca7af2` |
-| 24 | **SECURITY** Renamed Pacientes → Clientes across UI | `9ca7af2` |
-| 25 | **BUG FIX** Config page crash on pre-render → direct auth query pattern | `9ca7af2` |
-| 26 | **BUG FIX** Sandbox initRef boolean → tenantId-aware re-init on tenant switch | `7561ba9` |
-| 27 | **BUG FIX** Sandbox handleReset tenant_id scoping + 3-channel error reporting | `7561ba9` |
-| 28 | **NEW** `instrumentation.ts` for server-side Sentry capture | `d356dcb` |
-| 29 | **CONFIG** Hardcoded Sentry org/project in next.config.js + authToken from env | `d356dcb` |
-| 30 | **BUG FIX** Sandbox Reiniciar: `confirm()` blocked by Edge runtime → React inline double-click confirmation | `3915990` |
-| 31 | **CONFIG** wrangler.toml `[vars]` — version-controlled runtime env vars | `132602d` |
-| 32 | **NEW** TD-7 added to BACKLOG (JWT app_metadata tenant resolution) | `7561ba9` |
+| # | What | Commit/Method |
+|---|------|---------------|
+| 1 | RLS: Superadmin INSERT/UPDATE policies for `messages`, `contacts`, `tenants` | PROD SQL (live) |
+| 2 | `/config` page migrated into `(panel)` layout for TenantContext integration | `ca93ddb` |
+| 3 | Multi-tenant HMAC webhook verification — per-tenant `meta_app_secret` | `1e0efc4` |
+| 4 | Removed dead Google Calendar code + fixed tool description | `88c06d4` |
+| 5 | `meta_app_secret` column added to `tenants` table (PROD) | PROD SQL |
+| 6 | `bot_active = true` reset for CasaVitaCure silent contact | PROD SQL |
+| 7 | Deep analysis: Meta Cloud API media webhook payloads | Research |
+| 8 | Media handling implementation plan created (zero-latency fire-and-forget) | Plan artifact |
+| 9 | Documentation sync: 7 stale `.ai-context/` files updated | This session |
 
 ---
 
@@ -64,8 +43,9 @@ Sandbox "Reiniciar" button fixed (native `confirm()` blocked by edge runtime →
 | **GCP Project** | `saas-javiera` |
 | **GitHub** | `YggrYergen/ia-whatsapp-crm` |
 | **Sentry Org** | `tuasistentevirtual` (project: `python`) |
-| **Test user** | `instagramelectrimax@gmail.com` → tenant `f12ca5b3` (Jose Mancilla/FumigaMax) |
 | **Client 1 (PROD)** | CasaVitaCure → tenant `d8376510` |
+| **Client 2 (PROD)** | Control Pest → tenant (live, HMAC configured) |
+| **Test user** | `instagramelectrimax@gmail.com` → tenant `f12ca5b3` (Jose Mancilla/FumigaMax) |
 
 ---
 
@@ -73,10 +53,9 @@ Sandbox "Reiniciar" button fixed (native `confirm()` blocked by edge runtime →
 
 | Environment | Frontend | Backend | DB |
 |:---|:---|:---|:---|
-| DEV | `132602d` (deployed) | `007ad79` (prior) | DEV Supabase |
-| PROD | `699dae2` (prior session) | `699dae2` (prior session) | PROD Supabase |
+| PROD | `ca93ddb` (deployed via main push) | `ca93ddb` (auto-deploy Cloud Build) | PROD Supabase |
 
-> ⚠️ PROD not yet updated this session — awaiting E2E test pass + user approval
+> Both frontend and backend auto-deploy from `main` branch pushes.
 
 ---
 
@@ -84,18 +63,10 @@ Sandbox "Reiniciar" button fixed (native `confirm()` blocked by edge runtime →
 
 | Migration | DEV | PROD | Status |
 |:---|:---|:---|:---|
-| is_setup_complete on tenants | ✅ | ✅ | **PROD ✅ VERIFIED** |
-| tenants ALTER (DROP NOT NULL ×3) | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| tenant_users ALTER (role, created_at) | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| profiles table + trigger + functions | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| tenant_onboarding table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| onboarding_messages table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| resources table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| tenant_services table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| scheduling_config table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| appointments table | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| Superadmin RLS policies (all tables) | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
-| Profile backfill + role assignment | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-16 session 9ee36370) |
+| All Sprint 1 migrations (Apr 11-16) | ✅ | ✅ | **PROD ✅ VERIFIED** |
+| `meta_app_secret` column on tenants | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-21) |
+| Superadmin INSERT/UPDATE RLS (messages, contacts, tenants) | ✅ | ✅ | **PROD ✅ VERIFIED** (2026-04-21) |
+| `message_type` + `media_metadata` on messages | ❌ | ❌ | **PENDING — media handling plan awaiting approval** |
 
 ---
 
@@ -103,8 +74,7 @@ Sandbox "Reiniciar" button fixed (native `confirm()` blocked by edge runtime →
 
 | # | Issue | Status |
 |:---|:---|:---|
-| Sandbox Reiniciar button | `confirm()` blocked by Edge runtime → replaced with React inline confirmation | ✅ FIXED (3915990) — awaiting user verification |
-| Sentry auth token (build) | Token set in CF dashboard but needs to be in "Build variables and secrets" | ⚠️ User action required |
-| Sentry instrumentation file warning | Created `instrumentation.ts` | ✅ FIXED (d356dcb) |
-| Cursor tracking on deployed desktop | Pointer events may be CSP issue in CF Workers | Logged to BACKLOG — investigate after E2E pass |
-| Speech-to-text on some mobile browsers | Opera incognito — not a bug | Closed |
+| Media handling | Images/documents/audio from WhatsApp silently dropped (text_body="") | 🔴 Implementation plan ready, awaiting approval |
+| E2E test suite | 14-step plan (7 tools + cross-tenant) not yet executed | ⏳ PENDING — user must run manually |
+| wamid extraction | Values null in DB — dedup falls back to atomic lock (working) | 🟡 Low priority |
+| Dashboard charts | Mock data in `/reportes/` and `/finops/` | 🟡 Sprint 2 |

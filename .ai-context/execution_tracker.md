@@ -920,3 +920,89 @@ Verification: onboarding_msgs=0, record=0, resources=0, services=0, sched_config
 | Set `NEXT_PUBLIC_*` vars as **Build variables** in CF Workers Builds dashboard | Next.js needs them at build time to inline into client bundle |
 | Verify Reiniciar button works with new double-click pattern | Deployed in `3915990` |
 | Approve PROD migrations | 6 table groups pending |
+
+---
+
+## Session: Apr 17 -- P0 Wrangler Fix
+
+### Summary
+wrangler.toml had DEV values in [vars] that overwrote PROD dashboard values on every deploy. PROD frontend pointed to DEV Supabase for 24+ hours. Fixed by updating [vars] to PROD values and adding Rule #17 to README.
+
+| # | What | Commit | Evidence |
+|---|------|--------|----------|
+| 1 | P0 fix: wrangler.toml DEV to PROD vars, fallback URL, Sentry tunnel | 9e7d59c | PROD frontend loading correctly |
+| 2 | Rule #17 added to README: MUST set BACKEND_URL to us-central1 | 7ddc450 | README updated |
+
+---
+
+## Session: Apr 18 -- Sprint 2 Core (14 commits, 9 merges)
+
+### Summary
+Massive day: migrated WhatsApp pipeline from Chat Completions to Responses API, deployed adaptive reasoning, fixed 4.5min latency HOTFIX, added staff WhatsApp sending, pre-tool-call ACK messages, service-aware booking, appointment UI overhaul, and httpx resilience fixes.
+
+| # | What | Commit | Evidence |
+|---|------|--------|----------|
+| 1 | Sidebar layout shift fix (bottom icons) | 3f2a13d | Visual no more content jump |
+| 2 | Sprint 2: Responses API migration full pipeline swap | ec5f27e | WhatsApp messages flowing through new adapter |
+| 3 | HOTFIX: reasoning param removed caused 4.5min latency | 14c7f84 | Response times back to under 5s |
+| 4 | Adaptive reasoning no reasoning for greetings, low effort for conversation | 25e1213 | Greeting responses under 2s |
+| 5 | Staff WhatsApp send + notification nav + RLS + 24h window | 0b907da | Staff messages arrive on user phone |
+| 6 | Service-aware booking + 30-min slot agenda grid | f16dced | Booking modal shows services correctly |
+| 7 | Booking modal: service selector, notes, observability | d85390c | Manual booking works end-to-end |
+| 8 | Pre-tool-call ACK message for instant customer feedback | f1ca4fe | Dejame revisar appears before tool run |
+| 9 | Calendar date timezone, duration preservation, shadow ACK | 019efdc | Appointments land on correct dates |
+| 10 | CRITICAL: update_appointment used patient_phone instead of client_phone (42703) | 33900a5 | Update/cancel operations work |
+| 11 | Appointment detail/edit dialog, proximas subcategories, real patient data | 23b0834 | Agenda UI shows full appointment details |
+| 12 | INC-7: httpx ConnectError cascade retry + singleton clients + timeout tuning | 9abf9d9 | No more cascade failures under load |
+
+---
+
+## Session: Apr 19 -- Mobile Polish (6 commits)
+
+### Summary
+Focused on mobile UX: scheduling fixes, dead button wiring, bottom bar optimization, and viewport fixes.
+
+| # | What | Commit |
+|---|------|--------|
+| 1 | 4 critical scheduling fixes: single-target cancel, tz lookup, FE conflict detection | 6acdff3 |
+| 2 | Phone normalization + agenda call/WhatsApp buttons | a670006 |
+| 3 | Wire up dead CHAT and AGENDAR buttons in pacientes view | 87a1c14 |
+| 4 | Mobile: logout via Mas menu + fix AGENDAR navigation | 7465797 |
+| 5 | Mobile: 100dvh viewport fix | b8e5ba9 |
+| 6 | Mobile: bottom bar reduced to 6 items + Mas overflow menu | 7dc1fdb |
+
+---
+
+## Session: Apr 20 -- Sales Docs
+
+| # | What | Commit |
+|---|------|--------|
+| 1 | Sales Execution Blueprint v2.0 Flash CRM edition + data sourcing arsenal | 6a60169 |
+
+---
+
+## Session: Apr 21 -- Multi-Tenant Security + Media Analysis
+
+### Summary
+Three commits to main: removed dead GCal code, added per-tenant HMAC verification, migrated /config into (panel) layout. Applied 6 RLS policies to PROD, reset bot_active for CasaVitaCure, completed deep analysis of WhatsApp media handling for Control Pest payment receipts.
+
+| # | What | Commit/Method | Evidence |
+|---|------|---------------|----------|
+| 1 | Remove dead Google Calendar code + fix tool description | 88c06d4 | No GCal imports remain |
+| 2 | Multi-tenant HMAC per-tenant meta_app_secret + dynamic signature verification | 1e0efc4 | Both tenants have populated meta_app_secret |
+| 3 | /config migrated into (panel) layout for TenantContext superadmin switching | ca93ddb | Config page shows correct tenant prompt |
+| 4 | Superadmin RLS: INSERT/UPDATE policies for messages, contacts, tenants | PROD SQL | Staff messages no longer 42501 |
+| 5 | bot_active reset for CasaVitaCure silent contact | PROD SQL | Verified via SELECT bot_active |
+| 6 | Media handling implementation plan: zero-latency fire-and-forget + Supabase Storage | Plan | Awaiting user approval |
+| 7 | Documentation sync: 7 stale .ai-context/ files updated | This session | All files updated to Apr 21 |
+
+### DB Migrations Applied (Apr 21)
+
+| Migration | DEV | PROD | Status |
+|:---|:---|:---|:---|
+| meta_app_secret TEXT on tenants | DEV OK | PROD OK | PROD VERIFIED |
+| Superadmin INSERT policy on messages | DEV OK | PROD OK | PROD VERIFIED |
+| Superadmin UPDATE policy on messages | DEV OK | PROD OK | PROD VERIFIED |
+| Superadmin INSERT policy on contacts | DEV OK | PROD OK | PROD VERIFIED |
+| Superadmin UPDATE policy on contacts | DEV OK | PROD OK | PROD VERIFIED |
+| Superadmin policy on tenants (UPDATE) | DEV OK | PROD OK | PROD VERIFIED |

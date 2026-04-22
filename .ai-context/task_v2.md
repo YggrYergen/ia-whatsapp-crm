@@ -225,14 +225,21 @@
 
 | Item | Priority |
 |:---|:---|
-| Calendar Multi-Tenant Architecture Refactor | 🔴 Before tenant #3 |
-| Customer Intelligence System (replaces scoring tool) | 🟡 |
+| Instagram DM integration | 🔴 SELLING POINT |
+| Dashboard MVP (charts, KPIs, real metrics) | 🔴 |
+| Multi-squad booking engine | 🔴 SELLING POINT |
+| Gemini adapter real (`google-genai` SDK) | 🟡 |
+| Credits/billing system | 🟡 |
+| Multi-tenant Knowledge Base (`tenant_knowledge` table) | 🟡 |
+| BSUID Phase 2 (lookup swap) — before June 2026 | 🟡 |
+| Audio transcription for voice notes | 🟢 when issue  |
+| Customer Intelligence System (replaces scoring tool) | 🔴 SELLING POINT |
 | Meta App Review + Tech Provider enrollment | 🟡 Before tenant #7 |
-| Facebook Messenger integration | 🟡 |
+| Facebook Messenger integration | 🟢 |
 | Daily briefing generation | 🟢 |
-| Staff comments on AI responses | 🟢 |
-| Notification system (in-app bell) | 🟢 |
-| Sandbox "publish" workflow for prompt changes | 🟢 |
+| Staff comments on AI responses | 🔴 CRITICAL FOR QA & TUNING |
+| Notification system (in-app bell) | 🔴 ¿WAIT WASNT THIS DONE PROPERLY? |
+| Sandbox "publish" workflow for prompt changes + version tracking | 🟢 |
 
 ---
 
@@ -261,5 +268,4 @@
 | Supabase | `nemrjlimrnrusodivtoa` (us-east-2) | `nzsksjczswndjjbctasu` (us-west-2) |
 | GCP Project | `saas-javiera` | `saas-javiera` |
 | Git Branch | `main` | `desarrollo` |
-| Discord prefix | (none) | `[🔧 DESARROLLO]` |
-| Calendar | Connected (CasaVitaCure SA) | ❌ BY DESIGN |
+| Tenants | CasaVitaCure + Control Pest | FumigaMax (test) |

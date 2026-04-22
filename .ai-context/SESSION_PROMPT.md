@@ -10,12 +10,12 @@
 ## ✏️ [MODIFIABLE] §0 — Session Identity
 
 ```
-SESSION DATE:    2026-04-15
-CURRENT SPRINT:  Sprint 1 (final stabilization) → transitioning to Sprint 2
-CURRENT DAY:     Day 5 — Onboarding Polish + Sandbox Isolation
-SESSION GOAL:    Complete onboarding flow: WelcomeStep + confetti + isolated sandbox + phone number + model config
-SESSION BLOCKS:  Block R (onboarding stabilization) + Block S (sandbox isolation)
-LAST COMMIT:     6508668 (desarrollo) — fix(sandbox+phone): isolated sandbox via Responses API, phone_number field fix
+SESSION DATE:    2026-04-21
+CURRENT SPRINT:  Sprint 2 (Product Expansion)
+CURRENT DAY:     Day 10 — Media Handling + Documentation Sync
+SESSION GOAL:    Implement WhatsApp media pipeline (image/document/audio) + sync 7 stale .ai-context/ files
+SESSION BLOCKS:  Media Handling (DB + Storage + Backend + Frontend) + Doc Sync
+LAST COMMIT:     ca93ddb (main) — fix: move /config into (panel) layout for superadmin tenant switching
 ```
 
 ---
@@ -25,125 +25,55 @@ LAST COMMIT:     6508668 (desarrollo) — fix(sandbox+phone): isolated sandbox v
 > Update this section before every session. It is the agent's primary situational awareness.
 
 ### What This Project Is
-AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assistant on WhatsApp that handles customer conversations, books appointments, escalates to humans, and tracks customer intelligence. Currently live with 1 client (CasaVitaCure, wellness center), onboarding 2nd client (fumigation business) on Tuesday April 15. Goal: 7 paying clients by May 4.
+AI WhatsApp CRM SaaS — a multi-tenant platform where businesses get an AI assistant on WhatsApp that handles customer conversations, books appointments, escalates to humans, and tracks customer intelligence. Currently live with **2 clients**: CasaVitaCure (wellness center) and Control Pest (fumigation). Goal: 7 paying clients by May 4.
 
 ### What Has Been Done (Completed)
-- ✅ Full backend (FastAPI) + frontend (Next.js 15) deployed to Cloud Run + Cloudflare Pages
-- ✅ WhatsApp Cloud API integration working (send/receive messages, webhooks)
-- ✅ OpenAI LLM integration with 7 tools (scheduling, scoring, escalation)
+- ✅ Full backend (FastAPI) + frontend (Next.js 15) deployed to Cloud Run + Cloudflare Workers
+- ✅ WhatsApp Cloud API integration (send/receive, webhooks, per-tenant HMAC verification)
+- ✅ OpenAI LLM integration: **Responses API** (migrated from Chat Completions Apr 18) with 7 tools
+- ✅ Adaptive reasoning: no reasoning for greetings, low effort for conversation
+- ✅ Pre-tool-call ACK messages ("Dejame revisar...")
+- ✅ Staff WhatsApp send from CRM with 24h window handling
 - ✅ Supabase multi-tenant database (tenants, contacts, messages, bookings)
-- ✅ Google Calendar integration (hardcoded to CasaVitaCure — needs multi-tenant refactor, deferred)
-- ✅ Sentry + Discord observability (basic — needs correlation IDs)
+- ✅ Native calendar engine: resources, appointments, scheduling_config, round-robin booking
+- ✅ Service-aware booking with service selector + 30-min slot agenda grid
+- ✅ Self-service onboarding: 3-step wizard (Welcome → ConfigChat → Completion)
+- ✅ Sandbox chat: dedicated `/api/sandbox/chat` endpoint, Responses API
+- ✅ Cinematic login: Vortex particles + CLI text + glassmorphic card
+- ✅ Sentry + Discord observability (correlation IDs, structured logging)
 - ✅ Dev/prod environment separation (independent Cloud Run + Supabase instances)
-- ✅ Phase 5D live testing with first client — identified BUG-5 (95% false positive alerts) and BUG-6 (unacceptable response quality)
-- ✅ Deep research session (50+ web searches): model pricing corrected, BSUID migration identified, Graph API deprecation found, 12 critical corrections documented (CC-1 to CC-12)
-- ✅ Sprint 1 v2 plan approved: Dashboard MVP deferred to Sprint 2, replaced with resilience layer + system prompt engineering
-- ✅ Model decision finalized: `gpt-5.4-mini` for PROD, `gpt-5.4-nano` for DEV/budget, `max_completion_tokens=500` cost cap
-- ✅ **Block A executed & deployed** (2026-04-11):
-  - A1: Model `gpt-4o-mini` → `gpt-5.4-mini` in 3 backend files + frontend dropdown + tests
-  - A2: Removed `.lower()` on text_body — casing preserved (verified: "Te llamas Tomás" in logs)
-  - A3: Disabled BUG-5 (TOOL_ACTION_PATTERNS) — 0 false alerts in DEV logs
-  - A4: History limit 20 → 30 messages
-  - A5: Graph API v19.0 → v25.0 (v19 dies May 21, 2026)
-  - A6: `max_completion_tokens=500` cost cap added
-- ✅ **Observability Hardening** (2026-04-11):
-  - All 7 tools in `tools.py` wrapped with try/except + Sentry + Discord + diagnostic context
-  - Infrastructure: supabase_client, proactive_worker, google_oauth_router, discord_notifier self-instrumented
-  - §6 Observability-First Rule added as IMMUTABLE to SESSION_PROMPT
-  - 10 blind spots eliminated (5/7 tools had ZERO error handling previously)
-- ✅ **Block B executed & deployed** (2026-04-11):
-  - B1: All 7 tool schemas migrated to `strict: true` + `additionalProperties: false`
-  - 4 optional params converted to nullable: `duration_minutes`, `phone`, `patient_phone`, `clinical_notes`
-  - `parallel_tool_calls=False` added to OpenAI adapter (required for strict mode per docs)
-  - ⚠️ Hotfix: `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK sends null as JSON null
-  - Verified: escalation tool works ✅, booking tool hits expected GCal 403 on DEV (by design — no calendar in dev)
-- ✅ **Block C executed & deployed** (2026-04-11):
-  - C1: Content now ALWAYS preserved from LLM response (was silently discarded with tool_calls)
-  - C2: Usage tracking (prompt/completion/cached/reasoning tokens + model) added to LLMResponse DTO
-  - 3 observability gaps fixed: SDK missing alert, usage parsing isolation, constructor warning
-- ✅ **Supabase DEV DB fixes** (2026-04-11):
-  - Added `messages_delete_own` RLS policy (ENVIAR PRUEBA button was silently failing to delete)
-  - Added `contacts` to `supabase_realtime` publication (bot_active changes weren't reaching frontend)
-  - Both verified via SQL queries against dev DB
-- ✅ **Block D executed & deployed** (2026-04-11):
-  - D1: Rewrote agentic loop in `use_cases.py` — multi-round with `MAX_TOOL_ROUNDS = 3`
-  - Proper `role: "tool"` + `tool_call_id` protocol (was `role: "user"` — WRONG)
-  - Assistant `tool_calls` messages appended to history between rounds
-  - Usage tracking accumulation across all rounds
-  - All 22 failure points instrumented with Sentry + Discord (16 except blocks, 19 Sentry, 20 Discord)
-  - Tested via sandbox: simple greeting ✅, tool calls ✅, escalation ✅, multi-round ✅, regression ✅
-- ✅ **Block E executed & deployed** (2026-04-11):
-  - E1: HMAC-SHA256 webhook signature verification (`security.py` + ASGI middleware in `main.py`)
-    - `META_APP_SECRET` stored in Google Secret Manager (both DEV + PROD)
-    - Soft mode: if secret missing, logs warning and skips (safe rollout)
-  - E2: LLM rate limit per contact — 20/hr max (`rate_limiter.py` NEW)
-    - In-memory sliding window, auto-prune, polite throttle message
-  - E3: Processing lock TTL — 90s stale lock force-release
-    - DB migration: added `updated_at` column + auto-update trigger to `contacts` table
-  - E4: Shadow-forwarding — full conversation forwarded to admin WhatsApp
-    - Uses tenant's own `ws_phone_id` + `ws_token` (dynamic per tenant, no hardcoded numbers)
-    - `SHADOW_FORWARD_PHONE=56931374341` set on both DEV + PROD
-  - E5: UptimeRobot health monitoring — manual setup (endpoint: `/api/debug-ping`)
-  - E6: Tenant config cache — `TTLCache(maxsize=50, ttl=180)` in `dependencies.py`
-    - Added `cachetools>=5.3.0` to `pyproject.toml`
-  - Telemetry totals: security.py 7 Sentry/6 Discord, rate_limiter.py 3/2, dependencies.py 6/4, use_cases.py 31/23
-- ✅ **Block F executed & deployed** (2026-04-11):
-  - F1: `asgi-correlation-id` middleware added (outermost) — generates unique request ID per request
-  - F2: `SentryTagsMiddleware` sets `correlation_id` + `request_path` on every Sentry event
-    - Pipeline also sets `tenant_id` + `correlation_id` for deep tracing
-  - F3: Logger updated — `%(correlation_id)s` in both dev (human-readable) and prod (JSON) formats
-  - Middleware order: CorrelationId → SentryTags → WebhookSignature → CORS
-  - Dependencies: `asgi-correlation-id>=4.3.0` added to `pyproject.toml`
-- ✅ **Block G executed & deployed** (2026-04-11):
-  - G1: DB migration — `bsuid TEXT NULL` column + `UNIQUE(tenant_id, bsuid)` partial index (BOTH DEV + PROD)
-  - G2: BSUID extraction from `message.user_id` with regex validation (`^[A-Z]{2}\..+$`)
-  - G3: BSUID stored on new contact creation (nullable)
-  - G4: BSUID backfill on existing contacts (non-blocking, idempotent)
-  - All failure points instrumented with Sentry + Discord
-  - **DORMANT MODE:** zero behavioral changes — all lookups remain phone-first
-  - Phase 2 (lookup swap) is SEPARATE task before June 2026
+- ✅ Security: per-tenant HMAC, superadmin RLS INSERT/UPDATE policies, service_role bypass
+- ✅ Mobile UX: bottom bar, viewport, logout, dead button wiring (6 commits Apr 19)
+- ✅ Control Pest fully provisioned: prompt, services, resources, scheduling_config, HMAC
+- ✅ Dead Google Calendar code removed (commit `88c06d4`)
+- ✅ `/config` page migrated into `(panel)` layout for TenantContext superadmin switching
 
 ### What Is Being Done RIGHT NOW (This Session)
 
-**🔧 Block R — Onboarding Flow Polish (April 15) ✅ MOSTLY COMPLETE**
+**WhatsApp Media Handling Pipeline (Apr 21)**
 
-The core message-disappearing bug is FIXED (commit `2c5d2a5`). The full onboarding flow E2E works (greeting → config → provisioning animation → completion → confetti/fireworks). Sub-items completed:
+Control Pest clients will send payment receipts (images, documents). The current pipeline drops all non-text messages silently. Implementation plan created:
 
-1. **R-WELCOME** ✅ — WelcomeStep (Step 1 of wizard) now shows correctly.
-2. **R-CONFETTI** ✅ — Completion confetti/fireworks animation fires as expected.
-3. **R-SANDBOX** ✅ — Isolated `/api/sandbox/chat` endpoint (Responses API), standalone `/chats/sandbox` page.
-4. **R-PHONE** ✅ — Phone number collected as 11th field; wording changed to personal contact; persistence fixed via `valid_columns` + DB column.
-5. **R-PROD-MIGRATION** ⏳ — `onboarding_messages` + `phone_number` column NOT on PROD. BLOCKED pending user approval.
+1. **Zero-latency media detection** — extract `message.type` synchronously from webhook
+2. **Metadata persistence** — `message_type` + `media_metadata` JSONB columns on `messages`
+3. **LLM context injection** — descriptive text ("[El usuario envio una imagen]") instead of binary
+4. **Fire-and-forget background** — download from Meta + upload to Supabase Storage async
+5. **Frontend MediaBubble** — render images, documents, audio in ChatArea
 
-**🔧 Block S — Sandbox Isolation (April 15) ✅ CORE COMPLETE**
+**Also:** Syncing 7 stale `.ai-context/` files (last updated Apr 16, 6 days behind).
 
-The sandbox testing endpoint is now completely decoupled from the WhatsApp webhook pipeline:
-- `Backend/app/api/sandbox/chat_endpoint.py` — uses `OpenAIResponsesStrategy` (Responses API)
-- Does NOT import: `TenantContext`, `ProcessMessageUseCase`, `MetaGraphAPIClient`, `LLMFactory`, `tool_registry`
-- Queries `system_prompt` directly from `tenants` table (zero `TenantContext` dependency)
-- Model: `gpt-5.4-mini` (tenant default or fallback), non-streaming
-- **⚠️ Pending:** Sandbox currently has `tools=[]`. User wants tenant tools available; architectural decision needed.
-
-### What Comes Next (After Onboarding Complete)
-- **Sandbox tools decision** — which tools, safe execution, tenant-scoped
-- Merge `desarrollo → main` (drift check first — `onboarding_messages` + `phone_number` DEV-only, may block)
-- Sprint 2: Dashboard MVP, Instagram DM, multi-squad booking
-- PROD migration for `onboarding_messages` + `phone_number` (user must approve)
+### What Comes Next (After Media Handling)
+- 14-step E2E test execution (7 tools + cross-tenant isolation)
+- Instagram DM integration (SELLING POINT)
+- Dashboard MVP with real charts/KPIs
+- Multi-squad booking engine
 
 ### Known Blockers & Risks
-- ~~⚠️ SSE message disappearance~~ → **FIXED `2c5d2a5` (2026-04-15)**
-- ~~⚠️ Sandbox TenantContext crash~~ → **FIXED `6508668` (2026-04-15)** — isolated endpoint, zero TenantContext
-- ~~⚠️ Phone number field not persisting~~ → **FIXED `6508668`** — added to valid_columns + DB column
-- ⚠️ OpenAI platform docs return 403 programmatically — use `search_web` instead
-- ⚠️ Google Calendar tools return 403 on DEV — **BY DESIGN**
-- ⚠️ `parallel_tool_calls` must be OMITTED (not null) when no tools — SDK serializes None as JSON null
-- ⚠️ **`onboarding_messages` table on DEV only** — PROD merge BLOCKED until user approves migration
-- ⚠️ **`phone_number` column on DEV only** — PROD merge BLOCKED until user approves migration
-- 🟢 **Dual-Adapter Strategy** — `OpenAIResponsesStrategy` for onboarding (Responses API), `OpenAIStrategy` for WhatsApp (Chat Completions). Zero cross-contamination.
-- 🟢 **Triple-Adapter Strategy** — Sandbox also uses `OpenAIResponsesStrategy` but with separate instance (non-streaming, `gpt-5.4-mini`). Zero conflict with onboarding adapter (streaming, `gpt-5.4`).
-- 🟡 **wamid extraction null** — dedup falls back to atomic lock (working). Low priority.
-- 🟡 **Gemini adapter deprecation** — `google.generativeai` deprecated. Not blocking (not used).
-- 🟡 **Prompt Phase 1 skip** — Prompt v2 deployed, testing ongoing.
+- ⚠️ Media handling plan awaiting user approval on 3 open questions
+- ⚠️ E2E test suite not yet executed
+- 🟢 WhatsApp webhook pipeline stable for text messages
+- 🟢 Both tenants (CasaVitaCure + Control Pest) operational
+- 🟡 wamid extraction null — dedup falls back to atomic lock (working)
 
 ---
 
@@ -153,46 +83,27 @@ The sandbox testing endpoint is now completely decoupled from the WhatsApp webho
 
 | Decision | Choice | Date | Rationale |
 |:---|:---|:---|:---|
-| Production LLM model | `gpt-5.4-mini` ($0.75/$4.50/1M) | 2026-04-11 | Best tool calling + agentic performance. Both mini and nano share exact same API. |
-| Dev/budget LLM model | `gpt-5.4-nano` ($0.20/$1.25/1M) | 2026-04-11 | For simple tenants or dev testing. API-compatible with mini. |
-| Cost cap | `max_completion_tokens=2048` per response | 2026-04-12 | Raised from 500 (Block I incident — truncation caused doom loops). Actual avg is 50-150 tokens. |
-| Dashboard MVP | Deferred to Sprint 2 | 2026-04-11 | Time invested in system prompts + resilience instead. Bot quality > dashboard. |
-| Sprint 1 strategy | Deploy Block A first, then iterate | 2026-04-11 | Client experiencing bad responses NOW. Every hour without fix = reputation damage. |
-| Instagram/booking | Sprint 2 priority (SELLING POINTS) | 2026-04-11 | Not needed for Tuesday, but critical for sales outreach. |
-| Fumigation prompt | DRAFT in Sprint 1, refine WITH client | 2026-04-11 | Can't perfect a prompt without the business owner's input. |
-| Shadow-forwarding | Include BOTH user messages AND bot responses | 2026-04-11 | Full interaction visibility for quality monitoring. |
-| Rate limit behavior | Auto-resume when limit refreshes + notify us | 2026-04-11 | Don't permanently block contacts, just throttle + alert. |
-| Config cache | 3-min TTL, ~250KB for 50 tenants | 2026-04-11 | Negligible memory vs 512MB Cloud Run limit. |
-| WhatsApp provisioning | Our WABA short-term → client-owned WABA before tenant #7 | 2026-04-11 | Meta compliance risk. Embedded Signup in Sprint 3-4. |
-| BSUID implementation | Dormant capture (Phase 1) — store now, activate before June | 2026-04-11 | Full forensic (40+ touch points) confirmed zero behavioral risk. 4 lines backend + 1 migration. Phase 2 (lookup swap) before June 2026. |
-| BSUID Phase 2 deadline | Must be deployed before June 2026 | 2026-04-11 | Meta enables username hiding in June — `from` field may contain BSUID. Without Phase 2, contact lookup breaks silently. |
-| reasoning_effort | Dual-adapter: new `openai_responses_adapter.py` for `/v1/responses` | 2026-04-14 | Hard-rejected on chat/completions. New adapter uses Responses API with `reasoning.effort` + tools + streaming. Existing adapter untouched. |
-| Dual-adapter architecture | `OpenAIStrategy` (chat/completions) + `OpenAIResponsesStrategy` (responses) | 2026-04-14 | Zero risk to WhatsApp pipeline. New adapter for onboarding agent; future path for full migration. |
-| Newcomer onboarding | 3-step wizard: Welcome → AI Config Chat → Test Chat redirect | 2026-04-14 | Detect first-time Google logins, auto-provision tenant, AI-guided configuration with streamed reasoning. |
-| Rapid-fire batching | Re-fetch history after 3s sleep | 2026-04-12 | 80/20 fix. Ideal solution (abort in-flight LLM) deferred to S2 backlog. |
-| PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies (Supabase us-east-2, OpenAI US, Meta US) are in the US. Europe added 600-1000ms per request. |
-| Secret Manager values | Always `.strip()` before use | 2026-04-11 | GCP Secret Manager stores values with trailing `\r\n`. Caused HMAC mismatch (34 chars vs 32). |
-| **Sandbox isolation** | **Dedicated `/api/sandbox/chat` via Responses API** | **2026-04-15** | **Sandbox must NOT touch ProcessMessageUseCase or TenantContext. Separate `OpenAIResponsesStrategy` instance. Zero shared state with WhatsApp webhook.** |
-| **Phone number field** | **User's personal contact number (NOT business assistant number)** | **2026-04-15** | **Used for platform communications: support, billing, WhatsApp contact. Added to `tenant_onboarding` table.** |
-| **Sandbox model** | **`gpt-5.4-mini` with reasoning.effort=medium, non-streaming** | **2026-04-15** | **Per user requirement. Docs confirm reasoning + tools work simultaneously on all GPT-5.4 models.** |
-| **Onboarding model** | **`gpt-5.4` (flagship) with streaming + reasoning** | **2026-04-15** | **Fixed — onboarding always uses top model for best config experience. Separate singleton adapter instance.** |
-| **Three adapters, zero conflict** | **Webhook=OpenAIStrategy(ChatCompletions), Onboarding=ResponsesStrategy(gpt-5.4), Sandbox=ResponsesStrategy(gpt-5.4-mini)** | **2026-04-15** | **Three completely independent code paths with separate adapter instances. Zero shared state.** |
+| Production LLM model | `gpt-5.4-mini` ($0.75/$4.50/1M) | 2026-04-11 | Best tool calling + agentic performance |
+| Dev/budget LLM model | `gpt-5.4-nano` ($0.20/$1.25/1M) | 2026-04-11 | For simple tenants or dev testing |
+| Cost cap | `max_completion_tokens=2048` per response | 2026-04-12 | Raised from 500 (truncation caused doom loops) |
+| PROD region | `us-central1` (was `europe-west1`) | 2026-04-11 | All dependencies in US. Europe added 600-1000ms |
+| WhatsApp pipeline | **Responses API** (`openai_responses_adapter.py`) | **2026-04-18** | **Migrated from Chat Completions. Enables reasoning.effort + tools.** |
+| Adaptive reasoning | No reasoning for greetings, low for conversation | 2026-04-18 | Sub-2s greeting responses |
+| Staff WhatsApp | CRM staff can send messages via WhatsApp | 2026-04-18 | 24h window handling for Meta compliance |
+| Per-tenant HMAC | `meta_app_secret` column on tenants | 2026-04-21 | Dynamic HMAC lookup per webhook, replaces single shared secret |
+| Config page location | Inside `(panel)` layout | 2026-04-21 | Required for TenantContext superadmin switching |
+| GCal removal | Dead code removed entirely | 2026-04-21 | All tenants use native calendar, GCal SA credentials unnecessary |
+| Media handling | Zero-latency fire-and-forget pipeline | 2026-04-21 | Sync type detection, async download/upload, descriptive text for LLM |
+| Shadow-forwarding | BOTH user + bot messages forwarded to admin | 2026-04-11 | Full interaction visibility |
+| BSUID implementation | Dormant capture (Phase 1) | 2026-04-11 | Phase 2 (lookup swap) before June 2026 |
+| Sandbox isolation | Dedicated `/api/sandbox/chat` via Responses API | 2026-04-15 | Zero shared state with WhatsApp webhook |
+| Rapid-fire batching | Re-fetch history after 3s sleep | 2026-04-12 | 80/20 fix |
 
 ### Active Bugs & Critical Corrections
 | ID | Issue | Status | Fix Location |
 |:---|:---|:---|:---|
-| BUG-5 | Silent Failure Detector 95%+ false positives | ✅ Disabled (DEV) | Block A3: commented L219-L242 `use_cases.py` |
-| BUG-6 | Response quality unacceptable in production | 🟡 Partial (A done) | Blocks B-D remaining: tools, adapter, agentic loop |
-| CC-1 | Codebase uses deprecated `gpt-4o-mini` | ✅ Fixed (DEV) | Block A1: 3 backend + frontend + tests |
-| CC-3 | BSUID dormant capture (Phase 1 of 2) | ✅ Phase 1 Done (DEV+PROD) | Block G1-G4: column + index + extract + store + backfill. Phase 2 (lookup swap) before June 2026. |
-| CC-4 | Graph API v19.0 deprecated May 21, 2026 | ✅ Fixed (DEV) | Block A5: now v25.0 |
-| CC-5 | Tool schemas missing `strict: true` | ✅ Fixed (DEV) | Block B1: all 7 tools + `parallel_tool_calls=False` |
-| CC-7 | No webhook signature verification | ✅ Fixed (DEV+PROD) | Block E1: HMAC-SHA256 middleware + Secret Manager |
-| CC-8 | No LLM rate limit per contact | ✅ Fixed (DEV) | Block E2: 20/hour max in `rate_limiter.py` |
-| CC-9 | `is_processing_llm` lock has no TTL | ✅ Fixed (DEV) | Block E3: 90s TTL + `updated_at` column |
-| CC-10 | No health monitoring | 🟡 In progress | Block E5: UptimeRobot — manual setup by user |
-| CC-11 | No conversation shadow-forward | ✅ Fixed (DEV+PROD) | Block E4: tenant-dynamic forwarding to admin phone |
-| CC-12 | Tenant config fetched every request | ✅ Fixed (DEV) | Block E6: TTLCache(50, 180s) in `dependencies.py` |
+| MEDIA-1 | WhatsApp media messages silently dropped | Plan ready | `ProcessMessageUseCase` line 96 |
+| U-7 | wamid extraction null | Low priority | Dedup fallback working |
 ---
 
 ## 🔒 [IMMUTABLE] §3 — Context Files: Where to Find What
@@ -599,7 +510,7 @@ WHERE tablename = '<TABLE>' AND indexname LIKE '%<INDEX_NAME>%';
 | **LLM (DEV)** | OpenAI `gpt-5.4-nano` | [OpenAI Models](https://platform.openai.com/docs/models) |
 | **Messaging** | WhatsApp Cloud API | [WhatsApp Docs](https://developers.facebook.com/docs/whatsapp/cloud-api) |
 | **Hosting** | Google Cloud Run | [Cloud Run](https://cloud.google.com/run/docs) |
-| **Frontend Host** | Cloudflare Pages | [Cloudflare](https://developers.cloudflare.com/pages/) |
+| **Frontend Host** | Cloudflare Workers (OpenNext) | [Cloudflare](https://developers.cloudflare.com/workers/) |
 | **Observability** | Sentry + Discord webhooks | [Sentry Python](https://docs.sentry.io/platforms/python/) |
 | **Auth** | Supabase Auth | [Supabase Auth](https://supabase.com/docs/guides/auth) |
 
