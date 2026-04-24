@@ -138,11 +138,12 @@ class OpenAIResponsesStrategy(LLMStrategy):
                 "model": self.model_id,
                 "input": input_items,
                 "max_output_tokens": 2048,
-                # store=False: WhatsApp pipeline manages its own message history
-                # in Supabase. No need to store on OpenAI servers.
-                # Set to True when using previous_response_id for chaining.
+                # store=True: MUST be enabled so the response is persisted on OpenAI
+                # servers. This allows subsequent rounds to chain via previous_response_id.
+                # BUG FIX (2026-04-24): Previously was `bool(previous_response_id)` which
+                # meant Round 1 had store=False → Round 2 got "previous_response_not_found".
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
-                "store": bool(previous_response_id),
+                "store": True,
                 # truncation="auto": if input exceeds context window, auto-drop
                 # older messages instead of failing with 400.
                 # Ref: https://platform.openai.com/docs/api-reference/responses/create
